@@ -1,5 +1,11 @@
 import {useMemo, useState} from "react";
 
+import {
+  detectConflicts,
+  syntheticConflictClaims,
+  type ConflictCheckResult,
+} from "./conflict";
+
 import centralRulesJson from "./policies/central-rent-115.json";
 import taipeiRulesJson from "./policies/taipei-rent-115.json";
 import newTaipeiRulesJson from "./policies/new-taipei-rent-115.json";
@@ -85,6 +91,11 @@ function App() {
   const [passport, setPassport] = useState<DecisionPassport | null>(null);
   const [auditTrail, setAuditTrail] = useState<AuditEvent[]>([]);
 
+  const [
+    conflictResult,
+    setConflictResult,
+  ] = useState<ConflictCheckResult | null>(null);
+
   const currentCentralStatus = useMemo(
     () => centralEvaluation.length ? getOverallStatus(centralEvaluation) : null,
     [centralEvaluation]
@@ -117,6 +128,7 @@ function App() {
     setWhatIfResult(null);
     setPassport(null);
     setAuditTrail([]);
+    setConflictResult(null);
 
     const evaluation = evaluateRules(centralRules, freshApplicant);
     setCentralEvaluation(evaluation);
@@ -197,7 +209,37 @@ function App() {
     setWhatIfResult(null);
     setPassport(null);
     setAuditTrail([]);
+    setConflictResult(null);
   }
+
+  function runConflictTest() {
+  const result =
+    detectConflicts(
+      syntheticConflictClaims
+    );
+
+  setConflictResult(result);
+
+  audit(
+    "SYSTEM",
+    "POLICY_CONFLICT_CHECK",
+    syntheticConflictClaims,
+    result,
+    "SYNTHETIC-CONFLICT-TEST"
+  );
+
+  if (result.status === "CONFLICT") {
+    audit(
+      "AGENT",
+      "HUMAN_REVIEW_REQUIRED",
+      {
+        reason: "POLICY_CONFLICT",
+      },
+      result,
+      "SYNTHETIC-CONFLICT-TEST"
+    );
+  }
+}
 
   return (
     <main className="app">
@@ -313,6 +355,111 @@ function App() {
           <p className="disclaimer">{passport.disclaimer}</p>
         </section>
       )}
+
+        <section className="card">
+    <div className="card-header">
+      <div>
+        <p className="eyebrow">
+          GOVERNANCE TEST
+        </p>
+
+        <h2>
+          Rule Conflict
+        </h2>
+      </div>
+
+      <button
+        className="secondary"
+        onClick={runConflictTest}
+      >
+        Run Synthetic Conflict Test
+      </button>
+    </div>
+
+    <p className="conflict-note">
+      此測試使用合成規則，
+      僅驗證衝突偵測與風險控制機制，
+      不代表任何真實政府政策互相矛盾。
+    </p>
+
+    {conflictResult && (
+      <>
+        <div className="result-line">
+          <span>
+            Conflict Status
+          </span>
+
+          <StatusBadge
+            status={
+              conflictResult.status
+            }
+          />
+        </div>
+
+        <div className="result-line">
+          <span>
+            System Action
+          </span>
+
+          <strong>
+            {
+              conflictResult.resolution
+            }
+          </strong>
+        </div>
+
+        {conflictResult.conflicts.map(
+          (conflict) => (
+            <div
+              className="conflict-box"
+              key={
+                conflict.semanticKey
+              }
+            >
+              <strong>
+                {
+                  conflict.semanticKey
+                }
+              </strong>
+
+              {conflict.claims.map(
+                (claim) => (
+                  <div
+                    className="rule-row"
+                    key={claim.claimId}
+                  >
+                    <span>
+                      {claim.sourceLabel}
+                      {" · "}
+                      {claim.version}
+                    </span>
+
+                    <strong>
+                      {String(
+                        claim.value
+                      )}
+                    </strong>
+                  </div>
+                )
+              )}
+            </div>
+          )
+        )}
+
+        <div className="warning-box">
+          <strong>
+            Human Review Required
+          </strong>
+
+          <p>
+            偵測到相互矛盾的規則結果。
+            GovAid Atlas 不會自行選擇其中一個答案，
+            而是停止確定式資格判斷並要求人工查核。
+          </p>
+        </div>
+      </>
+    )}
+  </section>
 
       <section className="card">
         <div className="card-header">
