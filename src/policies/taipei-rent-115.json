@@ -1,0 +1,24 @@
+[
+  {
+    "ruleId": "TAIPEI-115-REGISTERED-001",
+    "program": "115臺北幸福租",
+    "field": "registeredCity",
+    "operator": "equals",
+    "expected": "臺北市",
+    "required": true,
+    "sourceId": "R6",
+    "validFrom": "2026-04-08",
+    "validTo": "2027-03-31"
+  },
+  {
+    "ruleId": "TAIPEI-115-CENTRAL-001",
+    "program": "115臺北幸福租",
+    "field": "centralRentApproved",
+    "operator": "equals",
+    "expected": true,
+    "required": true,
+    "sourceId": "R6",
+    "validFrom": "2026-04-08",
+    "validTo": "2027-03-31"
+  }
+]

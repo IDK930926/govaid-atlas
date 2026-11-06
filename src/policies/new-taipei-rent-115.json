@@ -1,0 +1,24 @@
+[
+  {
+    "ruleId": "NEWTAIPEI-115-LOCAL-001",
+    "program": "115新北市青年租金補貼",
+    "field": "newTaipeiResidenceStudyWork",
+    "operator": "equals",
+    "expected": true,
+    "required": true,
+    "sourceId": "R7",
+    "validFrom": "2025-10-01",
+    "validTo": "2026-12-31"
+  },
+  {
+    "ruleId": "NEWTAIPEI-115-AID-001",
+    "program": "115新北市青年租金補貼",
+    "field": "receivesOtherHousingAid",
+    "operator": "equals",
+    "expected": false,
+    "required": true,
+    "sourceId": "R7",
+    "validFrom": "2025-10-01",
+    "validTo": "2026-12-31"
+  }
+]
