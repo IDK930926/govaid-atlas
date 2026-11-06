@@ -1,3 +1,9 @@
+import {
+  detectConflicts,
+  syntheticConflictClaims,
+  type ConflictCheckResult,
+} from "./conflict";
+
 import {useMemo, useState} from "react";
 
 import centralRulesJson from "./policies/central-rent-115.json";
