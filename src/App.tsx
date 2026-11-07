@@ -6,6 +6,12 @@ import {
   type ConflictCheckResult,
 } from "./conflict";
 
+import {
+  getVisibleProfile,
+  type SensitiveProfile,
+  type UserRole,
+} from "./permissions";
+
 import centralRulesJson from "./policies/central-rent-115.json";
 import taipeiRulesJson from "./policies/taipei-rent-115.json";
 import newTaipeiRulesJson from "./policies/new-taipei-rent-115.json";
@@ -67,6 +73,14 @@ const whatIfScenario: AddressScenario = {
   monthlyRent: 15500,
 };
 
+const sensitiveProfile:
+  SensitiveProfile = {
+  name: "陳同學",
+  nationalId: "A123456789",
+  phone: "0912345678",
+  monthlyIncome: 32000,
+};
+
 type DemoStage =
   | "IDLE"
   | "UNCERTAIN"
@@ -92,9 +106,20 @@ function App() {
   const [auditTrail, setAuditTrail] = useState<AuditEvent[]>([]);
 
   const [
+    currentRole,
+    setCurrentRole,
+  ] = useState<UserRole>("APPLICANT");
+
+  const [
     conflictResult,
     setConflictResult,
   ] = useState<ConflictCheckResult | null>(null);
+
+  const visibleProfile =
+  getVisibleProfile(
+    currentRole,
+    sensitiveProfile
+  );
 
   const currentCentralStatus = useMemo(
     () => centralEvaluation.length ? getOverallStatus(centralEvaluation) : null,
@@ -121,14 +146,84 @@ function App() {
     ]);
   }
 
+  function changeRole(role: UserRole) {
+    if (role === currentRole) {
+      return;
+    }
+
+    setCurrentRole(role);
+
+    audit(
+      "SYSTEM",
+      "ROLE_CHANGED",
+      {role},
+      undefined,
+      "RBAC-V1"
+    );
+
+    const result =
+      getVisibleProfile(
+        role,
+        sensitiveProfile
+      );
+
+    if (!result.permission.allowed) {
+      audit(
+        "SYSTEM",
+        "ACCESS_DENIED",
+        {
+          role,
+          resource: "SENSITIVE_PROFILE",
+        },
+        {
+          reason:
+            result.permission.reason,
+        },
+        "RBAC-V1"
+      );
+
+      return;
+    }
+
+    if (result.permission.masked) {
+      audit(
+        "SYSTEM",
+        "MASKED_PROFILE_ACCESSED",
+        {
+          role,
+          resource: "SENSITIVE_PROFILE",
+        },
+        {
+          masked: true,
+        },
+        "RBAC-V1"
+      );
+
+      return;
+    }
+
+    audit(
+      "SYSTEM",
+      "SENSITIVE_PROFILE_ACCESSED",
+      {
+        role,
+        resource: "SENSITIVE_PROFILE",
+      },
+      {
+        masked: false,
+      },
+      "RBAC-V1"
+    );
+  }
   function startGoldenCase() {
     const freshApplicant = {...initialApplicant};
     setApplicant(freshApplicant);
     setActualResult(null);
     setWhatIfResult(null);
     setPassport(null);
-    setAuditTrail([]);
     setConflictResult(null);
+    setAuditTrail([]);
+    
 
     const evaluation = evaluateRules(centralRules, freshApplicant);
     setCentralEvaluation(evaluation);
@@ -210,6 +305,7 @@ function App() {
     setPassport(null);
     setAuditTrail([]);
     setConflictResult(null);
+    setCurrentRole("APPLICANT");
   }
 
   function runConflictTest() {
@@ -460,6 +556,124 @@ function App() {
       </>
     )}
   </section>
+      
+      <section className="card">
+  <div className="card-header">
+    <div>
+      <p className="eyebrow">
+        GOVERNANCE
+      </p>
+
+      <h2>
+        Permission Control
+      </h2>
+    </div>
+
+    <div className="role-switcher">
+      {(
+        [
+          "APPLICANT",
+          "REVIEWER",
+          "POLICY_ADMIN",
+        ] as UserRole[]
+      ).map((role) => (
+        <button
+          key={role}
+          className={
+            currentRole === role
+              ? "primary"
+              : "secondary"
+          }
+          onClick={() =>
+            changeRole(role)
+          }
+        >
+          {role}
+        </button>
+      ))}
+    </div>
+  </div>
+
+  <p className="conflict-note">
+    此區塊使用合成個資，
+    僅驗證角色權限、
+    敏感資料遮罩與拒絕存取。
+  </p>
+
+  <div className="permission-grid">
+    <div>
+      <span>Current Role</span>
+      <strong>
+        {currentRole}
+      </strong>
+    </div>
+
+    <div>
+      <span>Access</span>
+      <strong>
+        {
+          visibleProfile
+            .permission.allowed
+            ? "ALLOWED"
+            : "ACCESS_DENIED"
+        }
+      </strong>
+    </div>
+  </div>
+
+  {visibleProfile.profile ? (
+    <div className="sensitive-card">
+      <p>
+        姓名：
+        {
+          visibleProfile.profile
+            .name
+        }
+      </p>
+
+      <p>
+        身分證：
+        {
+          visibleProfile.profile
+            .nationalId
+        }
+      </p>
+
+      <p>
+        電話：
+        {
+          visibleProfile.profile
+            .phone
+        }
+      </p>
+
+      <p>
+        月收入：
+        {
+          visibleProfile.profile
+            .monthlyIncome
+        }
+      </p>
+    </div>
+  ) : (
+    <div className="warning-box">
+      <strong>
+        Access Denied
+      </strong>
+
+      <p>
+        此角色無權存取申請人敏感資料。
+      </p>
+    </div>
+  )}
+
+  <p className="disclaimer">
+    {
+      visibleProfile
+        .permission.reason
+    }
+  </p>
+</section>
 
       <section className="card">
         <div className="card-header">

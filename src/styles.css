@@ -373,3 +373,41 @@ button.full {
     text-align: left;
   }
 }
+
+.role-switcher {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.permission-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.permission-grid > div {
+  padding: 14px;
+  background: #f7f9fa;
+  border-radius: 10px;
+}
+
+.permission-grid span {
+  display: block;
+  color: #71808e;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.sensitive-card {
+  padding: 16px;
+  border: 1px solid #e0e5ea;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.sensitive-card p {
+  margin: 8px 0;
+}
