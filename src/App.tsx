@@ -12,6 +12,14 @@ import {
   type UserRole,
 } from "./permissions";
 
+import {
+  createRuntimeMetrics,
+  measureSync,
+  recordRuntimeOperation,
+  type RuntimeCounterKey,
+  type RuntimeMetrics,
+} from "./metrics";
+
 import centralRulesJson from "./policies/central-rent-115.json";
 import taipeiRulesJson from "./policies/taipei-rent-115.json";
 import newTaipeiRulesJson from "./policies/new-taipei-rent-115.json";
@@ -126,6 +134,14 @@ function App() {
     [centralEvaluation]
   );
 
+  const [
+    runtimeMetrics,
+    setRuntimeMetrics,
+  ] =
+    useState<RuntimeMetrics>(
+      createRuntimeMetrics()
+    );
+
   function audit(
     actor: AuditEvent["actor"],
     action: string,
@@ -146,6 +162,20 @@ function App() {
     ]);
   }
 
+  function recordMetric(
+    counter: RuntimeCounterKey,
+    latencyMs: number
+  ) {
+    setRuntimeMetrics(
+      (current) =>
+        recordRuntimeOperation(
+          current,
+          counter,
+          latencyMs
+        )
+    );
+  }
+
   function changeRole(role: UserRole) {
     if (role === currentRole) {
       return;
@@ -161,11 +191,21 @@ function App() {
       "RBAC-V1"
     );
 
-    const result =
-      getVisibleProfile(
-        role,
-        sensitiveProfile
+    const measured =
+      measureSync(() =>
+        getVisibleProfile(
+          role,
+          sensitiveProfile
+        )
       );
+
+    const result =
+      measured.result;
+
+    recordMetric(
+      "permissionChecks",
+      measured.latencyMs
+    );
 
     if (!result.permission.allowed) {
       audit(
@@ -225,7 +265,21 @@ function App() {
     setAuditTrail([]);
     
 
-    const evaluation = evaluateRules(centralRules, freshApplicant);
+    const measured =
+      measureSync(() =>
+        evaluateRules(
+          centralRules,
+          freshApplicant
+        )
+    );
+
+    const evaluation =
+      measured.result;
+
+    recordMetric(
+      "rulesEngineCalls",
+      measured.latencyMs
+    );
     setCentralEvaluation(evaluation);
     setStage("UNCERTAIN");
 
@@ -259,7 +313,21 @@ function App() {
     setApplicant(updatedApplicant);
     audit("USER", "FIELD_CONFIRMED", {field: "ownsHome", value: false});
 
-    const evaluation = evaluateRules(centralRules, updatedApplicant);
+    const measured =
+      measureSync(() =>
+        evaluateRules(
+          centralRules,
+          updatedApplicant
+        )
+      );
+
+    const evaluation =
+      measured.result;
+
+    recordMetric(
+      "rulesEngineCalls",
+      measured.latencyMs
+    );
     setCentralEvaluation(evaluation);
     audit("RULE_ENGINE", "RE_EVALUATION", updatedApplicant, {
       evaluations: evaluation,
@@ -269,16 +337,49 @@ function App() {
   }
 
   function compareAddresses() {
-    const actual = evaluateScenario(actualScenario, applicant, {
-      central: centralRules,
-      taipei: taipeiRules,
-      newTaipei: newTaipeiRules,
-    });
-    const whatIf = evaluateScenario(whatIfScenario, applicant, {
-      central: centralRules,
-      taipei: taipeiRules,
-      newTaipei: newTaipeiRules,
-    });
+    const measuredActual =
+      measureSync(() =>
+        evaluateScenario(
+          actualScenario,
+          applicant,
+          {
+            central: centralRules,
+            taipei: taipeiRules,
+            newTaipei:
+              newTaipeiRules,
+          }
+        )
+      );
+
+    const actual =
+      measuredActual.result;
+
+    recordMetric(
+      "scenarioEvaluations",
+      measuredActual.latencyMs
+    );
+
+    const measuredWhatIf =
+      measureSync(() =>
+        evaluateScenario(
+          whatIfScenario,
+          applicant,
+          {
+            central: centralRules,
+            taipei: taipeiRules,
+            newTaipei:
+              newTaipeiRules,
+          }
+        )
+      );
+
+    const whatIf =
+      measuredWhatIf.result;
+
+    recordMetric(
+      "scenarioEvaluations",
+      measuredWhatIf.latencyMs
+    );
 
     setActualResult(actual);
     setWhatIfResult(whatIf);
@@ -290,7 +391,23 @@ function App() {
 
   function generatePassport() {
     if (!actualResult || !whatIfResult) return;
-    const result = buildDecisionPassport("CASE-P0-001", applicant, actualResult, whatIfResult);
+    const measured =
+      measureSync(() =>
+        buildDecisionPassport(
+          "CASE-P0-001",
+          applicant,
+          actualResult,
+          whatIfResult
+        )
+      );
+
+    const result =
+      measured.result;
+
+    recordMetric(
+      "passportGenerations",
+      measured.latencyMs
+    );
     setPassport(result);
     audit("SYSTEM", "DECISION_PASSPORT_GENERATED", {caseId: "CASE-P0-001"}, result, "MULTI-POLICY");
     setStage("PASSPORT");
@@ -306,13 +423,24 @@ function App() {
     setAuditTrail([]);
     setConflictResult(null);
     setCurrentRole("APPLICANT");
+    setRuntimeMetrics(createRuntimeMetrics());
   }
 
   function runConflictTest() {
-  const result =
-    detectConflicts(
-      syntheticConflictClaims
+  const measured =
+    measureSync(() =>
+      detectConflicts(
+        syntheticConflictClaims
+      )
     );
+
+  const result =
+    measured.result;
+
+  recordMetric(
+    "conflictChecks",
+    measured.latencyMs
+  );
 
   setConflictResult(result);
 
@@ -677,6 +805,98 @@ function App() {
 
       <section className="card">
         <div className="card-header">
+          <div>
+            <p className="eyebrow">
+              OBSERVABILITY
+            </p>
+
+            <h2>
+              Runtime Metrics
+            </h2>
+          </div>
+        </div>
+
+        <p className="conflict-note">
+          以下為目前 P0 在瀏覽器本機實際量測的執行指標。
+          P0 尚未連接 LLM，因此 Token 與模型成本不填入假設數字。
+        </p>
+
+        <div className="metrics-grid">
+          <MetricItem
+            label="Rules Engine Calls"
+            value={runtimeMetrics.rulesEngineCalls}
+          />
+
+          <MetricItem
+            label="Scenario Evaluations"
+            value={runtimeMetrics.scenarioEvaluations}
+          />
+
+          <MetricItem
+            label="Conflict Checks"
+            value={runtimeMetrics.conflictChecks}
+          />
+
+          <MetricItem
+            label="Permission Checks"
+            value={runtimeMetrics.permissionChecks}
+          />
+
+          <MetricItem
+            label="Passport Generations"
+            value={runtimeMetrics.passportGenerations}
+          />
+
+          <MetricItem
+            label="Measured Operations"
+            value={runtimeMetrics.measuredOperations}
+          />
+
+          <MetricItem
+            label="Average Local Latency"
+            value={
+              runtimeMetrics.measuredOperations
+                ? `${(
+                    runtimeMetrics.totalLatencyMs /
+                    runtimeMetrics.measuredOperations
+                  ).toFixed(2)} ms`
+                : "N/A"
+            }
+          />
+
+          <MetricItem
+            label="Last Local Latency"
+            value={
+              runtimeMetrics.lastLatencyMs !== null
+                ? `${runtimeMetrics.lastLatencyMs.toFixed(2)} ms`
+                : "N/A"
+            }
+          />
+
+          <MetricItem
+            label="LLM Calls"
+            value="0 · not connected"
+          />
+
+          <MetricItem
+            label="Input / Output Tokens"
+            value="N/A"
+          />
+
+          <MetricItem
+            label="Estimated Model Cost"
+            value="N/A"
+          />
+        </div>
+
+        <p className="disclaimer">
+          Local latency 僅代表目前瀏覽器內 deterministic tools
+          的本機執行時間，不代表正式部署後的網路或政府資料來源延遲。
+        </p>
+      </section>
+
+      <section className="card">
+        <div className="card-header">
           <h2>Audit Trail</h2>
           <span className="counter">{auditTrail.length} events</span>
         </div>
@@ -696,6 +916,21 @@ function App() {
         )}
       </section>
     </main>
+  );
+}
+
+function MetricItem({
+  label,
+  value,
+}: {
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="metric-item">
+      <span>{label}</span>
+      <strong>{value}</strong>
+    </div>
   );
 }
 
