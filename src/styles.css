@@ -132,6 +132,42 @@ button.full {
     rgba(0, 0, 0, 0.025);
 }
 
+.agent-runtime {
+  margin-bottom: 20px;
+}
+
+.agent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.agent-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: #f7f9fa;
+  border-radius: 10px;
+}
+
+.agent-meta span {
+  color: #71808e;
+  font-size: 12px;
+}
+
+.agent-meta strong {
+  line-height: 1.6;
+}
+
+.agent-plan-list {
+  margin: 0;
+  padding-left: 18px;
+  line-height: 1.8;
+  color: #495864;
+}
+
 .card-header {
   display: flex;
   align-items: flex-start;
@@ -176,12 +212,19 @@ button.full {
   background: #e8f6ee;
 }
 
-.status-uncertain {
+.status-uncertain,
+.status-waiting_for_human,
+.status-human_review_required,
+.status-planning,
+.status-running_tool,
+.status-resuming,
+.status-idle {
   color: #865d00;
   background: #fff4d8;
 }
 
-.status-fail {
+.status-fail,
+.status-failed {
   color: #9d2828;
   background: #fdeaea;
 }
@@ -189,7 +232,8 @@ button.full {
 .status-ready,
 .status-confirmed,
 .status-compared,
-.status-passport {
+.status-passport,
+.status-completed {
   color: #28577b;
   background: #eaf3fa;
 }
@@ -359,7 +403,8 @@ button.full {
 
   .grid-two,
   .scenario-grid,
-  .passport-grid {
+  .passport-grid,
+  .agent-grid {
     grid-template-columns: 1fr;
   }
 

@@ -51,6 +51,14 @@ import {
   type DecisionPassport,
 } from "./passport";
 
+import {
+  createAgentRun,
+  resumeAgentRun,
+  runAgenticGoldenCase,
+} from "./agent/orchestrator";
+
+import type { AgentRun } from "./agent/types";
+
 const centralRules = centralRulesJson as PolicyRule[];
 const taipeiRules = taipeiRulesJson as PolicyRule[];
 const newTaipeiRules = newTaipeiRulesJson as PolicyRule[];
@@ -85,6 +93,8 @@ const whatIfScenario: AddressScenario = {
   monthlyRent: 15500,
 };
 
+const agentGoal = "我目前住在新北市永和區，每月租金 13,500 元。如果搬到臺北市文山區、租金 15,500 元，我有哪些租屋補助可以考慮？還缺什麼資料？";
+
 const sensitiveProfile:
   SensitiveProfile = {
   name: "陳同學",
@@ -116,6 +126,7 @@ function App() {
   const [whatIfResult, setWhatIfResult] = useState<ScenarioResult | null>(null);
   const [passport, setPassport] = useState<DecisionPassport | null>(null);
   const [auditTrail, setAuditTrail] = useState<AuditEvent[]>([]);
+  const [agentRun, setAgentRun] = useState<AgentRun>(() => createAgentRun(agentGoal));
 
   const benchmarkResult =
     useMemo(
@@ -273,7 +284,9 @@ function App() {
     setPassport(null);
     setConflictResult(null);
     setAuditTrail([]);
-    
+
+    const newRun = runAgenticGoldenCase(agentGoal, freshApplicant, actualScenario, whatIfScenario);
+    setAgentRun(newRun);
 
     const measured =
       measureSync(() =>
@@ -321,6 +334,7 @@ function App() {
   function confirmNoHome() {
     const updatedApplicant = {...applicant, ownsHome: false};
     setApplicant(updatedApplicant);
+    setAgentRun((current) => resumeAgentRun(current, updatedApplicant, actualScenario, whatIfScenario));
     audit("USER", "FIELD_CONFIRMED", {field: "ownsHome", value: false});
 
     const measured =
@@ -434,6 +448,7 @@ function App() {
     setConflictResult(null);
     setCurrentRole("APPLICANT");
     setRuntimeMetrics(createRuntimeMetrics());
+    setAgentRun(createAgentRun(agentGoal));
   }
 
   function runConflictTest() {
@@ -485,13 +500,62 @@ function App() {
         </div>
         <div className="top-actions">
           <button className="secondary" onClick={resetDemo}>Reset Demo</button>
+          <button className="secondary" onClick={() => setAgentRun(createAgentRun(agentGoal))}>New Agent Run</button>
           <button className="primary" onClick={startGoldenCase}>Start Golden Case</button>
+          <button className="primary" onClick={() => setAgentRun(runAgenticGoldenCase(agentGoal, applicant, actualScenario, whatIfScenario))}>Run Agentic Golden Case</button>
         </div>
       </header>
 
       <section className="notice">
         <strong>Synthetic Persona</strong>
         <span>本 Demo 全部使用合成資料；結果僅為預審導航，不代表主管機關核准。</span>
+      </section>
+
+      <section className="card agent-runtime">
+        <div className="card-header">
+          <div>
+            <p className="eyebrow">AGENT RUNTIME</p>
+            <h2>Agent Orchestrator</h2>
+          </div>
+          <StatusBadge status={agentRun.status}/>
+        </div>
+
+        <div className="agent-grid">
+          <div className="agent-meta">
+            <span>User Goal</span>
+            <strong>{agentGoal}</strong>
+          </div>
+          <div className="agent-meta">
+            <span>Current Step</span>
+            <strong>{agentRun.currentStep}</strong>
+          </div>
+          <div className="agent-meta">
+            <span>Agent Plan</span>
+            <ul className="agent-plan-list">
+              {agentRun.plan.map((item, index) => (
+                <li key={`${item}-${index}`}>{item}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="agent-meta">
+            <span>Last Tool Call</span>
+            <strong>{agentRun.lastToolCall ?? "N/A"}</strong>
+          </div>
+        </div>
+
+        <div className="result-line">
+          <span>Human Input Required</span>
+          <strong>{agentRun.humanInputRequired ?? "No"}</strong>
+        </div>
+
+        <div className="result-line">
+          <span>LLM Provider Status</span>
+          <strong>{agentRun.providerStatus}</strong>
+        </div>
+
+        {agentRun.lastDecision && (
+          <p className="disclaimer">Decision rationale: {agentRun.lastDecision.reasoningSummary}</p>
+        )}
       </section>
 
       <section className="grid-two">

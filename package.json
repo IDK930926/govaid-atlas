@@ -4,8 +4,10 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "vite",
+    "test": "tsx --test src/**/*.test.ts",
+    "dev": "tsx watch src/server.ts & vite --host 0.0.0.0",
+    "dev:server": "tsx watch src/server.ts",
+    "dev:client": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build"
   },
   "keywords": [],

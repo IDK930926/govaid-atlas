@@ -56,6 +56,33 @@ User Goal
 
 來源連結及規則子集分別記錄於 `src/evidence.ts` 與 `src/policies/`。目前政策規則只實作決賽 P0 所需子集，不代表完整政府資格審查系統；政策可能更新，使用前應再次查核最新官方資訊。
 
+## Agent Orchestrator
+
+- `src/agent/` contains the bounded agent runtime and tool allowlist.
+- LLM planning is server-side only; browser code never receives or stores the API key.
+- The deterministic rules engine remains the source of truth for eligibility calculations.
+- The agent may only call allowlisted tools (`evaluate_central_rules`, `evaluate_actual_scenario`, `evaluate_what_if_scenario`, `detect_policy_conflict`, `generate_decision_passport`, `get_policy_evidence`).
+- Missing required fields trigger `WAITING_FOR_HUMAN` and block automatic qualification changes.
+- If the provider is unavailable, the app fails safely and keeps the deterministic golden-case workflow working.
+
+### Environment
+
+Copy `.env.example` to a local `.env` file and set:
+
+```sh
+OPENAI_API_KEY=
+OPENAI_MODEL=
+```
+
+### Local startup
+
+```sh
+npm install
+npm run dev
+```
+
+The frontend and agent API run together locally. The agent endpoint is served from `/api/agent/plan`.
+
 ## Important Limitations
 
 - GovAid Atlas 僅提供資格預審與申辦導航，不代表主管機關核准。
