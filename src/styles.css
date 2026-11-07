@@ -443,3 +443,40 @@ button.full {
     grid-template-columns: 1fr;
   }
 }
+
+.benchmark-details {
+  margin-top: 18px;
+}
+
+.benchmark-details summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.benchmark-table {
+  margin-top: 14px;
+  display: grid;
+}
+
+.benchmark-row {
+  display: grid;
+  grid-template-columns:
+    52px
+    minmax(180px, 1fr)
+    minmax(100px, 180px)
+    minmax(100px, 180px)
+    80px;
+
+  gap: 12px;
+  align-items: center;
+
+  padding: 10px 0;
+  border-top: 1px solid #edf0f2;
+  font-size: 12px;
+}
+
+@media (max-width: 820px) {
+  .benchmark-row {
+    grid-template-columns: 42px 1fr;
+  }
+}

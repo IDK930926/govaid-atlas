@@ -20,6 +20,10 @@ import {
   type RuntimeMetrics,
 } from "./metrics";
 
+import {
+  runBenchmark,
+} from "./benchmark";
+
 import centralRulesJson from "./policies/central-rent-115.json";
 import taipeiRulesJson from "./policies/taipei-rent-115.json";
 import newTaipeiRulesJson from "./policies/new-taipei-rent-115.json";
@@ -112,6 +116,12 @@ function App() {
   const [whatIfResult, setWhatIfResult] = useState<ScenarioResult | null>(null);
   const [passport, setPassport] = useState<DecisionPassport | null>(null);
   const [auditTrail, setAuditTrail] = useState<AuditEvent[]>([]);
+
+  const benchmarkResult =
+    useMemo(
+      () => runBenchmark(),
+      []
+    );
 
   const [
     currentRole,
@@ -892,6 +902,140 @@ function App() {
         <p className="disclaimer">
           Local latency 僅代表目前瀏覽器內 deterministic tools
           的本機執行時間，不代表正式部署後的網路或政府資料來源延遲。
+        </p>
+      </section>
+
+      <section className="card">
+        <div className="card-header">
+          <div>
+            <p className="eyebrow">
+              EVALUATION
+            </p>
+
+            <h2>
+              Deterministic Benchmark
+            </h2>
+          </div>
+
+          <StatusBadge
+            status={
+              benchmarkResult.summary.failedCases === 0
+                ? "PASS"
+                : "FAIL"
+            }
+          />
+        </div>
+
+        <p className="conflict-note">
+          本結果僅代表目前 P0 的 12 組 deterministic
+          測試案例，不代表真實世界整體準確率。
+          Manual 與一般 RAG baseline 尚未量測，因此不填入假設數字。
+        </p>
+
+        <div className="metrics-grid">
+          <MetricItem
+            label="Test Cases"
+            value={
+              benchmarkResult.summary.totalCases
+            }
+          />
+
+          <MetricItem
+            label="Passed"
+            value={
+              `${benchmarkResult.summary.passedCases}/${benchmarkResult.summary.totalCases}`
+            }
+          />
+
+          <MetricItem
+            label="P0 Case Pass Rate"
+            value={
+              `${benchmarkResult.summary.accuracyPercent}%`
+            }
+          />
+
+          <MetricItem
+            label="Evidence Coverage"
+            value={
+              `${benchmarkResult.summary.evidenceCoveragePercent}%`
+            }
+          />
+
+          <MetricItem
+            label="Unsafe Certainty"
+            value={
+              benchmarkResult.summary.unsafeCertaintyCount
+            }
+          />
+
+          <MetricItem
+            label="Conflict Tests"
+            value={
+              `${benchmarkResult.summary.conflictCasesPassed}/${benchmarkResult.summary.conflictCases}`
+            }
+          />
+
+          <MetricItem
+            label="Recovery Tests"
+            value={
+              `${benchmarkResult.summary.recoveryCasesPassed}/${benchmarkResult.summary.recoveryCases}`
+            }
+          />
+
+          <MetricItem
+            label="Manual Baseline"
+            value="NOT MEASURED"
+          />
+
+          <MetricItem
+            label="RAG Baseline"
+            value="NOT MEASURED"
+          />
+        </div>
+
+        <details className="benchmark-details">
+          <summary>
+            查看 12 組測試案例
+          </summary>
+
+          <div className="benchmark-table">
+            {benchmarkResult.results.map(
+              (result) => (
+                <div
+                  className="benchmark-row"
+                  key={result.id}
+                >
+                  <strong>{result.id}</strong>
+
+                  <span>
+                    {result.name}
+                  </span>
+
+                  <span>
+                    {result.expected}
+                  </span>
+
+                  <span>
+                    {result.actual}
+                  </span>
+
+                  <StatusBadge
+                    status={
+                      result.passed
+                        ? "PASS"
+                        : "FAIL"
+                    }
+                  />
+                </div>
+              )
+            )}
+          </div>
+        </details>
+
+        <p className="disclaimer">
+          Evaluation dataset 為競賽 P0
+          之合成 deterministic test cases；
+          不包含真人使用者測試或一般 RAG baseline。
         </p>
       </section>
 
