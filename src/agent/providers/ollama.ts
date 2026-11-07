@@ -92,19 +92,17 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
   const payload = {
     model,
     stream: false,
-    format: {
-      type: "json_schema",
-      name: "agent_decision",
-      schema,
-    },
+    format: schema,
     options: {
       temperature: 0,
+      num_predict: 512,
     },
+    think: false,
     messages: [
       {
         role: "system",
         content:
-          "You are the planning and tool-routing layer for GovAid Atlas. You do not determine eligibility. You may only choose from allowed tools. All policy eligibility status comes exclusively from deterministic tool results. Never convert UNCERTAIN into PASS or FAIL. Never invent policy evidence. If required applicant data is missing, ask for human confirmation. If policies conflict, request human review. Return only the required structured decision.",
+          "You are the planning and tool-routing layer for GovAid Atlas. You do not determine eligibility. You may only choose from allowed tools. All policy eligibility status comes exclusively from deterministic tool results. Never convert UNCERTAIN into PASS or FAIL. Never invent policy evidence. If required applicant data is missing, ask for human confirmation and include a non-empty humanQuestion. If policies conflict, request human review. Return only the required structured decision.",
       },
       {
         role: "user",
@@ -126,6 +124,7 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
         provider: "OLLAMA",
         providerStatus: "UNAVAILABLE",
         model,
+        callAttempted: true,
         error: `OLLAMA_REQUEST_FAILED: ${response.status} ${text}`,
       };
     }
@@ -153,6 +152,7 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
         provider: "OLLAMA",
         providerStatus: "UNAVAILABLE",
         model,
+        callAttempted: true,
         error: "OLLAMA_DECISION_PARSE_FAILED",
       };
     }
@@ -162,6 +162,7 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
         provider: "OLLAMA",
         providerStatus: "UNAVAILABLE",
         model,
+        callAttempted: true,
         error: "AGENT_DECISION_SCHEMA_INVALID",
       };
     }
@@ -170,6 +171,7 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
       provider: "OLLAMA",
       providerStatus: "AVAILABLE",
       model,
+      callAttempted: true,
       decision: parsed as AgentDecision,
       usage: {
         inputTokens: typeof json.prompt_eval_count === "number" ? json.prompt_eval_count : undefined,
@@ -186,6 +188,7 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
       provider: "OLLAMA",
       providerStatus: "UNAVAILABLE",
       model,
+      callAttempted: true,
       error: error instanceof Error ? `OLLAMA_REQUEST_ERROR: ${error.message}` : "AGENT_PROVIDER_UNAVAILABLE",
     };
   }

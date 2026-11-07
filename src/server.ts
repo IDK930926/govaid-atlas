@@ -82,6 +82,8 @@ const server = createServer(async (request, response) => {
       metadata: {
         usage: llmResult.usage ?? null,
         error: llmResult.error ?? null,
+        llmCallAttempted: llmResult.callAttempted ?? false,
+        llmCallSucceeded: llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision),
       },
     };
 

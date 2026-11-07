@@ -90,6 +90,7 @@ export async function callOpenAIPlanner(input: ProviderPlannerInput): Promise<Pr
         provider: "OPENAI",
         providerStatus: "UNAVAILABLE",
         model,
+        callAttempted: true,
         error: `OpenAI API error: ${response.status} ${text}`,
       };
     }
@@ -115,6 +116,7 @@ export async function callOpenAIPlanner(input: ProviderPlannerInput): Promise<Pr
         provider: "OPENAI",
         providerStatus: "UNAVAILABLE",
         model,
+        callAttempted: true,
         error: "OPENAI_DECISION_PARSE_FAILED",
       };
     }
@@ -124,6 +126,7 @@ export async function callOpenAIPlanner(input: ProviderPlannerInput): Promise<Pr
         provider: "OPENAI",
         providerStatus: "UNAVAILABLE",
         model,
+        callAttempted: true,
         error: "AGENT_DECISION_SCHEMA_INVALID",
       };
     }
@@ -132,6 +135,7 @@ export async function callOpenAIPlanner(input: ProviderPlannerInput): Promise<Pr
       provider: "OPENAI",
       providerStatus: "AVAILABLE",
       model,
+      callAttempted: true,
       decision: parsed as AgentDecision,
       usage: {
         inputTokens: json.usage?.input_tokens,
@@ -144,6 +148,7 @@ export async function callOpenAIPlanner(input: ProviderPlannerInput): Promise<Pr
       provider: "OPENAI",
       providerStatus: "UNAVAILABLE",
       model,
+      callAttempted: true,
       error: error instanceof Error ? error.message : "OpenAI request failed.",
     };
   }

@@ -20,6 +20,7 @@ export type ProviderPlannerResult = {
   provider: ProviderName;
   providerStatus: ProviderStatus;
   model: string;
+  callAttempted?: boolean;
   decision?: AgentDecision;
   usage?: ProviderUsage;
   error?: string;

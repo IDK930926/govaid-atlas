@@ -1,6 +1,6 @@
 # GovAid Atlas
 
-GovAid Atlas 是育兒／租屋補助資格預審與申辦導航的概念 Demo；目前完成的 P0 範圍聚焦於租金補貼 Golden Case，以 deterministic Rules Engine 執行明確的資格條件判斷。此版本以本機 React UI 呈現流程，尚未串接 LLM、Agent orchestration service 或政府系統。
+GovAid Atlas 是育兒／租屋補助資格預審與申辦導航的概念 Demo；目前完成的 P0 範圍聚焦於租金補貼 Golden Case，以 deterministic Rules Engine 執行明確的資格條件判斷，並由本機 Ollama 提供 agent planning 與 tool routing。
 
 ## Current P0 Scope
 
@@ -14,6 +14,9 @@ GovAid Atlas 是育兒／租屋補助資格預審與申辦導航的概念 Demo�
 - Decision Passport
 - Audit Trail
 - React / Vite demo UI
+- 可編輯的 User Goal 與本機 Agent Runtime
+- Human-in-the-loop 回答與 Agent resume
+- Ollama 真實呼叫次數及 provider 回報的 token usage
 - 可重設的 demo flow
 
 ## Golden Case
@@ -44,7 +47,7 @@ User Goal
 → Audit Trail
 ```
 
-目前 P0 流程由明確的 UI 操作驅動；上圖描述的是 Demo 的案例處理步驟，不代表已整合 LLM 或獨立 Agent orchestration。
+Agent 以本機 Ollama 規劃並選擇 allowlisted tools；資格判斷與人工回答後的重新評估仍由 deterministic Rules Engine 執行。地方政策缺少必要資料時，結果會保持 `UNCERTAIN`。
 
 ## Policy Sources
 
@@ -65,6 +68,8 @@ User Goal
 - Missing required fields trigger `WAITING_FOR_HUMAN` and block automatic qualification changes.
 - If the provider is unavailable, the app fails safely and keeps the deterministic golden-case workflow working.
 - Local inference uses Ollama with `AGENT_PROVIDER=ollama`, `OLLAMA_BASE_URL=http://127.0.0.1:11434`, and `OLLAMA_MODEL=qwen3.5:4b`.
+- Edit the User Goal in the Agent Runtime card and select **Run Agent** to submit a live planning request.
+- When a run waits for home-ownership input, either answer resumes the orchestrator and reruns deterministic rules before continuing policy routing.
 
 ### Local Agent Setup
 
@@ -85,7 +90,7 @@ User Goal
    npm install
    npm run dev
    ```
-6. Verify the provider shows `AVAILABLE` on `/api/health`.
+6. Verify the provider shows `AVAILABLE` on `/api/health`, then run an editable goal from the Agent Runtime card.
 
 No API key is required for the local provider.
 
@@ -116,8 +121,9 @@ The frontend and agent API run together locally. The agent endpoint is served fr
 - 未串接任何政府系統或政府 API。
 - 不使用真實個資；Demo 使用 Synthetic Persona。
 - 目前只完成 P0 Golden Case。
-- 此版本尚未串接 LLM、Agent orchestration service。
-- Rule Conflict、Permission / Role control、Token / Cost evaluation、Benchmark 尚未完成。
+- 尚未串接政府系統或政府 API。
+- Cloud API Cost 為本機 Ollama 呼叫的 `$0`；token 欄位只呈現 provider 實際回報值，缺少 usage 時顯示 `N/A`。
+- Rule Conflict、Permission / Role control 與 Benchmark 僅為合成資料 demo。
 - 尚未進行真人 usability validation。
 - 示範規則是有限子集，不可取代正式申請或主管機關審查。
 

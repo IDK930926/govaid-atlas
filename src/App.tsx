@@ -1,4 +1,4 @@
-import {useMemo, useState} from "react";
+import {useEffect, useMemo, useState} from "react";
 
 import {
   detectConflicts,
@@ -15,6 +15,8 @@ import {
 import {
   createRuntimeMetrics,
   measureSync,
+  recordLlmCall,
+  recordRuntimeCall,
   recordRuntimeOperation,
   type RuntimeCounterKey,
   type RuntimeMetrics,
@@ -58,6 +60,7 @@ import {
 } from "./agent/orchestrator";
 
 import type { AgentRun } from "./agent/types";
+import type { ProviderName, ProviderPlannerResult, ProviderUsage } from "./agent/providers/types";
 
 const centralRules = centralRulesJson as PolicyRule[];
 const taipeiRules = taipeiRulesJson as PolicyRule[];
@@ -95,6 +98,25 @@ const whatIfScenario: AddressScenario = {
 
 const agentGoal = "我目前住在新北市永和區，每月租金 13,500 元。如果搬到臺北市文山區、租金 15,500 元，我有哪些租屋補助可以考慮？還缺什麼資料？";
 
+type ProviderInfo = {
+  provider: ProviderName;
+  providerStatus: "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN";
+  model: string;
+};
+
+type AgentPlanResponse = {
+  provider: ProviderName;
+  providerStatus: "AVAILABLE" | "UNAVAILABLE";
+  model: string;
+  decision?: ProviderPlannerResult["decision"];
+  metadata?: {
+    usage?: ProviderUsage | null;
+    error?: string | null;
+    llmCallAttempted?: boolean;
+    llmCallSucceeded?: boolean;
+  };
+};
+
 const sensitiveProfile:
   SensitiveProfile = {
   name: "陳同學",
@@ -118,8 +140,31 @@ function StatusBadge({status}: {status: string}) {
   );
 }
 
+function getCompletedToolResult<T>(run: AgentRun, toolName: string): T | null {
+  const completed = [...run.auditTrail].reverse().find((event) => {
+    if (event.action !== "AGENT_TOOL_COMPLETED" || !event.output || typeof event.output !== "object") {
+      return false;
+    }
+    return (event.output as {toolName?: unknown}).toolName === toolName;
+  });
+  if (!completed?.output || typeof completed.output !== "object") {
+    return null;
+  }
+  const result = (completed.output as {result?: unknown}).result;
+  return result === undefined ? null : result as T;
+}
+
 function App() {
   const [applicant, setApplicant] = useState<ApplicantProfile>(initialApplicant);
+  const [userGoal, setUserGoal] = useState(agentGoal);
+  const [agentRunning, setAgentRunning] = useState(false);
+  const [providerInfo, setProviderInfo] = useState<ProviderInfo>({
+    provider: "OLLAMA",
+    providerStatus: "UNKNOWN",
+    model: "qwen3.5:4b",
+  });
+  const [llmRuntimeActive, setLlmRuntimeActive] = useState(false);
+  const [providerError, setProviderError] = useState<string | null>(null);
   const [stage, setStage] = useState<DemoStage>("IDLE");
   const [centralEvaluation, setCentralEvaluation] = useState<RuleEvaluation[]>([]);
   const [actualResult, setActualResult] = useState<ScenarioResult | null>(null);
@@ -162,6 +207,38 @@ function App() {
     useState<RuntimeMetrics>(
       createRuntimeMetrics()
     );
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch("/api/health", {signal: controller.signal})
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Provider health request failed: ${response.status}`);
+        }
+        return response.json() as Promise<{
+          provider?: ProviderName;
+          providerStatus?: "AVAILABLE" | "UNAVAILABLE";
+          model?: string;
+          error?: string | null;
+        }>;
+      })
+      .then((health) => {
+        setProviderInfo({
+          provider: health.provider ?? "UNAVAILABLE",
+          providerStatus: health.providerStatus ?? "UNAVAILABLE",
+          model: health.model ?? "N/A",
+        });
+        setProviderError(health.error ?? null);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+        setProviderInfo((current) => ({...current, providerStatus: "UNAVAILABLE"}));
+        setProviderError(error instanceof Error ? error.message : "Provider health request failed.");
+      });
+    return () => controller.abort();
+  }, []);
 
   function audit(
     actor: AuditEvent["actor"],
@@ -331,33 +408,133 @@ function App() {
     ]);
   }
 
-  function confirmNoHome() {
-    const updatedApplicant = {...applicant, ownsHome: false};
+  function recordAgentToolMetrics(run: AgentRun, fromIndex = 0) {
+    setRuntimeMetrics((current) => run.auditTrail.slice(fromIndex).reduce((metrics, event) => {
+      if (event.action !== "AGENT_TOOL_REQUESTED" || !event.input || typeof event.input !== "object") {
+        return metrics;
+      }
+      const toolName = (event.input as {toolName?: unknown}).toolName;
+      if (toolName === "evaluate_central_rules") {
+        return recordRuntimeCall(metrics, "rulesEngineCalls");
+      }
+      if (toolName === "evaluate_actual_scenario" || toolName === "evaluate_what_if_scenario") {
+        return recordRuntimeCall(metrics, "scenarioEvaluations");
+      }
+      if (toolName === "generate_decision_passport") {
+        return recordRuntimeCall(metrics, "passportGenerations");
+      }
+      if (toolName === "detect_policy_conflict") {
+        return recordRuntimeCall(metrics, "conflictChecks");
+      }
+      return metrics;
+    }, current));
+  }
+
+  async function runCustomGoal() {
+    const goal = userGoal.trim();
+    if (!goal || agentRunning) {
+      return;
+    }
+
+    const freshApplicant = {...initialApplicant};
+    setAgentRunning(true);
+    setProviderError(null);
+    setLlmRuntimeActive(false);
+    setApplicant(freshApplicant);
+    setActualResult(null);
+    setWhatIfResult(null);
+    setPassport(null);
+    setCentralEvaluation([]);
+    setStage("IDLE");
+    setAgentRun({...createAgentRun(goal), status: "PLANNING"});
+    setAuditTrail([{
+      timestamp: new Date().toISOString(),
+      actor: "USER",
+      action: "CASE_CREATED",
+      input: freshApplicant,
+      policyVersion: "CENTRAL-RENT-115",
+    }]);
+
+    let plannerResult: ProviderPlannerResult;
+    try {
+      const response = await fetch("/api/agent/plan", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({goal, profile: freshApplicant}),
+      });
+      if (!response.ok) {
+        throw new Error(`Agent planner request failed: ${response.status}`);
+      }
+      const payload = await response.json() as AgentPlanResponse;
+      const usage = payload.metadata?.usage ?? undefined;
+      const succeeded = payload.metadata?.llmCallSucceeded === true;
+      plannerResult = {
+        provider: payload.provider,
+        providerStatus: payload.providerStatus,
+        model: payload.model,
+        decision: succeeded ? payload.decision : undefined,
+        usage: usage ?? undefined,
+        callAttempted: payload.metadata?.llmCallAttempted ?? false,
+        error: payload.metadata?.error ?? undefined,
+      };
+      setProviderInfo({
+        provider: payload.provider,
+        providerStatus: payload.providerStatus,
+        model: payload.model,
+      });
+      setProviderError(payload.metadata?.error ?? null);
+      setLlmRuntimeActive(succeeded);
+      if (plannerResult.callAttempted) {
+        setRuntimeMetrics((current) => recordLlmCall(current, usage ?? null, payload.provider === "OLLAMA"));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Agent planner request failed.";
+      setProviderInfo((current) => ({...current, providerStatus: "UNAVAILABLE"}));
+      setProviderError(message);
+      plannerResult = {
+        provider: "UNAVAILABLE",
+        providerStatus: "UNAVAILABLE",
+        model: providerInfo.model,
+        error: message,
+      };
+    }
+
+    const run = runAgenticGoldenCase(goal, freshApplicant, actualScenario, whatIfScenario, plannerResult);
+    setAgentRun(run);
+    recordAgentToolMetrics(run);
+    const centralResult = getCompletedToolResult<{evaluations?: RuleEvaluation[]}>(run, "evaluate_central_rules");
+    setCentralEvaluation(centralResult?.evaluations ?? []);
+    if (run.status === "WAITING_FOR_HUMAN") {
+      setStage("UNCERTAIN");
+    }
+    setAgentRunning(false);
+  }
+
+  function respondToHuman(ownsHome: boolean) {
+    if (agentRun.status !== "WAITING_FOR_HUMAN" || agentRunning) {
+      return;
+    }
+    const updatedApplicant = {...applicant, ownsHome};
+    const existingAuditCount = agentRun.auditTrail.length;
     setApplicant(updatedApplicant);
-    setAgentRun((current) => resumeAgentRun(current, updatedApplicant, actualScenario, whatIfScenario));
-    audit("USER", "FIELD_CONFIRMED", {field: "ownsHome", value: false});
+    audit("USER", "FIELD_CONFIRMED", {field: "ownsHome", value: ownsHome});
+    const resumed = resumeAgentRun(agentRun, updatedApplicant, actualScenario, whatIfScenario);
+    setAgentRun(resumed);
+    recordAgentToolMetrics(resumed, existingAuditCount);
 
-    const measured =
-      measureSync(() =>
-        evaluateRules(
-          centralRules,
-          updatedApplicant
-        )
-      );
-
-    const evaluation =
-      measured.result;
-
-    recordMetric(
-      "rulesEngineCalls",
-      measured.latencyMs
-    );
-    setCentralEvaluation(evaluation);
-    audit("RULE_ENGINE", "RE_EVALUATION", updatedApplicant, {
-      evaluations: evaluation,
-      overallStatus: getOverallStatus(evaluation),
-    });
-    setStage("CONFIRMED");
+    const centralResult = getCompletedToolResult<{evaluations?: RuleEvaluation[]}>(resumed, "evaluate_central_rules");
+    setCentralEvaluation(centralResult?.evaluations ?? []);
+    const actual = getCompletedToolResult<ScenarioResult>(resumed, "evaluate_actual_scenario");
+    const whatIf = getCompletedToolResult<ScenarioResult>(resumed, "evaluate_what_if_scenario");
+    const completedPassport = getCompletedToolResult<DecisionPassport>(resumed, "generate_decision_passport");
+    if (actual && whatIf && completedPassport) {
+      setActualResult(actual);
+      setWhatIfResult(whatIf);
+      setPassport(completedPassport);
+      setStage("PASSPORT");
+    } else {
+      setStage("UNCERTAIN");
+    }
   }
 
   function compareAddresses() {
@@ -449,6 +626,9 @@ function App() {
     setCurrentRole("APPLICANT");
     setRuntimeMetrics(createRuntimeMetrics());
     setAgentRun(createAgentRun(agentGoal));
+    setUserGoal(agentGoal);
+    setLlmRuntimeActive(false);
+    setProviderError(null);
   }
 
   function runConflictTest() {
@@ -490,6 +670,9 @@ function App() {
   }
 }
 
+  const displayedAuditTrail = [...auditTrail, ...agentRun.auditTrail]
+    .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
+
   return (
     <main className="app">
       <header className="topbar">
@@ -500,9 +683,7 @@ function App() {
         </div>
         <div className="top-actions">
           <button className="secondary" onClick={resetDemo}>Reset Demo</button>
-          <button className="secondary" onClick={() => setAgentRun(createAgentRun(agentGoal))}>New Agent Run</button>
           <button className="primary" onClick={startGoldenCase}>Start Golden Case</button>
-          <button className="primary" onClick={() => setAgentRun(runAgenticGoldenCase(agentGoal, applicant, actualScenario, whatIfScenario))}>Run Agentic Golden Case</button>
         </div>
       </header>
 
@@ -512,6 +693,24 @@ function App() {
       </section>
 
       <section className="card agent-runtime">
+        <form className="agent-goal-form" onSubmit={(event) => {
+          event.preventDefault();
+          void runCustomGoal();
+        }}>
+          <label htmlFor="agent-goal">User Goal</label>
+          <textarea
+            id="agent-goal"
+            rows={3}
+            value={userGoal}
+            onChange={(event) => setUserGoal(event.target.value)}
+            disabled={agentRunning}
+            required
+          />
+          <button className="primary" type="submit" disabled={agentRunning || !userGoal.trim()}>
+            {agentRunning ? "Running..." : "Run Agent"}
+          </button>
+        </form>
+
         <div className="card-header">
           <div>
             <p className="eyebrow">AGENT RUNTIME</p>
@@ -523,7 +722,7 @@ function App() {
         <div className="agent-grid">
           <div className="agent-meta">
             <span>User Goal</span>
-            <strong>{agentGoal}</strong>
+            <strong>{agentRun.goal}</strong>
           </div>
           <div className="agent-meta">
             <span>Current Step</span>
@@ -548,25 +747,45 @@ function App() {
           <strong>{agentRun.humanInputRequired ?? "No"}</strong>
         </div>
 
+        {agentRun.status === "WAITING_FOR_HUMAN" && agentRun.humanInputRequired === "本人是否持有住宅？" && (
+          <div className="human-response">
+            <strong>請選擇住宅持有狀態</strong>
+            <div className="human-response-actions">
+              <button className="secondary" onClick={() => respondToHuman(false)} disabled={agentRunning}>無自有住宅</button>
+              <button className="secondary" onClick={() => respondToHuman(true)} disabled={agentRunning}>有自有住宅</button>
+            </div>
+          </div>
+        )}
+
         <div className="result-line">
           <span>Provider</span>
-          <strong>OLLAMA LOCAL</strong>
+          <strong>{providerInfo.provider === "OLLAMA" ? "OLLAMA LOCAL" : providerInfo.provider}</strong>
         </div>
 
         <div className="result-line">
           <span>Model</span>
-          <strong>qwen3.5:4b</strong>
+          <strong>{providerInfo.model}</strong>
         </div>
 
         <div className="result-line">
           <span>Provider Status</span>
-          <strong>{agentRun.providerStatus === "UNKNOWN" ? "AVAILABLE" : agentRun.providerStatus}</strong>
+          <strong>{providerInfo.providerStatus}</strong>
         </div>
 
         <div className="result-line">
-          <span>LLM Provider Status</span>
-          <strong>{agentRun.providerStatus}</strong>
+          <span>LLM Runtime</span>
+          <strong>
+            {providerInfo.providerStatus === "UNKNOWN"
+              ? "CHECKING"
+              : providerInfo.providerStatus === "UNAVAILABLE"
+                ? "UNAVAILABLE"
+                : llmRuntimeActive
+                  ? "ACTIVE"
+                  : "READY"}
+          </strong>
         </div>
+
+        {providerError && <p className="provider-error" role="status">{providerError}</p>}
 
         {agentRun.lastDecision && (
           <p className="disclaimer">Decision rationale: {agentRun.lastDecision.reasoningSummary}</p>
@@ -589,7 +808,6 @@ function App() {
             <div className="warning-box">
               <strong>需要人工確認</strong>
               <p>缺少必要資料：本人是否持有住宅。Agent 暫停資格推論，不自行猜測。</p>
-              <button className="primary" onClick={confirmNoHome}>確認本人無自有住宅</button>
             </div>
           )}
         </article>
@@ -906,8 +1124,11 @@ function App() {
         </div>
 
         <p className="conflict-note">
-          以下為目前 P0 在瀏覽器本機實際量測的執行指標。
-          P0 尚未連接 LLM，因此 Token 與模型成本不填入假設數字。
+          {providerInfo.providerStatus === "AVAILABLE"
+            ? "Agent planning 與 tool routing 使用本機 Ollama；政策資格仍由 deterministic rule engine 判定。"
+            : providerInfo.providerStatus === "UNAVAILABLE"
+              ? "LLM provider currently unavailable; deterministic safety workflow remains available。"
+              : "正在確認 LLM provider 狀態；政策資格由 deterministic rule engine 判定。"}
         </p>
 
         <div className="metrics-grid">
@@ -963,18 +1184,37 @@ function App() {
           />
 
           <MetricItem
+            label="Provider"
+            value={providerInfo.provider === "OLLAMA" ? "OLLAMA LOCAL" : providerInfo.provider}
+          />
+
+          <MetricItem
+            label="Model"
+            value={providerInfo.model}
+          />
+
+          <MetricItem
             label="LLM Calls"
-            value="0 · not connected"
+            value={runtimeMetrics.llmCalls}
           />
 
           <MetricItem
-            label="Input / Output Tokens"
-            value="N/A"
+            label="Input Tokens"
+            value={runtimeMetrics.inputTokens ?? "N/A"}
           />
 
           <MetricItem
-            label="Estimated Model Cost"
-            value="N/A"
+            label="Output Tokens"
+            value={runtimeMetrics.outputTokens ?? "N/A"}
+          />
+
+          <MetricItem
+            label="Cloud API Cost"
+            value={runtimeMetrics.estimatedCostUsd === null
+              ? "N/A"
+              : runtimeMetrics.estimatedCostUsd === 0
+                ? "$0"
+                : `$${runtimeMetrics.estimatedCostUsd.toFixed(2)}`}
           />
         </div>
 
@@ -1121,13 +1361,13 @@ function App() {
       <section className="card">
         <div className="card-header">
           <h2>Audit Trail</h2>
-          <span className="counter">{auditTrail.length} events</span>
+          <span className="counter">{displayedAuditTrail.length} events</span>
         </div>
-        {auditTrail.length === 0 ? (
+        {displayedAuditTrail.length === 0 ? (
           <p className="empty">尚未建立 Case。</p>
         ) : (
           <div className="audit-list">
-            {auditTrail.map((event, index) => (
+            {displayedAuditTrail.map((event, index) => (
               <div className="audit-row" key={event.timestamp + index}>
                 <span className="audit-number">{String(index + 1).padStart(2, "0")}</span>
                 <span className="audit-actor">{event.actor}</span>
