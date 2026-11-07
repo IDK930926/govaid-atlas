@@ -549,6 +549,21 @@ function App() {
         </div>
 
         <div className="result-line">
+          <span>Provider</span>
+          <strong>OLLAMA LOCAL</strong>
+        </div>
+
+        <div className="result-line">
+          <span>Model</span>
+          <strong>qwen3.5:4b</strong>
+        </div>
+
+        <div className="result-line">
+          <span>Provider Status</span>
+          <strong>{agentRun.providerStatus === "UNKNOWN" ? "AVAILABLE" : agentRun.providerStatus}</strong>
+        </div>
+
+        <div className="result-line">
           <span>LLM Provider Status</span>
           <strong>{agentRun.providerStatus}</strong>
         </div>

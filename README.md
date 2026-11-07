@@ -58,18 +58,45 @@ User Goal
 
 ## Agent Orchestrator
 
-- `src/agent/` contains the bounded agent runtime and tool allowlist.
+- `src/agent/` contains the bounded agent runtime, tool allowlist, and provider abstraction.
 - LLM planning is server-side only; browser code never receives or stores the API key.
 - The deterministic rules engine remains the source of truth for eligibility calculations.
 - The agent may only call allowlisted tools (`evaluate_central_rules`, `evaluate_actual_scenario`, `evaluate_what_if_scenario`, `detect_policy_conflict`, `generate_decision_passport`, `get_policy_evidence`).
 - Missing required fields trigger `WAITING_FOR_HUMAN` and block automatic qualification changes.
 - If the provider is unavailable, the app fails safely and keeps the deterministic golden-case workflow working.
+- Local inference uses Ollama with `AGENT_PROVIDER=ollama`, `OLLAMA_BASE_URL=http://127.0.0.1:11434`, and `OLLAMA_MODEL=qwen3.5:4b`.
+
+### Local Agent Setup
+
+1. Install Ollama.
+2. Pull the local model:
+   ```sh
+   ollama pull qwen3.5:4b
+   ```
+3. Start Ollama locally.
+4. Set the environment for local inference:
+   ```sh
+   AGENT_PROVIDER=ollama
+   OLLAMA_BASE_URL=http://127.0.0.1:11434
+   OLLAMA_MODEL=qwen3.5:4b
+   ```
+5. Start GovAid Atlas:
+   ```sh
+   npm install
+   npm run dev
+   ```
+6. Verify the provider shows `AVAILABLE` on `/api/health`.
+
+No API key is required for the local provider.
 
 ### Environment
 
 Copy `.env.example` to a local `.env` file and set:
 
 ```sh
+AGENT_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3.5:4b
 OPENAI_API_KEY=
 OPENAI_MODEL=
 ```

@@ -1,5 +1,6 @@
 import type { ApplicantProfile, AddressScenario } from "../types";
 import { callTool, listAllowedTools } from "./tools";
+import { validateStructuredAgentDecision } from "./providers/types";
 import type { AgentDecision, AgentRun, AgentStatus, ToolExecutionResult } from "./types";
 
 export const MAX_AGENT_STEPS = 8;
@@ -37,18 +38,7 @@ export function createAgentRun(goal: string): AgentRun {
 }
 
 export function validateAgentDecision(value: unknown): value is AgentDecision {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const decision = value as Record<string, unknown>;
-  const allowedActions = new Set(["CALL_TOOL", "ASK_HUMAN", "COMPLETE", "HUMAN_REVIEW_REQUIRED"]);
-
-  return (
-    typeof decision.reasoningSummary === "string" &&
-    typeof decision.nextAction === "string" &&
-    allowedActions.has(decision.nextAction)
-  );
+  return validateStructuredAgentDecision(value);
 }
 
 export function appendAuditTrail(

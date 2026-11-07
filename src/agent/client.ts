@@ -1,134 +1,53 @@
-import type { AgentDecision } from "./types";
+import { getOllamaModel, healthCheckOllama, isOllamaConfigured, callOllamaPlanner } from "./providers/ollama";
+import { getOpenAIModel, healthCheckOpenAI, isOpenAIConfigured, callOpenAIPlanner } from "./providers/openai";
+import type { ProviderHealth, ProviderPlannerInput, ProviderPlannerResult, ProviderName } from "./providers/types";
 
-const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+export { getOllamaModel, isOllamaConfigured, callOllamaPlanner };
+export { getOpenAIModel, isOpenAIConfigured, callOpenAIPlanner };
+export type { ProviderHealth, ProviderPlannerInput, ProviderPlannerResult, ProviderName };
 
-function getEnv(): Record<string, string | undefined> {
-  if (typeof process === "undefined" || !process.env) {
-    return {};
+export function getConfiguredProviderName(): ProviderName {
+  const raw = (process.env?.AGENT_PROVIDER ?? "ollama").trim().toLowerCase();
+  if (raw === "openai") {
+    return "OPENAI";
   }
-
-  return process.env;
+  if (raw === "ollama") {
+    return "OLLAMA";
+  }
+  return "UNAVAILABLE";
 }
 
-export function getOpenAIModel(): string {
-  return getEnv().OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL;
-}
-
-export function isOpenAIConfigured(): boolean {
-  return Boolean(getEnv().OPENAI_API_KEY);
-}
-
-export async function callOpenAIPlanner(input: {
-  goal: string;
-  availableTools: string[];
-  structuredSchema?: unknown;
-}): Promise<{
-  providerStatus: "AVAILABLE" | "UNAVAILABLE";
-  model: string;
-  decision?: AgentDecision;
-  usage?: {
-    inputTokens?: number;
-    outputTokens?: number;
-    totalTokens?: number;
+export async function getProviderHealth(): Promise<ProviderHealth> {
+  const provider = getConfiguredProviderName();
+  if (provider === "OLLAMA") {
+    return healthCheckOllama();
+  }
+  if (provider === "OPENAI") {
+    return healthCheckOpenAI();
+  }
+  return {
+    provider: "UNAVAILABLE",
+    providerStatus: "UNAVAILABLE",
+    model: getOllamaModel(),
+    error: "AGENT_PROVIDER_UNAVAILABLE",
   };
-  error?: string;
-}> {
-  const apiKey = getEnv().OPENAI_API_KEY;
-  const model = getOpenAIModel();
+}
 
-  if (!apiKey) {
-    return {
-      providerStatus: "UNAVAILABLE",
-      model,
-      error: "OPENAI_API_KEY is missing.",
-    };
+export async function callPlanner(input: ProviderPlannerInput): Promise<ProviderPlannerResult> {
+  const provider = getConfiguredProviderName();
+
+  if (provider === "OLLAMA") {
+    return callOllamaPlanner(input);
   }
 
-  const payload = {
-    model,
-    input: [
-      {
-        role: "user",
-        content: `Create a short structured plan for this goal. Goal: ${input.goal}. Available tools: ${input.availableTools.join(", ")}. Use only the listed tools.`,
-      },
-    ],
-    response_format: {
-      type: "json_schema",
-      json_schema: {
-        name: "agent_decision",
-        schema: {
-          type: "object",
-          properties: {
-            reasoningSummary: { type: "string" },
-            nextAction: {
-              type: "string",
-              enum: ["CALL_TOOL", "ASK_HUMAN", "COMPLETE", "HUMAN_REVIEW_REQUIRED"],
-            },
-            toolName: { type: "string" },
-            toolArguments: { type: "object" },
-            humanQuestion: { type: "string" },
-          },
-          required: ["reasoningSummary", "nextAction"],
-          additionalProperties: false,
-        },
-      },
-    },
+  if (provider === "OPENAI") {
+    return callOpenAIPlanner(input);
+  }
+
+  return {
+    provider: "UNAVAILABLE",
+    providerStatus: "UNAVAILABLE",
+    model: getOllamaModel(),
+    error: "AGENT_PROVIDER_UNAVAILABLE",
   };
-
-  try {
-    const response = await fetch("https://api.openai.com/v1/responses", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      return {
-        providerStatus: "UNAVAILABLE",
-        model,
-        error: `OpenAI API error: ${response.status} ${text}`,
-      };
-    }
-
-    const json = (await response.json()) as {
-      output?: Array<{
-        content?: Array<{
-          type?: string;
-          text?: string;
-        }>;
-      }>;
-      usage?: {
-        input_tokens?: number;
-        output_tokens?: number;
-        total_tokens?: number;
-      };
-    };
-
-    const textPayload = json.output
-      ?.flatMap((section) => section.content ?? [])
-      .find((part) => part.type === "output_text")?.text ?? "{}";
-
-    const parsed = JSON.parse(textPayload) as AgentDecision;
-
-    return {
-      providerStatus: "AVAILABLE",
-      model,
-      decision: parsed,
-      usage: {
-        inputTokens: json.usage?.input_tokens,
-        outputTokens: json.usage?.output_tokens,
-        totalTokens: json.usage?.total_tokens,
-      },
-    };
-  } catch (error) {
-    return {
-      providerStatus: "UNAVAILABLE",
-      model,
-      error: error instanceof Error ? error.message : "OpenAI request failed.",
-    };
-  }
 }
