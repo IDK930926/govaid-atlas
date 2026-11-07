@@ -9,7 +9,6 @@ export type RuntimeMetrics = {
   totalLatencyMs: number;
   lastLatencyMs: number | null;
 
-  // P0 尚未連接 LLM，所以必須保持真實
   llmCalls: number;
   inputTokens: number | null;
   outputTokens: number | null;
@@ -81,5 +80,32 @@ export function recordRuntimeOperation(
 
     lastLatencyMs:
       latencyMs,
+  };
+}
+
+export function recordLlmCall(
+  metrics: RuntimeMetrics,
+  usage: {
+    inputTokens?: number;
+    outputTokens?: number;
+  } | null,
+  isLocalProvider: boolean
+): RuntimeMetrics {
+  return {
+    ...metrics,
+    llmCalls: metrics.llmCalls + 1,
+    inputTokens: usage?.inputTokens ?? null,
+    outputTokens: usage?.outputTokens ?? null,
+    estimatedCostUsd: isLocalProvider ? 0 : null,
+  };
+}
+
+export function recordRuntimeCall(
+  metrics: RuntimeMetrics,
+  counter: RuntimeCounterKey
+): RuntimeMetrics {
+  return {
+    ...metrics,
+    [counter]: metrics[counter] + 1,
   };
 }

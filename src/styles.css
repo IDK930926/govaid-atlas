@@ -136,6 +136,62 @@ button.full {
   margin-bottom: 20px;
 }
 
+.agent-goal-form {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+
+.agent-goal-form label,
+.human-response > strong {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.agent-goal-form textarea {
+  width: 100%;
+  min-height: 84px;
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid #d7dde3;
+  border-radius: 10px;
+  color: inherit;
+  font: inherit;
+  line-height: 1.6;
+}
+
+.agent-goal-form button {
+  justify-self: start;
+}
+
+.agent-goal-form button:disabled,
+.human-response button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.human-response {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #f0dfad;
+  border-radius: 12px;
+  background: #fff9ea;
+}
+
+.human-response-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.provider-error {
+  margin: 14px 0 0;
+  color: #9d2828;
+  font-size: 13px;
+}
+
 .agent-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

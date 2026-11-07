@@ -63,7 +63,7 @@ export type EvidenceRecord = {
 
 export type AuditEvent = {
   timestamp: string;
-  actor: "USER" | "AGENT" | "RULE_ENGINE" | "SYSTEM";
+  actor: "USER" | "AGENT" | "RULE_ENGINE" | "SYSTEM" | "LLM";
   action: string;
   input?: unknown;
   output?: unknown;

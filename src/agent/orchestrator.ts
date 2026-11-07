@@ -1,6 +1,8 @@
 import type { ApplicantProfile, AddressScenario } from "../types";
 import { callTool, listAllowedTools } from "./tools";
+import { validateStructuredAgentDecision } from "./providers/types";
 import type { AgentDecision, AgentRun, AgentStatus, ToolExecutionResult } from "./types";
+import type { ProviderPlannerResult } from "./providers/types";
 
 export const MAX_AGENT_STEPS = 8;
 
@@ -37,18 +39,7 @@ export function createAgentRun(goal: string): AgentRun {
 }
 
 export function validateAgentDecision(value: unknown): value is AgentDecision {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
-  const decision = value as Record<string, unknown>;
-  const allowedActions = new Set(["CALL_TOOL", "ASK_HUMAN", "COMPLETE", "HUMAN_REVIEW_REQUIRED"]);
-
-  return (
-    typeof decision.reasoningSummary === "string" &&
-    typeof decision.nextAction === "string" &&
-    allowedActions.has(decision.nextAction)
-  );
+  return validateStructuredAgentDecision(value);
 }
 
 export function appendAuditTrail(
@@ -123,26 +114,34 @@ export function runAgenticGoldenCase(
   goal: string,
   applicant: ApplicantProfile,
   actualScenario: AddressScenario,
-  whatIfScenario: AddressScenario
+  whatIfScenario: AddressScenario,
+  plannerResult?: ProviderPlannerResult
 ): AgentRun {
   let run = createAgentRun(goal);
   run = appendAuditTrail(run, "AGENT_PLAN_CREATED", { goal, plan: run.plan }, run.plan, "AGENTIC-PLAN");
   run.status = "PLANNING";
   run.currentStep = "Planning goal and allowed tools";
 
-  const decision = decideNextStep({
+  const fallbackDecision = decideNextStep({
     goal,
     applicant,
   });
-
+  const decision = plannerResult?.decision ?? fallbackDecision;
   run.lastDecision = decision;
-
-  if (decision.nextAction === "ASK_HUMAN") {
-    run.status = "WAITING_FOR_HUMAN";
-    run.currentStep = "Waiting for human confirmation";
-    run.humanInputRequired = decision.humanQuestion ?? "Please provide missing information.";
-    run = appendAuditTrail(run, "AGENT_WAITING_FOR_HUMAN", { missingField: "ownsHome" }, decision, "AGENTIC-ORCHESTRATOR");
-    return run;
+  if (plannerResult) {
+    run.providerStatus = plannerResult.providerStatus;
+    run = appendAuditTrail(
+      run,
+      plannerResult.providerStatus === "AVAILABLE" && plannerResult.decision
+        ? "AGENT_LLM_CALL_COMPLETED"
+        : "AGENT_LLM_CALL_FAILED",
+      { provider: plannerResult.provider, model: plannerResult.model },
+      plannerResult.decision
+        ? { decision: plannerResult.decision, usage: plannerResult.usage }
+        : { error: plannerResult.error },
+      "AGENTIC-PLANNER",
+      plannerResult.providerStatus === "AVAILABLE" && plannerResult.decision ? "LLM" : "SYSTEM"
+    );
   }
 
   const toolName = "evaluate_central_rules" as const;
@@ -153,12 +152,14 @@ export function runAgenticGoldenCase(
   const toolResult = callTool(toolName, { profile: applicant });
   run.toolResult = toolResult;
   run.stepsTaken += 1;
-  run = appendAuditTrail(run, "AGENT_TOOL_REQUESTED", { toolName }, toolResult, "CENTRAL-RENT-115", "AGENT");
+  run = appendAuditTrail(run, "AGENT_TOOL_REQUESTED", { toolName }, undefined, "CENTRAL-RENT-115", "AGENT");
+  run = appendAuditTrail(run, "AGENT_TOOL_COMPLETED", { toolName }, toolResult, "CENTRAL-RENT-115", "AGENT");
 
   if (toolResult.status === "UNCERTAIN") {
     run.status = "WAITING_FOR_HUMAN";
     run.currentStep = "Deterministic result is uncertain and requires human input";
-    run.humanInputRequired = "本人是否持有住宅";
+    run.humanInputRequired = "本人是否持有住宅？";
+    run.lastDecision = decideNextStep({ goal, applicant, lastToolResult: toolResult });
     run = appendAuditTrail(run, "AGENT_WAITING_FOR_HUMAN", { missingField: "ownsHome" }, toolResult, "CENTRAL-RENT-115", "AGENT");
     return run;
   }
@@ -167,12 +168,16 @@ export function runAgenticGoldenCase(
     profile: applicant,
     scenario: actualScenario,
   });
+  run.lastToolCall = "evaluate_actual_scenario";
+  run = appendAuditTrail(run, "AGENT_TOOL_REQUESTED", { toolName: "evaluate_actual_scenario" }, undefined, "ACTUAL-SCENARIO");
   run = appendAuditTrail(run, "AGENT_TOOL_COMPLETED", { toolName: "evaluate_actual_scenario" }, scenarioTool, "ACTUAL-SCENARIO");
 
   const whatIfTool = callTool("evaluate_what_if_scenario", {
     profile: applicant,
     scenario: whatIfScenario,
   });
+  run.lastToolCall = "evaluate_what_if_scenario";
+  run = appendAuditTrail(run, "AGENT_TOOL_REQUESTED", { toolName: "evaluate_what_if_scenario" }, undefined, "WHAT-IF-SCENARIO");
   run = appendAuditTrail(run, "AGENT_TOOL_COMPLETED", { toolName: "evaluate_what_if_scenario" }, whatIfTool, "WHAT-IF-SCENARIO");
 
   const evidenceTool = callTool("get_policy_evidence", {
@@ -180,6 +185,8 @@ export function runAgenticGoldenCase(
       ...(toolResult.result as { evaluations?: unknown[] } | undefined)?.evaluations ?? [],
     ],
   });
+  run.lastToolCall = "get_policy_evidence";
+  run = appendAuditTrail(run, "AGENT_TOOL_REQUESTED", { toolName: "get_policy_evidence" }, undefined, "EVIDENCE-BINDING");
   run = appendAuditTrail(run, "AGENT_TOOL_COMPLETED", { toolName: "get_policy_evidence" }, evidenceTool, "EVIDENCE-BINDING");
 
   run.status = "COMPLETED";
@@ -208,7 +215,8 @@ export function resumeAgentRun(
   const centralResult = callTool("evaluate_central_rules", { profile: applicant });
   nextRun.toolResult = centralResult;
   nextRun.lastToolCall = "evaluate_central_rules";
-  nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_REQUESTED", { toolName: "evaluate_central_rules" }, centralResult, "CENTRAL-RENT-115", "AGENT");
+  nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_REQUESTED", { toolName: "evaluate_central_rules" }, undefined, "CENTRAL-RENT-115", "AGENT");
+  nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_COMPLETED", { toolName: "evaluate_central_rules" }, centralResult, "CENTRAL-RENT-115", "AGENT");
 
   if (centralResult.status === "UNCERTAIN") {
     nextRun.status = "WAITING_FOR_HUMAN";
@@ -221,13 +229,29 @@ export function resumeAgentRun(
     profile: applicant,
     scenario: actualScenario,
   });
+  nextRun.lastToolCall = "evaluate_actual_scenario";
+  nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_REQUESTED", { toolName: "evaluate_actual_scenario" }, undefined, "ACTUAL-SCENARIO", "AGENT");
+  nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_COMPLETED", { toolName: "evaluate_actual_scenario" }, actualResult, "ACTUAL-SCENARIO");
+
   const whatIfResult = callTool("evaluate_what_if_scenario", {
     profile: applicant,
     scenario: whatIfScenario,
   });
-
-  nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_COMPLETED", { toolName: "evaluate_actual_scenario" }, actualResult, "ACTUAL-SCENARIO");
+  nextRun.lastToolCall = "evaluate_what_if_scenario";
+  nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_REQUESTED", { toolName: "evaluate_what_if_scenario" }, undefined, "WHAT-IF-SCENARIO", "AGENT");
   nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_COMPLETED", { toolName: "evaluate_what_if_scenario" }, whatIfResult, "WHAT-IF-SCENARIO");
+
+  const evidenceResult = callTool("get_policy_evidence", {
+    evaluations: [
+      ...((actualResult.result as { policyResults?: Array<{ evaluations?: unknown[] }> } | undefined)?.policyResults ?? [])
+        .flatMap((policy) => policy.evaluations ?? []),
+      ...((whatIfResult.result as { policyResults?: Array<{ evaluations?: unknown[] }> } | undefined)?.policyResults ?? [])
+        .flatMap((policy) => policy.evaluations ?? []),
+    ],
+  });
+  nextRun.lastToolCall = "get_policy_evidence";
+  nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_REQUESTED", { toolName: "get_policy_evidence" }, undefined, "EVIDENCE-BINDING", "AGENT");
+  nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_COMPLETED", { toolName: "get_policy_evidence" }, evidenceResult, "EVIDENCE-BINDING");
 
   const passportResult = callTool("generate_decision_passport", {
     caseId: "CASE-P0-001",
@@ -235,7 +259,8 @@ export function resumeAgentRun(
     actual: actualResult.result,
     whatIf: whatIfResult.result,
   });
-
+  nextRun.lastToolCall = "generate_decision_passport";
+  nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_REQUESTED", { toolName: "generate_decision_passport" }, undefined, "DECISION-PASSPORT", "AGENT");
   nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_COMPLETED", { toolName: "generate_decision_passport" }, passportResult, "DECISION-PASSPORT");
 
   nextRun.status = "COMPLETED";

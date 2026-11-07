@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { URL } from "node:url";
 
-import { callOpenAIPlanner, isOpenAIConfigured } from "./agent/client";
+import { callPlanner, getProviderHealth, getOllamaModel } from "./agent/client";
 import { buildSafePlan } from "./agent/orchestrator";
 import { listAllowedTools } from "./agent/tools";
 
@@ -33,11 +33,16 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url ?? "/", "http://localhost");
 
   if (request.method === "GET" && url.pathname === "/api/health") {
+    const health = await getProviderHealth();
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(
       JSON.stringify({
-        ok: true,
-        status: isOpenAIConfigured() ? "configured" : "provider_unavailable",
+        ok: health.providerStatus === "AVAILABLE",
+        provider: health.provider,
+        providerStatus: health.providerStatus,
+        model: health.model ?? getOllamaModel(),
+        status: health.providerStatus === "AVAILABLE" ? "configured" : "provider_unavailable",
+        error: health.error ?? null,
         timestamp: new Date().toISOString(),
       })
     );
@@ -54,12 +59,13 @@ const server = createServer(async (request, response) => {
     const allowlistedTools = listAllowedTools();
     const defaultPlan = buildSafePlan(goal);
 
-    const llmResult = await callOpenAIPlanner({
+    const llmResult = await callPlanner({
       goal,
       availableTools: allowlistedTools,
     });
 
     const responseBody = {
+      provider: llmResult.provider,
       providerStatus: llmResult.providerStatus,
       model: llmResult.model,
       goal,
@@ -76,6 +82,8 @@ const server = createServer(async (request, response) => {
       metadata: {
         usage: llmResult.usage ?? null,
         error: llmResult.error ?? null,
+        llmCallAttempted: llmResult.callAttempted ?? false,
+        llmCallSucceeded: llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision),
       },
     };
 
