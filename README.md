@@ -115,6 +115,17 @@ npm run dev
 
 The frontend and agent API run together locally. The agent endpoint is served from `/api/agent/plan`.
 
+### Production preview
+
+Build and run the single-origin production preview:
+
+```sh
+npm run build
+npm run start
+```
+
+By default, the service listens on `http://127.0.0.1:8787`, serving the built `dist/` site, the `/api/*` endpoints, and SPA client routes from one HTTP origin. Set `PORT` to change the port. A Cloudflare Tunnel should point to this GovAid Atlas port only; Ollama remains server-side at `http://127.0.0.1:11434`.
+
 ## Important Limitations
 
 - GovAid Atlas 僅提供資格預審與申辦導航，不代表主管機關核准。
