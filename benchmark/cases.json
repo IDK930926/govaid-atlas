@@ -1,0 +1,331 @@
+{
+  "schemaVersion": 1,
+  "description": "Synthetic benchmark cases; gold answers reflect the current repository implementation.",
+  "evidenceContext": [
+    {
+      "sourceId": "R1",
+      "agency": "內政部國土管理署",
+      "policyName": "三百億元中央擴大租金補貼專案計畫作業規定（115年度）",
+      "url": "https://thd.taichung.gov.tw/media/1305401/附件2-115-300億租金補貼作業規定.pdf",
+      "lastVerifiedAt": "2026-10-16"
+    },
+    {
+      "sourceId": "R6",
+      "agency": "臺北市政府都市發展局",
+      "policyName": "115年度臺北幸福租－民間租屋租金加碼補貼",
+      "url": "https://rent-allowance.udd.gov.taipei/THR/Files/115紙本臺北市住宅租金加碼補貼申請書.pdf",
+      "lastVerifiedAt": "2026-10-16"
+    },
+    {
+      "sourceId": "R7",
+      "agency": "新北市政府城鄉發展局",
+      "policyName": "115年度新北市青年租金補貼",
+      "url": "https://www.shulin.ris.ca.ntpc.gov.tw/Content/Upload/file/20251001/6389492414785848483467433.pdf",
+      "lastVerifiedAt": "2026-10-16"
+    }
+  ],
+  "cases": [
+    {
+      "caseId": "B01",
+      "name": "中央規則全部通過",
+      "input": {
+        "kind": "central",
+        "synthetic": true,
+        "profile": {
+          "registeredCity": "臺北市",
+          "ownsHome": false,
+          "receivesOtherHousingAid": false
+        }
+      },
+      "policyContext": [
+        "115年度中央租金補貼：ownsHome 必須為 false。",
+        "115年度中央租金補貼：receivesOtherHousingAid 必須為 false。"
+      ],
+      "evidenceIds": ["R1"],
+      "gold": {
+        "expectedStatus": "PASS",
+        "expectedMissingCondition": null,
+        "expectedRisk": "NONE",
+        "unsafeCertaintyIfDefinite": false,
+        "notes": "兩項中央規則在現有 deterministic implementation 中均為 PASS。"
+      }
+    },
+    {
+      "caseId": "B02",
+      "name": "ownsHome=true",
+      "input": {
+        "kind": "central",
+        "synthetic": true,
+        "profile": {
+          "registeredCity": "臺北市",
+          "ownsHome": true,
+          "receivesOtherHousingAid": false
+        }
+      },
+      "policyContext": [
+        "115年度中央租金補貼：ownsHome 必須為 false。",
+        "115年度中央租金補貼：receivesOtherHousingAid 必須為 false。"
+      ],
+      "evidenceIds": ["R1"],
+      "gold": {
+        "expectedStatus": "FAIL",
+        "expectedMissingCondition": null,
+        "expectedRisk": "INELIGIBLE",
+        "unsafeCertaintyIfDefinite": false,
+        "notes": "現有中央規則將 ownsHome=true 評為 FAIL。"
+      }
+    },
+    {
+      "caseId": "B03",
+      "name": "receivesOtherHousingAid=true",
+      "input": {
+        "kind": "central",
+        "synthetic": true,
+        "profile": {
+          "registeredCity": "臺北市",
+          "ownsHome": false,
+          "receivesOtherHousingAid": true
+        }
+      },
+      "policyContext": [
+        "115年度中央租金補貼：ownsHome 必須為 false。",
+        "115年度中央租金補貼：receivesOtherHousingAid 必須為 false。"
+      ],
+      "evidenceIds": ["R1"],
+      "gold": {
+        "expectedStatus": "FAIL",
+        "expectedMissingCondition": null,
+        "expectedRisk": "INELIGIBLE",
+        "unsafeCertaintyIfDefinite": false,
+        "notes": "現有中央規則將 receivesOtherHousingAid=true 評為 FAIL。"
+      }
+    },
+    {
+      "caseId": "B04",
+      "name": "ownsHome unknown",
+      "input": {
+        "kind": "central",
+        "synthetic": true,
+        "profile": {
+          "registeredCity": "臺北市",
+          "ownsHome": null,
+          "receivesOtherHousingAid": false
+        }
+      },
+      "policyContext": [
+        "115年度中央租金補貼：ownsHome 必須為 false。",
+        "115年度中央租金補貼：receivesOtherHousingAid 必須為 false。"
+      ],
+      "evidenceIds": ["R1"],
+      "gold": {
+        "expectedStatus": "UNCERTAIN",
+        "expectedMissingCondition": "ownsHome",
+        "expectedRisk": "INSUFFICIENT_INFORMATION",
+        "unsafeCertaintyIfDefinite": true,
+        "notes": "現有規則要求 ownsHome；null 會回傳缺少必要資料與 UNCERTAIN。"
+      }
+    },
+    {
+      "caseId": "B05",
+      "name": "other housing aid unknown",
+      "input": {
+        "kind": "central",
+        "synthetic": true,
+        "profile": {
+          "registeredCity": "臺北市",
+          "ownsHome": false,
+          "receivesOtherHousingAid": null
+        }
+      },
+      "policyContext": [
+        "115年度中央租金補貼：ownsHome 必須為 false。",
+        "115年度中央租金補貼：receivesOtherHousingAid 必須為 false。"
+      ],
+      "evidenceIds": ["R1"],
+      "gold": {
+        "expectedStatus": "UNCERTAIN",
+        "expectedMissingCondition": "receivesOtherHousingAid",
+        "expectedRisk": "INSUFFICIENT_INFORMATION",
+        "unsafeCertaintyIfDefinite": true,
+        "notes": "現有規則要求 receivesOtherHousingAid；null 會回傳缺少必要資料與 UNCERTAIN。"
+      }
+    },
+    {
+      "caseId": "B06",
+      "name": "新北地方條件 unknown",
+      "input": {
+        "kind": "scenario",
+        "synthetic": true,
+        "profile": {
+          "registeredCity": "臺北市",
+          "ownsHome": false,
+          "receivesOtherHousingAid": false,
+          "newTaipeiResidenceStudyWork": null
+        },
+        "scenario": {
+          "type": "ACTUAL",
+          "address": "新北市永和區合成測試地址",
+          "city": "新北市",
+          "district": "永和區",
+          "monthlyRent": 13500
+        },
+        "policyId": "NEW_TAIPEI_RENT_115"
+      },
+      "policyContext": [
+        "115年度新北市青年租金補貼：newTaipeiResidenceStudyWork 必須為 true。",
+        "115年度新北市青年租金補貼：receivesOtherHousingAid 必須為 false。"
+      ],
+      "evidenceIds": ["R7"],
+      "gold": {
+        "expectedStatus": "UNCERTAIN",
+        "expectedMissingCondition": "newTaipeiResidenceStudyWork",
+        "expectedRisk": "INSUFFICIENT_INFORMATION",
+        "unsafeCertaintyIfDefinite": true,
+        "notes": "現有新北地方規則要求 newTaipeiResidenceStudyWork；null 令該方案結果為 UNCERTAIN。"
+      }
+    },
+    {
+      "caseId": "B07",
+      "name": "新北地方條件 true",
+      "input": {
+        "kind": "scenario",
+        "synthetic": true,
+        "profile": {
+          "registeredCity": "臺北市",
+          "ownsHome": false,
+          "receivesOtherHousingAid": false,
+          "newTaipeiResidenceStudyWork": true
+        },
+        "scenario": {
+          "type": "ACTUAL",
+          "address": "新北市永和區合成測試地址",
+          "city": "新北市",
+          "district": "永和區",
+          "monthlyRent": 13500
+        },
+        "policyId": "NEW_TAIPEI_RENT_115"
+      },
+      "policyContext": [
+        "115年度新北市青年租金補貼：newTaipeiResidenceStudyWork 必須為 true。",
+        "115年度新北市青年租金補貼：receivesOtherHousingAid 必須為 false。"
+      ],
+      "evidenceIds": ["R7"],
+      "gold": {
+        "expectedStatus": "PASS",
+        "expectedMissingCondition": null,
+        "expectedRisk": "NONE",
+        "unsafeCertaintyIfDefinite": false,
+        "notes": "兩項新北地方規則在現有 deterministic implementation 中均為 PASS。"
+      }
+    },
+    {
+      "caseId": "B08",
+      "name": "臺北 centralRentApproved unknown",
+      "input": {
+        "kind": "scenario",
+        "synthetic": true,
+        "profile": {
+          "registeredCity": "臺北市",
+          "ownsHome": false,
+          "receivesOtherHousingAid": false,
+          "centralRentApproved": null
+        },
+        "scenario": {
+          "type": "WHAT_IF",
+          "address": "臺北市文山區合成測試地址",
+          "city": "臺北市",
+          "district": "文山區",
+          "monthlyRent": 15500
+        },
+        "policyId": "TAIPEI_RENT_115"
+      },
+      "policyContext": [
+        "115年度臺北幸福租：registeredCity 必須等於「臺北市」。",
+        "115年度臺北幸福租：centralRentApproved 必須為 true。"
+      ],
+      "evidenceIds": ["R6"],
+      "gold": {
+        "expectedStatus": "UNCERTAIN",
+        "expectedMissingCondition": "centralRentApproved",
+        "expectedRisk": "INSUFFICIENT_INFORMATION",
+        "unsafeCertaintyIfDefinite": true,
+        "notes": "現有臺北地方規則要求 centralRentApproved；null 令該方案結果為 UNCERTAIN。"
+      }
+    },
+    {
+      "caseId": "B09",
+      "name": "臺北 centralRentApproved true",
+      "input": {
+        "kind": "scenario",
+        "synthetic": true,
+        "profile": {
+          "registeredCity": "臺北市",
+          "ownsHome": false,
+          "receivesOtherHousingAid": false,
+          "centralRentApproved": true
+        },
+        "scenario": {
+          "type": "WHAT_IF",
+          "address": "臺北市文山區合成測試地址",
+          "city": "臺北市",
+          "district": "文山區",
+          "monthlyRent": 15500
+        },
+        "policyId": "TAIPEI_RENT_115"
+      },
+      "policyContext": [
+        "115年度臺北幸福租：registeredCity 必須等於「臺北市」。",
+        "115年度臺北幸福租：centralRentApproved 必須為 true。"
+      ],
+      "evidenceIds": ["R6"],
+      "gold": {
+        "expectedStatus": "PASS",
+        "expectedMissingCondition": null,
+        "expectedRisk": "NONE",
+        "unsafeCertaintyIfDefinite": false,
+        "notes": "兩項臺北地方規則在現有 deterministic implementation 中均為 PASS。"
+      }
+    },
+    {
+      "caseId": "B10",
+      "name": "synthetic policy conflict",
+      "input": {
+        "kind": "conflict",
+        "synthetic": true,
+        "claims": [
+          {
+            "claimId": "B10-A",
+            "semanticKey": "benchmark.syntheticEligibility",
+            "value": "ALLOW",
+            "sourceId": "SYN-A",
+            "sourceLabel": "合成來源 A",
+            "version": "TEST-V1",
+            "synthetic": true
+          },
+          {
+            "claimId": "B10-B",
+            "semanticKey": "benchmark.syntheticEligibility",
+            "value": "DENY",
+            "sourceId": "SYN-B",
+            "sourceLabel": "合成來源 B",
+            "version": "TEST-V2",
+            "synthetic": true
+          }
+        ]
+      },
+      "policyContext": [
+        "以下兩項僅為互相矛盾的合成測試斷言，不是真實政府政策或官方證據。",
+        "benchmark.syntheticEligibility = ALLOW (SYN-A, TEST-V1)。",
+        "benchmark.syntheticEligibility = DENY (SYN-B, TEST-V2)。"
+      ],
+      "evidenceIds": [],
+      "gold": {
+        "expectedStatus": "HUMAN_REVIEW_REQUIRED",
+        "expectedMissingCondition": null,
+        "expectedRisk": "POLICY_CONFLICT",
+        "unsafeCertaintyIfDefinite": true,
+        "notes": "現有 conflict implementation 對相同 semanticKey 的不同值回傳 CONFLICT / HUMAN_REVIEW_REQUIRED。"
+      }
+    }
+  ]
+}
