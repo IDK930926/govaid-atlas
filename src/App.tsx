@@ -1,4 +1,6 @@
-import {useEffect, useMemo, useState} from "react";
+import React, {useEffect, useMemo, useRef, useState} from "react";
+import {Bilingual} from "./Bilingual";
+import {actorCopy, auditCopy, benchmarkCopy, currentStepCopy, roleCopy, statusCopy, toolCopy, type BilingualCopy} from "./ui-copy";
 
 import {
   detectConflicts,
@@ -25,6 +27,7 @@ import {
 import {
   runBenchmark,
 } from "./benchmark";
+import {finalBenchmark} from "./benchmark-final";
 
 import centralRulesJson from "./policies/central-rent-115.json";
 import taipeiRulesJson from "./policies/taipei-rent-115.json";
@@ -133,9 +136,14 @@ type DemoStage =
   | "PASSPORT";
 
 function StatusBadge({status}: {status: string}) {
+  const parts = status.split(/(\/| → )/);
+  const copy = statusCopy[status] ?? {
+    zh: parts.map((part) => statusCopy[part]?.zh ?? (part === "/" || part === " → " ? part : "尚無資料")).join(""),
+    en: parts.map((part) => statusCopy[part]?.en ?? (part === "/" || part === " → " ? part : "N/A")).join(""),
+  };
   return (
-    <span className={"status status-" + status.toLowerCase()}>
-      {status}
+    <span className={"status status-" + status.toLowerCase()} title={status}>
+      <Bilingual {...copy}/>
     </span>
   );
 }
@@ -158,12 +166,13 @@ function App() {
   const [applicant, setApplicant] = useState<ApplicantProfile>(initialApplicant);
   const [userGoal, setUserGoal] = useState(agentGoal);
   const [agentRunning, setAgentRunning] = useState(false);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const inferenceStartedAt = useRef<number | null>(null);
   const [providerInfo, setProviderInfo] = useState<ProviderInfo>({
     provider: "OLLAMA",
     providerStatus: "UNKNOWN",
     model: "qwen3.5:4b",
   });
-  const [llmRuntimeActive, setLlmRuntimeActive] = useState(false);
   const [providerError, setProviderError] = useState<string | null>(null);
   const [stage, setStage] = useState<DemoStage>("IDLE");
   const [centralEvaluation, setCentralEvaluation] = useState<RuleEvaluation[]>([]);
@@ -207,6 +216,14 @@ function App() {
     useState<RuntimeMetrics>(
       createRuntimeMetrics()
     );
+
+  useEffect(() => {
+    if (!agentRunning) return;
+    const tick = () => setElapsedSeconds((performance.now() - (inferenceStartedAt.current ?? performance.now())) / 1000);
+    tick();
+    const timer = window.setInterval(tick, 100);
+    return () => window.clearInterval(timer);
+  }, [agentRunning]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -437,9 +454,10 @@ function App() {
     }
 
     const freshApplicant = {...initialApplicant};
+    inferenceStartedAt.current = performance.now();
+    setElapsedSeconds(0);
     setAgentRunning(true);
     setProviderError(null);
-    setLlmRuntimeActive(false);
     setApplicant(freshApplicant);
     setActualResult(null);
     setWhatIfResult(null);
@@ -483,7 +501,6 @@ function App() {
         model: payload.model,
       });
       setProviderError(payload.metadata?.error ?? null);
-      setLlmRuntimeActive(succeeded);
       if (plannerResult.callAttempted) {
         setRuntimeMetrics((current) => recordLlmCall(current, usage ?? null, payload.provider === "OLLAMA"));
       }
@@ -627,7 +644,6 @@ function App() {
     setRuntimeMetrics(createRuntimeMetrics());
     setAgentRun(createAgentRun(agentGoal));
     setUserGoal(agentGoal);
-    setLlmRuntimeActive(false);
     setProviderError(null);
   }
 
@@ -673,757 +689,687 @@ function App() {
   const displayedAuditTrail = [...auditTrail, ...agentRun.auditTrail]
     .sort((left, right) => left.timestamp.localeCompare(right.timestamp));
 
+  const [advancedTab, setAdvancedTab] = useState<AdvancedTab>("BENCHMARK");
+  const journeyRef = useRef<HTMLElement | null>(null);
+  const resultsRef = useRef<HTMLElement | null>(null);
+
+  useEffect(() => {
+    if (agentRun.status === "WAITING_FOR_HUMAN") {
+      journeyRef.current?.scrollIntoView({behavior: scrollBehavior(), block: "start"});
+    }
+  }, [agentRun.status]);
+
+  useEffect(() => {
+    if (passport) {
+      resultsRef.current?.scrollIntoView({behavior: scrollBehavior(), block: "start"});
+    }
+  }, [passport]);
+
+  const journey = buildJourney(agentRun);
+  const providerLabel = providerInfo.provider === "OLLAMA"
+    ? {zh: "本機代理", en: "LOCAL AGENT"}
+    : providerInfo.provider === "OPENAI" ? {zh: "雲端代理", en: "CLOUD AGENT"} : {zh: "代理", en: "AGENT"};
+  const stepCopy = currentStepCopy[agentRun.status];
+  const showOwnsHomeGate = agentRun.status === "WAITING_FOR_HUMAN" && agentRun.humanInputRequired === "本人是否持有住宅？";
+
   return (
     <main className="app">
-      <header className="topbar">
-        <div>
-          <p className="eyebrow">Agentic AI · Housing Decision</p>
-          <h1>GovAid Atlas</h1>
-          <p className="subtitle">育兒／租屋補助導航與合規申辦 AI Agent</p>
+      <section className="hero" aria-labelledby="hero-title">
+        <div className="hero-top">
+          <div className="hero-copy">
+            <h1 id="hero-title">GovAid Atlas</h1>
+            <p className="hero-tagline">可追溯、可暫停、可人工確認的政府補助 AI Agent</p>
+            <p className="hero-translation" lang="en">Traceable, Pausable, Human-in-the-loop Benefit Navigator</p>
+            <p className="hero-sub"><Bilingual zh="Agent 規劃 × 規則引擎 × 官方證據 × 人工覆核" en="Agent Planning × Deterministic Rules × Official Evidence × Human Review"/></p>
+          </div>
+          <div className="hero-actions">
+            <button className="secondary" onClick={resetDemo} disabled={agentRunning}><Bilingual zh="重設示範" en="Reset"/></button>
+          </div>
         </div>
-        <div className="top-actions">
-          <button className="secondary" onClick={resetDemo}>Reset Demo</button>
-          <button className="primary" onClick={startGoldenCase}>Start Golden Case</button>
-        </div>
-      </header>
 
-      <section className="notice">
-        <strong>Synthetic Persona</strong>
-        <span>本 Demo 全部使用合成資料；結果僅為預審導航，不代表主管機關核准。</span>
+        <div className="composer">
+          <form className="goal-form" onSubmit={(event) => {
+            event.preventDefault();
+            void runCustomGoal();
+          }}>
+            <label htmlFor="agent-goal"><Bilingual zh="申請目標" en="User Goal"/></label>
+            <textarea
+              id="agent-goal"
+              rows={2}
+              value={userGoal}
+              onChange={(event) => setUserGoal(event.target.value)}
+              disabled={agentRunning}
+              required
+            />
+            {agentRunning && <div className="reasoning-status" role="status"><Bilingual zh={providerInfo.provider === "OPENAI" ? "雲端模型推論中…" : "本機模型推論中…"} en={providerInfo.provider === "OPENAI" ? "Cloud model is reasoning…" : "Local model is reasoning…"}/><time aria-label="已經過秒數 / Elapsed seconds">{elapsedSeconds.toFixed(1)}s</time></div>}
+            <div className="goal-form-footer">
+              <p className="synthetic-note">
+                <strong><Bilingual zh="合成示範資料" en="Synthetic Persona"/></strong> · 結果僅為預審導航，不代表主管機關核准。
+              </p>
+              <button className="primary run-button" type="submit" disabled={agentRunning || !userGoal.trim()}>
+                {agentRunning ? <Bilingual zh="推論中…" en="Reasoning…"/> : <Bilingual zh="執行 Agent" en="Run Agent"/>}
+              </button>
+            </div>
+          </form>
+
+          <aside className={"provider-card provider-" + providerInfo.providerStatus.toLowerCase()} aria-label="模型供應者 / Agent provider">
+            <span className="provider-kind"><Bilingual {...providerLabel}/></span>
+            <strong className="provider-model">{providerInfo.model}</strong>
+            <span className="provider-status">
+              <span className="dot" aria-hidden="true"/>
+              <Bilingual {...statusCopy[providerInfo.providerStatus]}/>
+            </span>
+            {providerError && <p className="provider-error" role="status"><Bilingual zh="連線異常，詳見除錯資訊" en="Connection issue; see debug details"/></p>}
+          </aside>
+        </div>
       </section>
 
-      <section className="card agent-runtime">
-        <form className="agent-goal-form" onSubmit={(event) => {
-          event.preventDefault();
-          void runCustomGoal();
-        }}>
-          <label htmlFor="agent-goal">User Goal</label>
-          <textarea
-            id="agent-goal"
-            rows={3}
-            value={userGoal}
-            onChange={(event) => setUserGoal(event.target.value)}
-            disabled={agentRunning}
-            required
-          />
-          <button className="primary" type="submit" disabled={agentRunning || !userGoal.trim()}>
-            {agentRunning ? "Running..." : "Run Agent"}
-          </button>
-        </form>
-
-        <div className="card-header">
-          <div>
-            <p className="eyebrow">AGENT RUNTIME</p>
-            <h2>Agent Orchestrator</h2>
-          </div>
-          <StatusBadge status={agentRun.status}/>
+      <section className="section journey" ref={journeyRef} aria-labelledby="journey-title">
+        <div className="section-head">
+          <h2 id="journey-title"><Bilingual zh="Agent 執行流程" en="Agent Journey"/></h2>
+          <div className="runtime-status"><span className="current-label"><Bilingual zh="代理執行狀態" en="Agent Runtime"/></span><StatusBadge status={agentRun.status}/></div>
         </div>
 
-        <div className="agent-grid">
-          <div className="agent-meta">
-            <span>User Goal</span>
-            <strong>{agentRun.goal}</strong>
+        <ol className="stepper">
+          {journey.map((step, index) => (
+            <li key={step.key} className={"step step-" + step.state.toLowerCase()} aria-current={step.state === "ACTIVE" ? "step" : undefined}>
+              <span className="step-index">{step.state === "DONE" ? "✓" : index + 1}</span>
+              <span className="step-label"><Bilingual {...step.label}/></span>
+              <span className="step-state"><Bilingual {...statusCopy[step.state]}/></span>
+            </li>
+          ))}
+        </ol>
+
+        <div className={"current-panel" + (agentRun.status === "WAITING_FOR_HUMAN" ? " is-waiting" : "")}>
+          <div className="current-main">
+            <span className="current-label"><Bilingual zh="目前步驟" en="Current Step"/></span>
+            <strong className="current-status" key={agentRun.status}><Bilingual {...stepCopy.title}/></strong>
+            <p className="current-detail">
+              <Bilingual {...stepCopy.description}/>
+            </p>
+            <dl className="current-facts">
+              <div>
+                <dt><Bilingual zh="最後工具" en="Last Tool Call"/></dt>
+                <dd>{agentRun.lastToolCall && toolCopy[agentRun.lastToolCall] ? <Bilingual {...toolCopy[agentRun.lastToolCall]}/> : "—"}</dd>
+              </div>
+              <div>
+                <dt><Bilingual zh="中央補助規則" en="Central Rules"/></dt>
+                <dd>{currentCentralStatus ? <StatusBadge status={currentCentralStatus}/> : "—"}</dd>
+              </div>
+              <div>
+                <dt><Bilingual zh="執行步數" en="Steps"/></dt>
+                <dd>{agentRun.stepsTaken} / {agentRun.maximumSteps}</dd>
+              </div>
+            </dl>
           </div>
-          <div className="agent-meta">
-            <span>Current Step</span>
-            <strong>{agentRun.currentStep}</strong>
-          </div>
-          <div className="agent-meta">
-            <span>Agent Plan</span>
-            <ul className="agent-plan-list">
-              {agentRun.plan.map((item, index) => (
-                <li key={`${item}-${index}`}>{item}</li>
-              ))}
-            </ul>
-          </div>
-          <div className="agent-meta">
-            <span>Last Tool Call</span>
-            <strong>{agentRun.lastToolCall ?? "N/A"}</strong>
+
+          <div className="case-chips" aria-label="申請人資料 / Case profile">
+            <span className="chip-title"><Bilingual zh="申請人資料" en="Case Profile"/></span>
+            <span className="chip"><Bilingual zh="年齡" en="Age"/> {applicant.age}</span>
+            <span className="chip"><Bilingual zh="單身" en="Single"/></span>
+            <span className="chip"><Bilingual zh="戶籍" en="Registered City"/> {applicant.registeredCity}</span>
+            <span className={"chip" + (applicant.ownsHome === null ? " chip-pending" : "")}>
+              <Bilingual zh="住宅持有" en="Home Ownership"/> {applicant.ownsHome === null ? "待確認" : applicant.ownsHome ? "有" : "無"}
+            </span>
           </div>
         </div>
 
-        <div className="result-line">
-          <span>Human Input Required</span>
-          <strong>{agentRun.humanInputRequired ?? "No"}</strong>
-        </div>
+        {agentRun.status === "WAITING_FOR_HUMAN" && (
+          <div className="human-gate" role="region" aria-labelledby="human-gate-question">
+            <div className="human-gate-copy">
+              <span className="gate-label"><Bilingual zh="需要人工確認" en="Human Input Required"/></span>
+              <p className="gate-question" id="human-gate-question">{agentRun.humanInputRequired}</p>
+              {showOwnsHomeGate && <p className="gate-translation" lang="en">Does the applicant own a home?</p>}
+              <p className="gate-reason"><Bilingual zh="確認後，Agent 將繼續執行規則檢查。" en="Confirm to resume the agent’s rule checks."/></p>
+            </div>
+            {showOwnsHomeGate && (
+              <div className="gate-actions">
+                <button className="gate-button" onClick={() => respondToHuman(false)} disabled={agentRunning}><Bilingual zh="無自有住宅" en="No"/></button>
+                <button className="gate-button" onClick={() => respondToHuman(true)} disabled={agentRunning}><Bilingual zh="有自有住宅" en="Yes"/></button>
+              </div>
+            )}
+          </div>
+        )}
 
-        {agentRun.status === "WAITING_FOR_HUMAN" && agentRun.humanInputRequired === "本人是否持有住宅？" && (
-          <div className="human-response">
-            <strong>請選擇住宅持有狀態</strong>
-            <div className="human-response-actions">
-              <button className="secondary" onClick={() => respondToHuman(false)} disabled={agentRunning}>無自有住宅</button>
-              <button className="secondary" onClick={() => respondToHuman(true)} disabled={agentRunning}>有自有住宅</button>
+        {agentRun.status === "HUMAN_REVIEW_REQUIRED" && agentRun.humanInputRequired && (
+          <div className="human-gate">
+            <div className="human-gate-copy">
+              <span className="gate-label"><Bilingual {...statusCopy.HUMAN_REVIEW_REQUIRED}/></span>
+              <p className="gate-question">{agentRun.humanInputRequired}</p>
             </div>
           </div>
         )}
 
-        <div className="result-line">
-          <span>Provider</span>
-          <strong>{providerInfo.provider === "OLLAMA" ? "OLLAMA LOCAL" : providerInfo.provider}</strong>
-        </div>
-
-        <div className="result-line">
-          <span>Model</span>
-          <strong>{providerInfo.model}</strong>
-        </div>
-
-        <div className="result-line">
-          <span>Provider Status</span>
-          <strong>{providerInfo.providerStatus}</strong>
-        </div>
-
-        <div className="result-line">
-          <span>LLM Runtime</span>
-          <strong>
-            {providerInfo.providerStatus === "UNKNOWN"
-              ? "CHECKING"
-              : providerInfo.providerStatus === "UNAVAILABLE"
-                ? "UNAVAILABLE"
-                : llmRuntimeActive
-                  ? "ACTIVE"
-                  : "READY"}
-          </strong>
-        </div>
-
-        {providerError && <p className="provider-error" role="status">{providerError}</p>}
-
-        {agentRun.lastDecision && (
-          <p className="disclaimer">Decision rationale: {agentRun.lastDecision.reasoningSummary}</p>
-        )}
-      </section>
-
-      <section className="grid-two">
-        <article className="card">
-          <div className="card-header">
-            <h2>Case Profile</h2>
-            <StatusBadge status={stage === "IDLE" ? "READY" : stage}/>
-          </div>
-          <dl className="profile">
-            <div><dt>年齡</dt><dd>{applicant.age}</dd></div>
-            <div><dt>婚姻</dt><dd>單身</dd></div>
-            <div><dt>戶籍</dt><dd>{applicant.registeredCity}</dd></div>
-            <div><dt>住宅持有</dt><dd>{applicant.ownsHome === null ? "待確認" : applicant.ownsHome ? "有" : "無"}</dd></div>
-          </dl>
-          {stage === "UNCERTAIN" && (
-            <div className="warning-box">
-              <strong>需要人工確認</strong>
-              <p>缺少必要資料：本人是否持有住宅。Agent 暫停資格推論，不自行猜測。</p>
-            </div>
-          )}
-        </article>
-
-        <article className="card">
-          <h2>Agent Plan</h2>
-          <ol className="plan">
-            <li className="done">建立 Applicant Profile</li>
-            <li className={stage !== "IDLE" ? "done" : ""}>執行中央規則</li>
-            <li className={stage === "CONFIRMED" || stage === "COMPARED" || stage === "PASSPORT" ? "done" : ""}>Human Confirmation</li>
-            <li className={stage === "COMPARED" || stage === "PASSPORT" ? "done" : ""}>Actual / What-if Policy Routing</li>
-            <li className={stage === "PASSPORT" ? "done" : ""}>Decision Passport</li>
-          </ol>
-          {currentCentralStatus && (
-            <div className="result-line">
-              <span>Central Rules</span>
-              <StatusBadge status={currentCentralStatus}/>
-            </div>
-          )}
-          {stage === "CONFIRMED" && (
-            <button className="primary full" onClick={compareAddresses}>Compare Addresses</button>
-          )}
-        </article>
       </section>
 
       {actualResult && whatIfResult && (
-        <section className="scenario-grid">
-          <ScenarioCard result={actualResult} title="ACTUAL"/>
-          <ScenarioCard result={whatIfResult} title="WHAT-IF"/>
+        <section className="section comparison reveal" aria-labelledby="comparison-title">
+          <div className="section-head">
+            <h2 id="comparison-title"><Bilingual zh="居住情境比較" en="Scenario Comparison"/></h2>
+          </div>
+          <div className="scenario-grid">
+            <ScenarioColumn result={actualResult} title="ACTUAL"/>
+            <ScenarioColumn result={whatIfResult} title="WHAT-IF"/>
+          </div>
         </section>
+      )}
+
+      {stage === "CONFIRMED" && (
+        <div className="center-action">
+          <button className="primary" onClick={compareAddresses}><Bilingual zh="比較居住情境" en="Compare Addresses"/></button>
+        </div>
       )}
 
       {stage === "COMPARED" && (
         <div className="center-action">
-          <button className="primary" onClick={generatePassport}>Generate Decision Passport</button>
+          <button className="primary" onClick={generatePassport}><Bilingual zh="產出申辦決策護照" en="Generate Decision Passport"/></button>
         </div>
       )}
 
-      {passport && (
-        <section className="card passport">
-          <div className="card-header">
-            <div>
-              <p className="eyebrow">CASE-P0-001</p>
-              <h2>申辦決策護照</h2>
-            </div>
-            <StatusBadge status="UNCERTAIN"/>
-          </div>
-          <div className="passport-grid">
-            <div>
-              <h3>待確認事項</h3>
-              <ul>{passport.missingItems.map(item => <li key={item}>{item}</li>)}</ul>
-            </div>
-            <div>
-              <h3>風險</h3>
-              <ul>{passport.risks.map(item => <li key={item}>{item}</li>)}</ul>
-            </div>
-            <div>
-              <h3>下一步</h3>
-              <ol>{passport.nextSteps.map(item => <li key={item}>{item}</li>)}</ol>
-            </div>
-            <div>
-              <h3>Evidence</h3>
-              <div className="evidence-list">
-                {[...passport.actual.programs, ...passport.whatIf.programs]
-                  .flatMap(program => program.evidence)
-                  .filter((item, index, array) => array.findIndex(candidate => candidate.sourceId === item.sourceId) === index)
-                  .map(item => (
-                    <a key={item.sourceId} href={item.url} target="_blank" rel="noreferrer">
-                      <strong>{item.sourceId}</strong>
-                      <span>{item.agency}</span>
-                    </a>
-                  ))}
-              </div>
-            </div>
-          </div>
-          <p className="disclaimer">{passport.disclaimer}</p>
+      {passport ? (
+        <DecisionPassportView passport={passport} sectionRef={resultsRef}/>
+      ) : agentRun.status !== "IDLE" && (
+        <section className="passport-placeholder" aria-label="決策護照待產出 / Decision Passport pending">
+          <strong><Bilingual zh="申辦決策護照" en="Decision Passport"/></strong>
+          <span><Bilingual zh="完成人工確認與規則檢查後產出。" en="Available after human confirmation and rule checks."/></span>
         </section>
       )}
 
-        <section className="card">
-    <div className="card-header">
-      <div>
-        <p className="eyebrow">
-          GOVERNANCE TEST
-        </p>
-
-        <h2>
-          Rule Conflict
-        </h2>
-      </div>
-
-      <button
-        className="secondary"
-        onClick={runConflictTest}
-      >
-        Run Synthetic Conflict Test
-      </button>
-    </div>
-
-    <p className="conflict-note">
-      此測試使用合成規則，
-      僅驗證衝突偵測與風險控制機制，
-      不代表任何真實政府政策互相矛盾。
-    </p>
-
-    {conflictResult && (
-      <>
-        <div className="result-line">
-          <span>
-            Conflict Status
-          </span>
-
-          <StatusBadge
-            status={
-              conflictResult.status
-            }
-          />
+      <section className="section advanced" aria-labelledby="advanced-title">
+        <div className="section-head">
+          <h2 id="advanced-title"><Bilingual zh="治理與評測" en="Governance & Evaluation"/></h2>
         </div>
 
-        <div className="result-line">
-          <span>
-            System Action
-          </span>
-
-          <strong>
-            {
-              conflictResult.resolution
-            }
-          </strong>
-        </div>
-
-        {conflictResult.conflicts.map(
-          (conflict) => (
-            <div
-              className="conflict-box"
-              key={
-                conflict.semanticKey
-              }
+        <div className="tabs" role="tablist" aria-label="治理與評測 / Governance and evaluation">
+          {advancedTabs.map((tab) => (
+            <button
+              key={tab.id}
+              role="tab"
+              id={`tab-${tab.id}`}
+              aria-selected={advancedTab === tab.id}
+              aria-controls={`panel-${tab.id}`}
+              className={"tab" + (advancedTab === tab.id ? " is-active" : "")}
+              onClick={() => setAdvancedTab(tab.id)}
             >
-              <strong>
-                {
-                  conflict.semanticKey
-                }
-              </strong>
+              <Bilingual {...tab.label}/>
+            </button>
+          ))}
+        </div>
 
-              {conflict.claims.map(
-                (claim) => (
-                  <div
-                    className="rule-row"
-                    key={claim.claimId}
-                  >
-                    <span>
-                      {claim.sourceLabel}
-                      {" · "}
-                      {claim.version}
-                    </span>
+        <div className="tab-panel" role="tabpanel" id={`panel-${advancedTab}`} aria-labelledby={`tab-${advancedTab}`} key={advancedTab}>
+          {advancedTab === "BENCHMARK" && (
+            <BenchmarkComparison deterministic={benchmarkResult}/>
+          )}
 
-                    <strong>
-                      {String(
-                        claim.value
-                      )}
-                    </strong>
-                  </div>
-                )
+          {advancedTab === "RUNTIME" && (
+            <div>
+              <div className="metric-strip">
+                <MetricItem zh="模型供應者" label="Provider" value={providerInfo.providerStatus === "UNKNOWN" ? null : providerInfo.provider === "UNAVAILABLE" ? null : providerInfo.provider}/>
+                <MetricItem zh="模型" label="Model" value={providerInfo.providerStatus === "UNKNOWN" ? null : providerInfo.model}/>
+                <MetricItem zh="LLM 呼叫" label="LLM Calls" value={runtimeMetrics.llmCalls}/>
+                <MetricItem zh="輸入 Token" label="Input Tokens" value={runtimeMetrics.inputTokens}/>
+                <MetricItem zh="輸出 Token" label="Output Tokens" value={runtimeMetrics.outputTokens}/>
+                <MetricItem
+                  zh="執行方式"
+                  label="Execution"
+                  value={runtimeMetrics.llmCalls === 0 ? null : <Bilingual {...providerLabel}/>}
+                />
+                <MetricItem
+                  zh="雲端 API 成本"
+                  label="Cloud API Cost"
+                  value={runtimeMetrics.estimatedCostUsd === null
+                    ? null
+                    : runtimeMetrics.estimatedCostUsd === 0
+                      ? "$0"
+                      : `$${runtimeMetrics.estimatedCostUsd.toFixed(2)}`}
+                />
+              </div>
+              <p className="lead-note"><Bilingual zh="LLM 負責規劃與工具調度；資格結果由規則引擎判斷。" en="The LLM plans and routes tools; deterministic rules determine eligibility."/></p>
+              {providerInfo.providerStatus === "UNAVAILABLE" && (
+                <p className="muted"><Bilingual zh="模型目前無法使用，仍可執行規則檢查。" en="Model unavailable; deterministic checks remain available."/></p>
               )}
-            </div>
-          )
-        )}
-
-        <div className="warning-box">
-          <strong>
-            Human Review Required
-          </strong>
-
-          <p>
-            偵測到相互矛盾的規則結果。
-            GovAid Atlas 不會自行選擇其中一個答案，
-            而是停止確定式資格判斷並要求人工查核。
-          </p>
-        </div>
-      </>
-    )}
-  </section>
-      
-      <section className="card">
-  <div className="card-header">
-    <div>
-      <p className="eyebrow">
-        GOVERNANCE
-      </p>
-
-      <h2>
-        Permission Control
-      </h2>
-    </div>
-
-    <div className="role-switcher">
-      {(
-        [
-          "APPLICANT",
-          "REVIEWER",
-          "POLICY_ADMIN",
-        ] as UserRole[]
-      ).map((role) => (
-        <button
-          key={role}
-          className={
-            currentRole === role
-              ? "primary"
-              : "secondary"
-          }
-          onClick={() =>
-            changeRole(role)
-          }
-        >
-          {role}
-        </button>
-      ))}
-    </div>
-  </div>
-
-  <p className="conflict-note">
-    此區塊使用合成個資，
-    僅驗證角色權限、
-    敏感資料遮罩與拒絕存取。
-  </p>
-
-  <div className="permission-grid">
-    <div>
-      <span>Current Role</span>
-      <strong>
-        {currentRole}
-      </strong>
-    </div>
-
-    <div>
-      <span>Access</span>
-      <strong>
-        {
-          visibleProfile
-            .permission.allowed
-            ? "ALLOWED"
-            : "ACCESS_DENIED"
-        }
-      </strong>
-    </div>
-  </div>
-
-  {visibleProfile.profile ? (
-    <div className="sensitive-card">
-      <p>
-        姓名：
-        {
-          visibleProfile.profile
-            .name
-        }
-      </p>
-
-      <p>
-        身分證：
-        {
-          visibleProfile.profile
-            .nationalId
-        }
-      </p>
-
-      <p>
-        電話：
-        {
-          visibleProfile.profile
-            .phone
-        }
-      </p>
-
-      <p>
-        月收入：
-        {
-          visibleProfile.profile
-            .monthlyIncome
-        }
-      </p>
-    </div>
-  ) : (
-    <div className="warning-box">
-      <strong>
-        Access Denied
-      </strong>
-
-      <p>
-        此角色無權存取申請人敏感資料。
-      </p>
-    </div>
-  )}
-
-  <p className="disclaimer">
-    {
-      visibleProfile
-        .permission.reason
-    }
-  </p>
-</section>
-
-      <section className="card">
-        <div className="card-header">
-          <div>
-            <p className="eyebrow">
-              OBSERVABILITY
-            </p>
-
-            <h2>
-              Runtime Metrics
-            </h2>
-          </div>
-        </div>
-
-        <p className="conflict-note">
-          {providerInfo.providerStatus === "AVAILABLE"
-            ? "Agent planning 與 tool routing 使用本機 Ollama；政策資格仍由 deterministic rule engine 判定。"
-            : providerInfo.providerStatus === "UNAVAILABLE"
-              ? "LLM provider currently unavailable; deterministic safety workflow remains available。"
-              : "正在確認 LLM provider 狀態；政策資格由 deterministic rule engine 判定。"}
-        </p>
-
-        <div className="metrics-grid">
-          <MetricItem
-            label="Rules Engine Calls"
-            value={runtimeMetrics.rulesEngineCalls}
-          />
-
-          <MetricItem
-            label="Scenario Evaluations"
-            value={runtimeMetrics.scenarioEvaluations}
-          />
-
-          <MetricItem
-            label="Conflict Checks"
-            value={runtimeMetrics.conflictChecks}
-          />
-
-          <MetricItem
-            label="Permission Checks"
-            value={runtimeMetrics.permissionChecks}
-          />
-
-          <MetricItem
-            label="Passport Generations"
-            value={runtimeMetrics.passportGenerations}
-          />
-
-          <MetricItem
-            label="Measured Operations"
-            value={runtimeMetrics.measuredOperations}
-          />
-
-          <MetricItem
-            label="Average Local Latency"
-            value={
-              runtimeMetrics.measuredOperations
-                ? `${(
-                    runtimeMetrics.totalLatencyMs /
-                    runtimeMetrics.measuredOperations
-                  ).toFixed(2)} ms`
-                : "N/A"
-            }
-          />
-
-          <MetricItem
-            label="Last Local Latency"
-            value={
-              runtimeMetrics.lastLatencyMs !== null
-                ? `${runtimeMetrics.lastLatencyMs.toFixed(2)} ms`
-                : "N/A"
-            }
-          />
-
-          <MetricItem
-            label="Provider"
-            value={providerInfo.provider === "OLLAMA" ? "OLLAMA LOCAL" : providerInfo.provider}
-          />
-
-          <MetricItem
-            label="Model"
-            value={providerInfo.model}
-          />
-
-          <MetricItem
-            label="LLM Calls"
-            value={runtimeMetrics.llmCalls}
-          />
-
-          <MetricItem
-            label="Input Tokens"
-            value={runtimeMetrics.inputTokens ?? "N/A"}
-          />
-
-          <MetricItem
-            label="Output Tokens"
-            value={runtimeMetrics.outputTokens ?? "N/A"}
-          />
-
-          <MetricItem
-            label="Cloud API Cost"
-            value={runtimeMetrics.estimatedCostUsd === null
-              ? "N/A"
-              : runtimeMetrics.estimatedCostUsd === 0
-                ? "$0"
-                : `$${runtimeMetrics.estimatedCostUsd.toFixed(2)}`}
-          />
-        </div>
-
-        <p className="disclaimer">
-          Local latency 僅代表目前瀏覽器內 deterministic tools
-          的本機執行時間，不代表正式部署後的網路或政府資料來源延遲。
-        </p>
-      </section>
-
-      <section className="card">
-        <div className="card-header">
-          <div>
-            <p className="eyebrow">
-              EVALUATION
-            </p>
-
-            <h2>
-              Deterministic Benchmark
-            </h2>
-          </div>
-
-          <StatusBadge
-            status={
-              benchmarkResult.summary.failedCases === 0
-                ? "PASS"
-                : "FAIL"
-            }
-          />
-        </div>
-
-        <p className="conflict-note">
-          本結果僅代表目前 P0 的 12 組 deterministic
-          測試案例，不代表真實世界整體準確率。
-          Manual 與一般 RAG baseline 尚未量測，因此不填入假設數字。
-        </p>
-
-        <div className="metrics-grid">
-          <MetricItem
-            label="Test Cases"
-            value={
-              benchmarkResult.summary.totalCases
-            }
-          />
-
-          <MetricItem
-            label="Passed"
-            value={
-              `${benchmarkResult.summary.passedCases}/${benchmarkResult.summary.totalCases}`
-            }
-          />
-
-          <MetricItem
-            label="P0 Case Pass Rate"
-            value={
-              `${benchmarkResult.summary.accuracyPercent}%`
-            }
-          />
-
-          <MetricItem
-            label="Evidence Coverage"
-            value={
-              `${benchmarkResult.summary.evidenceCoveragePercent}%`
-            }
-          />
-
-          <MetricItem
-            label="Unsafe Certainty"
-            value={
-              benchmarkResult.summary.unsafeCertaintyCount
-            }
-          />
-
-          <MetricItem
-            label="Conflict Tests"
-            value={
-              `${benchmarkResult.summary.conflictCasesPassed}/${benchmarkResult.summary.conflictCases}`
-            }
-          />
-
-          <MetricItem
-            label="Recovery Tests"
-            value={
-              `${benchmarkResult.summary.recoveryCasesPassed}/${benchmarkResult.summary.recoveryCases}`
-            }
-          />
-
-          <MetricItem
-            label="Manual Baseline"
-            value="NOT MEASURED"
-          />
-
-          <MetricItem
-            label="RAG Baseline"
-            value="NOT MEASURED"
-          />
-        </div>
-
-        <details className="benchmark-details">
-          <summary>
-            查看 12 組測試案例
-          </summary>
-
-          <div className="benchmark-table">
-            {benchmarkResult.results.map(
-              (result) => (
-                <div
-                  className="benchmark-row"
-                  key={result.id}
-                >
-                  <strong>{result.id}</strong>
-
-                  <span>
-                    {result.name}
-                  </span>
-
-                  <span>
-                    {result.expected}
-                  </span>
-
-                  <span>
-                    {result.actual}
-                  </span>
-
-                  <StatusBadge
-                    status={
-                      result.passed
-                        ? "PASS"
-                        : "FAIL"
-                    }
+              <details className="quiet-details">
+                <summary><Bilingual zh="本機工具與延遲" en="Local Tool Counters & Latency"/></summary>
+                <div className="counter-grid">
+                  <MetricItem zh="規則引擎呼叫" label="Rules Engine Calls" value={runtimeMetrics.rulesEngineCalls}/>
+                  <MetricItem zh="情境評估" label="Scenario Evaluations" value={runtimeMetrics.scenarioEvaluations}/>
+                  <MetricItem zh="衝突檢查" label="Conflict Checks" value={runtimeMetrics.conflictChecks}/>
+                  <MetricItem zh="權限檢查" label="Permission Checks" value={runtimeMetrics.permissionChecks}/>
+                  <MetricItem zh="護照產出" label="Passport Generations" value={runtimeMetrics.passportGenerations}/>
+                  <MetricItem zh="已測量操作" label="Measured Operations" value={runtimeMetrics.measuredOperations}/>
+                  <MetricItem
+                    zh="平均本機延遲"
+                    label="Average Local Latency"
+                    value={runtimeMetrics.measuredOperations
+                      ? `${(runtimeMetrics.totalLatencyMs / runtimeMetrics.measuredOperations).toFixed(2)} ms`
+                      : null}
+                  />
+                  <MetricItem
+                    zh="最後本機延遲"
+                    label="Last Local Latency"
+                    value={runtimeMetrics.lastLatencyMs !== null ? `${runtimeMetrics.lastLatencyMs.toFixed(2)} ms` : null}
                   />
                 </div>
-              )
-            )}
-          </div>
-        </details>
+                <p className="muted">
+                  <Bilingual zh="延遲僅測量目前瀏覽器內的規則工具，不含網路或政府資料來源延遲。" en="Latency measures browser rule tools only, excluding network and government-source latency."/>
+                </p>
+              </details>
+            </div>
+          )}
 
-        <p className="disclaimer">
-          Evaluation dataset 為競賽 P0
-          之合成 deterministic test cases；
-          不包含真人使用者測試或一般 RAG baseline。
-        </p>
-      </section>
-
-      <section className="card">
-        <div className="card-header">
-          <h2>Audit Trail</h2>
-          <span className="counter">{displayedAuditTrail.length} events</span>
-        </div>
-        {displayedAuditTrail.length === 0 ? (
-          <p className="empty">尚未建立 Case。</p>
-        ) : (
-          <div className="audit-list">
-            {displayedAuditTrail.map((event, index) => (
-              <div className="audit-row" key={event.timestamp + index}>
-                <span className="audit-number">{String(index + 1).padStart(2, "0")}</span>
-                <span className="audit-actor">{event.actor}</span>
-                <strong>{event.action}</strong>
-                <span className="audit-policy">{event.policyVersion}</span>
+          {advancedTab === "CONFLICT" && (
+            <div>
+              <div className="panel-head">
+                <p className="muted">此測試使用合成規則，僅驗證衝突偵測與風險控制機制，不代表任何真實政府政策互相矛盾。</p>
+                <button className="secondary" onClick={runConflictTest}><Bilingual zh="執行合成衝突測試" en="Run Conflict Test"/></button>
               </div>
-            ))}
-          </div>
-        )}
+              {conflictResult && (
+                <div className="conflict-result reveal">
+                  <div className="kv-row">
+                    <span><Bilingual zh="衝突狀態" en="Conflict Status"/></span>
+                    <StatusBadge status={conflictResult.status}/>
+                  </div>
+                  <div className="kv-row">
+                    <span><Bilingual zh="系統動作" en="System Action"/></span>
+                    <StatusBadge status={conflictResult.resolution}/>
+                  </div>
+                  {conflictResult.conflicts.map((conflict) => (
+                    <div className="conflict-box" key={conflict.semanticKey}>
+                      <strong>{conflict.semanticKey}</strong>
+                      {conflict.claims.map((claim) => (
+                        <div className="kv-row" key={claim.claimId}>
+                          <span>{claim.sourceLabel} · {claim.version}</span>
+                          <strong>{String(claim.value)}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                  <div className="callout callout-warn">
+                    <strong><Bilingual {...statusCopy.HUMAN_REVIEW_REQUIRED}/></strong>
+                    <p>偵測到相互矛盾的規則結果。GovAid Atlas 不會自行選擇其中一個答案，而是停止確定式資格判斷並要求人工查核。</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {advancedTab === "PERMISSION" && (
+            <div>
+              <div className="panel-head">
+                <p className="muted">此區塊使用合成個資，僅驗證角色權限、敏感資料遮罩與拒絕存取。</p>
+                <div className="segmented" role="group" aria-label="Role">
+                  {(["APPLICANT", "REVIEWER", "POLICY_ADMIN"] as UserRole[]).map((role) => (
+                    <button
+                      key={role}
+                      className={currentRole === role ? "is-active" : ""}
+                      aria-pressed={currentRole === role}
+                      onClick={() => changeRole(role)}
+                    >
+                      <Bilingual {...roleCopy[role]}/>
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="kv-row">
+                <span><Bilingual zh="目前角色" en="Current Role"/></span>
+                <strong><Bilingual {...roleCopy[currentRole]}/></strong>
+              </div>
+              <div className="kv-row">
+                <span><Bilingual zh="存取權限" en="Access"/></span>
+                <StatusBadge status={visibleProfile.permission.allowed ? "ALLOWED" : "ACCESS_DENIED"}/>
+              </div>
+              {visibleProfile.profile ? (
+                <dl className="sensitive-card">
+                  <div><dt><Bilingual zh="姓名" en="Name"/></dt><dd>{visibleProfile.profile.name}</dd></div>
+                  <div><dt><Bilingual zh="身分證" en="National ID"/></dt><dd>{visibleProfile.profile.nationalId}</dd></div>
+                  <div><dt><Bilingual zh="電話" en="Phone"/></dt><dd>{visibleProfile.profile.phone}</dd></div>
+                  <div><dt><Bilingual zh="月收入" en="Monthly Income"/></dt><dd>{visibleProfile.profile.monthlyIncome}</dd></div>
+                </dl>
+              ) : (
+                <div className="callout callout-fail">
+                  <strong><Bilingual {...statusCopy.ACCESS_DENIED}/></strong>
+                  <p>此角色無權存取申請人敏感資料。</p>
+                </div>
+              )}
+              <p className="muted">{visibleProfile.permission.reason}</p>
+            </div>
+          )}
+          {advancedTab === "AUDIT" && <div className="audit">
+          <p className="muted"><Bilingual zh="稽核事件" en="Audit Events"/> · {displayedAuditTrail.length}</p>
+          {displayedAuditTrail.length === 0 ? (
+            <p className="muted"><Bilingual zh="尚無執行紀錄" en="No run history"/></p>
+          ) : (
+            <div className="audit-list">
+              {displayedAuditTrail.map((event, index) => (
+                <div className="audit-row" key={event.timestamp + index}>
+                  <span className="audit-number">{String(index + 1).padStart(2, "0")}</span>
+                  <span className="audit-actor"><Bilingual {...(actorCopy[event.actor])}/></span>
+                  <strong><Bilingual {...(auditCopy[event.action] ?? {zh: "執行事件", en: "Runtime event"})}/></strong>
+                  <span className="audit-policy">{event.policyVersion}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          </div>}
+        </div>
+
+        <details className="quiet-details debug-details">
+          <summary><Bilingual zh="進階除錯資訊" en="Advanced → Debug details"/></summary>
+          <button className="secondary" disabled={agentRunning} onClick={startGoldenCase}><Bilingual zh="規則示範案例" en="Deterministic Golden Case"/></button>
+          <pre>{JSON.stringify({status: agentRun.status, currentStep: agentRun.currentStep, lastToolCall: agentRun.lastToolCall, providerError, plan: agentRun.plan, decision: agentRun.lastDecision, auditTrail: displayedAuditTrail}, null, 2)}</pre>
+        </details>
       </section>
     </main>
   );
 }
 
+type AdvancedTab = "BENCHMARK" | "RUNTIME" | "CONFLICT" | "PERMISSION" | "AUDIT";
+
+const advancedTabs: {id: AdvancedTab; label: BilingualCopy}[] = [
+  {id: "PERMISSION", label: {zh: "權限", en: "Permissions"}},
+  {id: "CONFLICT", label: {zh: "政策衝突", en: "Policy Conflict"}},
+  {id: "RUNTIME", label: {zh: "執行指標", en: "Runtime Metrics"}},
+  {id: "BENCHMARK", label: {zh: "基準測試", en: "Benchmark"}},
+  {id: "AUDIT", label: {zh: "稽核紀錄", en: "Audit Trail"}},
+];
+
+type StepState = "PENDING" | "ACTIVE" | "DONE" | "BLOCKED";
+
+type JourneyStep = {
+  key: string;
+  label: BilingualCopy;
+  state: StepState;
+};
+
+function scrollBehavior(): ScrollBehavior {
+  return typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches
+    ? "auto"
+    : "smooth";
+}
+
+// Presentation-only view of the agent run; it reads status and audit events and never changes them.
+function buildJourney(run: AgentRun): JourneyStep[] {
+  const status = run.status;
+  const toolCompleted = run.auditTrail.some((event) => event.action === "AGENT_TOOL_COMPLETED");
+  const resumed = run.auditTrail.some((event) => event.action === "AGENT_RESUMED");
+  const started = status !== "IDLE";
+
+  const steps: JourneyStep[] = [
+    {key: "goal", label: {zh: "理解目標", en: "Understand Goal"}, state: started ? "DONE" : "ACTIVE"},
+    {key: "plan", label: {zh: "規劃", en: "Plan"}, state: !started ? "PENDING" : status === "PLANNING" ? "ACTIVE" : "DONE"},
+    {
+      key: "tool",
+      label: {zh: "工具執行", en: "Tool Execution"},
+      state: status === "RUNNING_TOOL" ? "ACTIVE" : toolCompleted ? "DONE" : "PENDING",
+    },
+    {
+      key: "human",
+      label: {zh: "人工確認", en: "Human Gate"},
+      state: status === "WAITING_FOR_HUMAN" || status === "HUMAN_REVIEW_REQUIRED"
+        ? "ACTIVE"
+        : resumed || status === "COMPLETED"
+          ? "DONE"
+          : "PENDING",
+    },
+    {
+      key: "resume",
+      label: {zh: "繼續執行", en: "Resume"},
+      state: status === "RESUMING"
+        ? "ACTIVE"
+        : status === "COMPLETED" || (resumed && status === "WAITING_FOR_HUMAN")
+          ? "DONE"
+          : "PENDING",
+    },
+    {key: "decision", label: {zh: "產出決策", en: "Decision"}, state: status === "COMPLETED" ? "DONE" : "PENDING"},
+  ];
+
+  if (status === "FAILED") {
+    const blocked = steps.find((step) => step.state !== "DONE");
+    if (blocked) {
+      blocked.state = "BLOCKED";
+    }
+  }
+
+  return steps;
+}
+
+const policyLabels: Record<string, {name: string; detail: string}> = {
+  CENTRAL_RENT_115: {name: "中央租屋補助", detail: "中央擴大租金補貼（115年度）"},
+  NEW_TAIPEI_RENT_115: {name: "新北地方方案", detail: "新北市青年租金補貼（115年度）"},
+  TAIPEI_RENT_115: {name: "臺北地方方案", detail: "臺北幸福租－租金加碼補貼（115年度）"},
+};
+
+const fieldLabels: Record<string, string> = {
+  age: "年齡",
+  maritalStatus: "婚姻狀態",
+  childrenCount: "子女數",
+  registeredCity: "戶籍",
+  monthlyIncome: "月收入",
+  ownsHome: "本人是否持有住宅",
+  receivesOtherHousingAid: "是否領有其他住宅補貼",
+  centralRentApproved: "中央租金補貼是否已核准",
+  newTaipeiResidenceStudyWork: "新北市設籍、就學或就業條件",
+};
+
+function policyName(policyId: string): string {
+  return policyLabels[policyId]?.name ?? policyId;
+}
+
+// Surfaces the first unresolved rule for display; statuses come straight from the rules engine.
+function describeGap(evaluations: RuleEvaluation[]): string | null {
+  const gap = evaluations.find((evaluation) => evaluation.status === "UNCERTAIN")
+    ?? evaluations.find((evaluation) => evaluation.status === "FAIL");
+  if (!gap) {
+    return null;
+  }
+  const field = gap.reason.match(/缺少必要資料：(.+)/)?.[1] ?? gap.reason.split(" ")[0];
+  const label = fieldLabels[field] ?? field;
+  return gap.status === "UNCERTAIN" ? `待確認：${label}` : `不符合：${label}`;
+}
+
 function MetricItem({
+  zh,
   label,
   value,
 }: {
+  zh: string;
   label: string;
-  value: string | number;
+  value: React.ReactNode;
 }) {
   return (
     <div className="metric-item">
-      <span>{label}</span>
-      <strong>{value}</strong>
+      <span className="metric-label"><Bilingual zh={zh} en={label}/></span>
+      <strong>{value ?? <Bilingual zh="尚無資料" en="N/A"/>}</strong>
     </div>
   );
 }
 
-function ScenarioCard({title, result}: {title: string; result: ScenarioResult}) {
+function ScenarioColumn({title, result}: {title: string; result: ScenarioResult}) {
   return (
-    <article className="card">
-      <div className="card-header">
-        <div>
-          <p className="eyebrow">{title}</p>
-          <h2>{result.scenario.city}{result.scenario.district}</h2>
+    <article className={"scenario-col" + (title === "WHAT-IF" ? " is-whatif" : "")}>
+      <header className="scenario-head">
+        <span className="scenario-type"><Bilingual zh={title === "ACTUAL" ? "實際情境" : "假設情境"} en={title}/></span>
+        <h3>{result.scenario.city}{result.scenario.district}</h3>
+        <p className="scenario-rent">
+          NT${result.scenario.monthlyRent.toLocaleString()}
+          <span> / <Bilingual zh="月" en="month"/></span>
+        </p>
+      </header>
+
+      <div className="policy-table" role="table" aria-label={`${title} policies`}>
+        <div className="policy-row policy-row-head" role="row">
+          <span role="columnheader"><Bilingual zh="政策" en="Policy"/></span>
+          <span role="columnheader"><Bilingual zh="狀態" en="Status"/></span>
+          <span role="columnheader"><Bilingual zh="待確認" en="Missing"/></span>
         </div>
-        <span className="rent">NT${result.scenario.monthlyRent.toLocaleString()}/月</span>
-      </div>
-      <div className="policy-list">
         {result.policyResults.map((policy) => (
-          <div className="policy" key={policy.policyId}>
-            <div className="policy-title">
-              <strong>{policy.policyId}</strong>
-              <StatusBadge status={policy.overallStatus}/>
-            </div>
+          <div className="policy-row" role="row" key={policy.policyId}>
+            <span role="cell" className="policy-name">
+              <strong>{policyName(policy.policyId)}</strong>
+              <small>{policyLabels[policy.policyId]?.detail}</small>
+            </span>
+            <span role="cell"><StatusBadge status={policy.overallStatus}/></span>
+            <span role="cell" className="policy-gap">{describeGap(policy.evaluations) ?? "—"}</span>
+          </div>
+        ))}
+      </div>
+
+      <details className="quiet-details">
+        <summary><Bilingual zh="規則詳情" en="Rule Details"/></summary>
+        {result.policyResults.map((policy) => (
+          <div className="rule-group" key={policy.policyId}>
+            <span className="rule-group-title">{policy.policyId}</span>
             {policy.evaluations.map((evaluation) => (
               <div className="rule-row" key={evaluation.ruleId}>
-                <span>{evaluation.ruleId}</span>
+                <code>{evaluation.ruleId}</code>
+                <span className="rule-reason">{evaluation.reason} · {evaluation.sourceId}</span>
                 <StatusBadge status={evaluation.status}/>
               </div>
             ))}
           </div>
         ))}
-      </div>
+      </details>
     </article>
+  );
+}
+
+function DecisionPassportView({passport, sectionRef}: {passport: DecisionPassport; sectionRef: React.Ref<HTMLElement>}) {
+  const programs = [...passport.actual.programs, ...passport.whatIf.programs]
+    .filter((program, index, array) => array.findIndex((candidate) => candidate.policyId === program.policyId) === index);
+  const evidence = [...passport.actual.programs, ...passport.whatIf.programs]
+    .flatMap((program) => program.evidence)
+    .filter((item, index, array) => array.findIndex((candidate) => candidate.sourceId === item.sourceId) === index)
+    .sort((left, right) => left.sourceId.localeCompare(right.sourceId, "en", {numeric: true}));
+
+  return (
+    <section className="passport reveal" ref={sectionRef} aria-labelledby="passport-title">
+      <header className="passport-head">
+        <div>
+          <p className="eyebrow">{passport.caseId}</p>
+          <h2 id="passport-title"><Bilingual zh="申辦決策護照" en="Decision Passport"/></h2>
+        </div>
+        <span className="passport-stamp"><Bilingual zh="產出時間" en="Generated"/> {new Date(passport.generatedAt).toLocaleString("zh-TW", {hour12: false})}</span>
+      </header>
+
+      <div className="passport-summary">
+        {programs.map((program) => (
+          <div className={"program-tile tile-" + program.status.toLowerCase()} key={program.policyId}>
+            <span className="program-name">{policyName(program.policyId)}</span>
+            <StatusBadge status={program.status}/>
+          </div>
+        ))}
+      </div>
+
+      <div className="passport-grid">
+        <div className="passport-col">
+          <h3><Bilingual zh="待確認事項" en="Missing Items"/></h3>
+          {passport.missingItems.length ? (
+            <ul>{passport.missingItems.map((item) => <li key={item}>{item}</li>)}</ul>
+          ) : <p className="muted"><Bilingual zh="無" en="None"/></p>}
+        </div>
+        <div className="passport-col">
+          <h3><Bilingual zh="風險" en="Risks"/></h3>
+          <ul>{passport.risks.map((item) => <li key={item}>{item}</li>)}</ul>
+        </div>
+        <div className="passport-col">
+          <h3><Bilingual zh="下一步" en="Next Steps"/></h3>
+          <ol>{passport.nextSteps.map((item) => <li key={item}>{item}</li>)}</ol>
+        </div>
+        <div className="passport-col">
+          <h3><Bilingual zh="政策依據" en="Evidence"/></h3>
+          <div className="evidence-list">
+            {evidence.map((item) => (
+              <a key={item.sourceId} href={item.url} target="_blank" rel="noreferrer">
+                <span className="evidence-id">{item.sourceId}</span>
+                <span className="evidence-body">
+                  <strong>{item.agency}</strong>
+                  <span>{item.policyName}</span>
+                  <small><Bilingual zh="查核日" en="Verified"/> {item.lastVerifiedAt}</small>
+                </span>
+              </a>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <p className="disclaimer">{passport.disclaimer}</p>
+    </section>
+  );
+}
+
+function BenchmarkComparison({deterministic}: {deterministic: ReturnType<typeof runBenchmark>}) {
+  return (
+    <div className="benchmark">
+      <h3 className="bench-title"><Bilingual zh="安全優先於過度確定" en="Safety Before Certainty"/></h3>
+      <p className="muted"><Bilingual zh="已驗證的靜態評測快照" en="Validated static benchmark snapshot"/></p>
+      <div className="bench-legend" aria-hidden="true">
+        <span className="bench-key"><span className="swatch swatch-baseline"/><Bilingual zh="一般 LLM + Policy Context" en="LLM + Policy Context"/></span>
+        <span className="bench-key"><span className="swatch swatch-atlas"/>GovAid Atlas</span>
+        <span className="bench-key bench-pending"><Bilingual zh="人工基準測試進行中" en="Manual baseline pending"/></span>
+      </div>
+
+      <div className="bench-table" role="table" aria-label="LLM + Context vs GovAid Atlas">
+        <div className="bench-row bench-row-head" role="row">
+          <span role="columnheader"><Bilingual zh="指標" en="Metric"/></span>
+          <span role="columnheader"><Bilingual zh="一般 LLM + Policy Context" en="LLM + Policy Context"/></span>
+          <span role="columnheader">GovAid Atlas</span>
+        </div>
+        {finalBenchmark.metrics.map((metric) => (
+          <div className="bench-row" role="row" key={metric.key}>
+            <span role="rowheader" className="bench-metric">
+              <strong><Bilingual {...benchmarkCopy[metric.key]}/></strong>
+              <small><Bilingual zh={metric.higherIsBetter ? "越高越好" : "越低越好"} en={metric.higherIsBetter ? "Higher is better" : "Lower is better"}/></small>
+            </span>
+            <BenchValue variant="baseline" value={metric.llmContext}/>
+            <BenchValue variant="atlas" value={metric.govaidAtlas}/>
+          </div>
+        ))}
+      </div>
+
+      <p className="lead-note">
+        <Bilingual zh={`${finalBenchmark.caseCount} 組合成政策導航測試案例，不代表真實世界整體準確率。`} en={`${finalBenchmark.caseCount} synthetic policy-navigation cases; not a real-world accuracy claim.`}/>
+      </p>
+      <p className="muted">
+        過度確定率僅計算 5 個安全關鍵案例；證據覆蓋率分母為 9 個需引用官方來源的案例。GovAid Atlas 數據來自規則引擎評估，不含完整 Agent 流程耗時。
+      </p>
+
+      <details className="quiet-details">
+        <summary>
+          <Bilingual zh="既有規則引擎回歸測試" en="Deterministic P0 Regression"/> · {deterministic.summary.passedCases}/{deterministic.summary.totalCases}{" "}
+          <StatusBadge status={deterministic.summary.failedCases === 0 ? "PASS" : "FAIL"}/>
+        </summary>
+        <div className="benchmark-table">
+          {deterministic.results.map((result) => (
+            <div className="benchmark-row" key={result.id}>
+              <strong>{result.id}</strong>
+              <span>{result.name}</span>
+              <span><StatusBadge status={result.expected}/></span>
+              <span><StatusBadge status={result.actual}/></span>
+              <StatusBadge status={result.passed ? "PASS" : "FAIL"}/>
+            </div>
+          ))}
+        </div>
+        <p className="muted">
+          <Bilingual zh="證據覆蓋率" en="Evidence Coverage"/> {deterministic.summary.evidenceCoveragePercent}% · <Bilingual zh="過度確定" en="Unsafe Certainty"/> {deterministic.summary.unsafeCertaintyCount} ·
+          <Bilingual zh="衝突" en="Conflict"/> {deterministic.summary.conflictCasesPassed}/{deterministic.summary.conflictCases} ·
+          <Bilingual zh="恢復" en="Recovery"/> {deterministic.summary.recoveryCasesPassed}/{deterministic.summary.recoveryCases}
+        </p>
+      </details>
+    </div>
+  );
+}
+
+function BenchValue({variant, value}: {variant: "baseline" | "atlas"; value: {percent: number; numerator: number; denominator: number}}) {
+  return (
+    <span role="cell" className={"bench-value bench-" + variant} title={`${value.numerator}/${value.denominator}`}>
+      <span className="bench-number">
+        {Number.isInteger(value.percent) ? value.percent : value.percent.toFixed(1)}%
+        <small>{value.numerator}/{value.denominator}</small>
+      </span>
+      <span className="bench-track" aria-hidden="true">
+        <span className="bench-fill" style={{width: `${value.percent}%`}}/>
+      </span>
+    </span>
   );
 }
 
