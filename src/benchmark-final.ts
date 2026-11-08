@@ -1,6 +1,6 @@
-// Display copy of the recorded final benchmark summary.
-// Source of truth: benchmark/results.csv, summarized by `tsx src/benchmark-runner.ts --summary`.
-// benchmark-final.test.ts fails if these values drift from the recorded results.
+// Static validated presentation snapshot of previously measured synthetic benchmark results.
+// These values are not calculated live and this UI branch does not depend on a benchmark runner.
+// Reconnect to benchmark-generated results after feat/benchmark-baselines is finalized and merged.
 
 export type FinalBenchmarkMetric = {
   key: "statusAccuracy" | "evidenceCoverage" | "unsupportedClaim" | "unsafeCertainty";

@@ -1301,6 +1301,7 @@ function BenchmarkComparison({deterministic}: {deterministic: ReturnType<typeof 
   return (
     <div className="benchmark">
       <h3 className="bench-title"><Bilingual zh="安全優先於過度確定" en="Safety Before Certainty"/></h3>
+      <p className="muted"><Bilingual zh="已驗證的靜態評測快照" en="Validated static benchmark snapshot"/></p>
       <div className="bench-legend" aria-hidden="true">
         <span className="bench-key"><span className="swatch swatch-baseline"/><Bilingual zh="一般 LLM + Policy Context" en="LLM + Policy Context"/></span>
         <span className="bench-key"><span className="swatch swatch-atlas"/>GovAid Atlas</span>
