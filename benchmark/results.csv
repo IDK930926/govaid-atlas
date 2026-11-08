@@ -1,0 +1,100 @@
+Run ID,Case ID,Method,Final Answer,Correct Status,Missing Condition Detected,Official Evidence Provided,Unsupported Claim,Unsafe Certainty,Completion Time Seconds,Completed,Notes,Reviewer Notes
+2026-11-08T01:31:49.316Z,B01,LLM_CONTEXT,"{
+  ""status"": ""PASS"",
+  ""missingCondition"": null,
+  ""answer"": ""The applicant meets all eligibility criteria: ownsHome is false and receivesOtherHousingAid is false, satisfying the requirements for the 115 Central Rent Subsidy as per source R1."",
+  ""citations"": [
+    {
+      ""sourceId"": ""R1"",
+      ""policyName"": ""三百億元中央擴大租金補貼專案計畫作業規定（115年度）""
+    }
+  ]
+}",YES,N/A,YES,1,NO,26.303,YES,Ollama qwen3.5:4b; unsupported claims require human adjudication (REVIEW).,回答宣稱「符合所有資格條件」，但目前 benchmark / P0 evidence 只驗證已實作的局部條件，無法支持完整資格已全部符合；屬於超出 evidence 範圍的完整性主張。
+2026-11-08T01:31:49.316Z,B02,LLM_CONTEXT,"{
+  ""status"": ""FAIL"",
+  ""missingCondition"": null,
+  ""answer"": ""The applicant is ineligible because the policy requires 'ownsHome' to be false, but the synthetic input indicates 'ownsHome' is true. This violates the eligibility condition for the 115 Central Rent Subsidy."",
+  ""evidence"": [
+    {
+      ""sourceId"": ""R1"",
+      ""condition"": ""ownsHome 必須為 false""
+    }
+  ]
+}",YES,N/A,YES,0,NO,14.889,YES,Ollama qwen3.5:4b; unsupported claims require human adjudication (REVIEW).,政策主張僅為「持有住宅會違反目前提供的資格條件」，可由 R1 支持；FAIL 是否正確另由 Status Accuracy 評分。
+2026-11-08T01:31:49.316Z,B03,LLM_CONTEXT,"{
+  ""status"": ""FAIL"",
+  ""missingCondition"": null,
+  ""answer"": ""The applicant fails eligibility because the policy requires receivesOtherHousingAid to be false, but the synthetic input indicates it is true. This violates the condition for the 115年度中央租金補貼."",
+  ""evidence"": [
+    {
+      ""sourceId"": ""R1"",
+      ""condition"": ""receivesOtherHousingAid 必須為 false""
+    }
+  ]
+}",YES,N/A,YES,0,NO,15.706,YES,Ollama qwen3.5:4b; unsupported claims require human adjudication (REVIEW).,政策主張僅為「接受其他住宅補助會違反目前提供的資格條件」，可由 R1 支持，沒有新增 evidence 未支持的政策事實。
+2026-11-08T01:31:49.316Z,B04,LLM_CONTEXT,"{
+  ""status"": ""UNCERTAIN"",
+  ""missingCondition"": ""ownsHome"",
+  ""answer"": ""The policy requires ownsHome to be false, but the input data shows ownsHome as null. Without a definitive value for ownsHome, eligibility cannot be determined.""
+}",YES,YES,NO,0,NO,11.282,YES,Ollama qwen3.5:4b; unsupported claims require human adjudication (REVIEW).,雖未附明確 citation，但「ownsHome 需確認／目前資料不足」與提供的政策 context 一致；Evidence Coverage 可另扣分，不重複判 unsupported claim。
+2026-11-08T01:31:49.316Z,B05,LLM_CONTEXT,"{
+  ""status"": ""UNCERTAIN"",
+  ""missingCondition"": ""receivesOtherHousingAid"",
+  ""answer"": ""The policy requires receivesOtherHousingAid to be false, but the synthetic input shows this field as null. Without knowing if the applicant receives other housing aid, eligibility cannot be determined.""
+}",YES,YES,NO,0,NO,13.677,YES,Ollama qwen3.5:4b; unsupported claims require human adjudication (REVIEW).,「receivesOtherHousingAid 尚未確認，因此無法確定資格」可由提供的政策 context 支持；沒有新增政策事實。
+2026-11-08T01:31:49.316Z,B06,LLM_CONTEXT,"{
+  ""status"": ""FAIL"",
+  ""missingCondition"": null,
+  ""answer"": ""The applicant fails eligibility because the synthetic input indicates 'newTaipeiResidenceStudyWork' is null (not true), whereas the policy context explicitly requires this field to be true for the 115th year New Taipei City Youth Rent Subsidy."",
+  ""evidence"": [
+    {
+      ""sourceId"": ""R7"",
+      ""statement"": ""115年度新北市青年租金補貼：newTaipeiResidenceStudyWork 必須為 true。""
+    }
+  ]
+}",NO,YES,YES,0,YES,19.292,YES,Ollama qwen3.5:4b; unsupported claims require human adjudication (REVIEW).,回答把 null 誤當成不符合而判 FAIL，這是推論／Unsafe Certainty 問題；但「newTaipeiResidenceStudyWork 需為 true」本身有 R7 支持，因此不重複算 unsupported claim。
+2026-11-08T01:31:49.316Z,B07,LLM_CONTEXT,"{
+  ""status"": ""PASS"",
+  ""missingCondition"": null,
+  ""answer"": ""The applicant meets all eligibility criteria: 'newTaipeiResidenceStudyWork' is true and 'receivesOtherHousingAid' is false, as required by the policy context [sourceId: R7]."",
+  ""evidenceCitations"": [""R7""]
+}",YES,N/A,YES,1,NO,14.242,YES,Ollama qwen3.5:4b; unsupported claims require human adjudication (REVIEW).,回答宣稱「符合所有資格條件」，但 R7 / P0 context 只支持目前已實作的局部條件，不能支持完整新北方案所有資格均已滿足；屬於過度完整化主張。
+2026-11-08T01:31:49.316Z,B08,LLM_CONTEXT,"{
+  ""status"": ""FAIL"",
+  ""missingCondition"": ""centralRentApproved must be true"",
+  ""answer"": ""The synthetic input shows centralRentApproved is null. According to the policy context, centralRentApproved must be true for eligibility (sourceId: R6). Since the condition is not met, the case fails.""
+}",NO,YES,YES,0,YES,13.520,YES,Ollama qwen3.5:4b; unsupported claims require human adjudication (REVIEW).,回答把 unknown/null 當成 FAIL 是 Status Accuracy / Unsafe Certainty 問題；「centralRentApproved 需為 true」本身可由 R6 支持，沒有額外捏造政策事實。
+2026-11-08T01:31:49.316Z,B09,LLM_CONTEXT,"{
+  ""status"": ""PASS"",
+  ""missingCondition"": null,
+  ""answer"": ""The case meets all eligibility criteria: the registered city is Taipei (matching policy requirement R6), and central rent approval is true (matching policy requirement R6). The monthly rent of 15,500 NTD falls within the eligible range for the 115th year program."",
+  ""citations"": [
+    {
+      ""sourceId"": ""R6"",
+      ""text"": ""registeredCity 必須等於「臺北市」。""
+    },
+    {
+      ""sourceId"": ""R6"",
+      ""text"": ""centralRentApproved 必須為 true。""
+    }
+  ]
+}",YES,N/A,YES,1,NO,21.126,YES,Ollama qwen3.5:4b; unsupported claims require human adjudication (REVIEW).,"除已提供的臺北條件外，回答額外宣稱「月租 15,500 元落在 115 年方案可補助範圍內」；目前 benchmark evidence / P0 規則未提供此租金門檻主張，屬 unsupported claim。"
+2026-11-08T01:31:49.316Z,B10,LLM_CONTEXT,"{
+  ""status"": ""UNCERTAIN"",
+  ""missingCondition"": null,
+  ""answer"": ""The supplied information contains only synthetic test assertions that are explicitly declared as contradictory and not official government policy. There is no official evidence to resolve the conflict between SYN-A (ALLOW) and SYN-B (DENY)."",
+  ""evidenceCitations"": [
+    {""sourceId"": ""SYN-A""},
+    {""sourceId"": ""SYN-B""}
+  ]
+}",NO,N/A,N/A,0,NO,15.232,YES,Ollama qwen3.5:4b; unsupported claims require human adjudication (REVIEW).,回答指出 SYN-A 與 SYN-B 為合成且互相矛盾，並表示沒有官方 evidence 可據以解決，與 benchmark 設計一致；狀態應為 HUMAN_REVIEW_REQUIRED 的問題由 Status Accuracy 評分。
+2026-11-08T01:35:03.616Z,B01,GOVAID_ATLAS,Status: PASS,YES,N/A,YES,NO,NO,0.000,YES,Existing deterministic evaluation; no manual or LLM result.
+2026-11-08T01:35:03.616Z,B02,GOVAID_ATLAS,Status: FAIL,YES,N/A,YES,NO,NO,0.000,YES,Existing deterministic evaluation; no manual or LLM result.
+2026-11-08T01:35:03.616Z,B03,GOVAID_ATLAS,Status: FAIL,YES,N/A,YES,NO,NO,0.000,YES,Existing deterministic evaluation; no manual or LLM result.
+2026-11-08T01:35:03.616Z,B04,GOVAID_ATLAS,Status: UNCERTAIN. Missing condition: ownsHome,YES,YES,YES,NO,NO,0.000,YES,Existing deterministic evaluation; no manual or LLM result.
+2026-11-08T01:35:03.616Z,B05,GOVAID_ATLAS,Status: UNCERTAIN. Missing condition: receivesOtherHousingAid,YES,YES,YES,NO,NO,0.000,YES,Existing deterministic evaluation; no manual or LLM result.
+2026-11-08T01:35:03.616Z,B06,GOVAID_ATLAS,Status: UNCERTAIN. Missing condition: newTaipeiResidenceStudyWork,YES,YES,YES,NO,NO,0.000,YES,Existing deterministic evaluation; no manual or LLM result.
+2026-11-08T01:35:03.616Z,B07,GOVAID_ATLAS,Status: PASS,YES,N/A,YES,NO,NO,0.000,YES,Existing deterministic evaluation; no manual or LLM result.
+2026-11-08T01:35:03.616Z,B08,GOVAID_ATLAS,Status: UNCERTAIN. Missing condition: centralRentApproved,YES,YES,YES,NO,NO,0.000,YES,Existing deterministic evaluation; no manual or LLM result.
+2026-11-08T01:35:03.616Z,B09,GOVAID_ATLAS,Status: PASS,YES,N/A,YES,NO,NO,0.000,YES,Existing deterministic evaluation; no manual or LLM result.
+2026-11-08T01:35:03.616Z,B10,GOVAID_ATLAS,Status: HUMAN_REVIEW_REQUIRED. 同一政策語意出現互相矛盾的規則結果，系統禁止自動選擇其中之一。,YES,N/A,N/A,NO,NO,0.000,YES,Existing deterministic evaluation; no manual or LLM result.
