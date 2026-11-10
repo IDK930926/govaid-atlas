@@ -14,6 +14,33 @@ export const agentStatusCopy: Record<AgentStatus, BilingualCopy> = {
   HUMAN_REVIEW_REQUIRED: {zh: "需要人工審查", en: "Human review required"},
 };
 
+// Main-surface wording for each agent status. Raw enums only appear in Audit / Debug.
+export const statusDisplayCopy: Record<AgentStatus, string> = {
+  IDLE: "準備開始",
+  PLANNING: "分析中",
+  RUNNING_TOOL: "正在執行政策工具",
+  WAITING_FOR_HUMAN: "等待你的確認",
+  RESUMING: "繼續分析",
+  COMPLETED: "分析完成",
+  FAILED: "分析未完成",
+  HUMAN_REVIEW_REQUIRED: "需要人工審查",
+};
+
+// Rule-engine outcome wording. Semantics stay PASS / FAIL / UNCERTAIN; only the label changes.
+export const resultCopy: Record<"PASS" | "FAIL" | "UNCERTAIN", BilingualCopy> = {
+  PASS: {zh: "通過", en: "PASS"},
+  FAIL: {zh: "不符合", en: "FAIL"},
+  UNCERTAIN: {zh: "待確認", en: "UNCERTAIN"},
+};
+
+export const workflowSteps: {key: string; zh: string; en: string}[] = [
+  {key: "goal", zh: "申請目標", en: "Goal"},
+  {key: "analyze", zh: "Agent 分析", en: "Analyze"},
+  {key: "human", zh: "人工確認", en: "Human Gate"},
+  {key: "compare", zh: "情境比較", en: "Compare"},
+  {key: "decision", zh: "決策護照", en: "Decision"},
+];
+
 export const statusCopy: Record<string, BilingualCopy> = {
   ...agentStatusCopy,
   PASS: {zh: "通過", en: "PASS"},
