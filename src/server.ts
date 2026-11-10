@@ -1,12 +1,6 @@
-<<<<<<< Updated upstream
 import { readFile, stat } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, relative, resolve, sep } from "node:path";
-=======
-import { readFile } from "node:fs/promises";
-import { createServer } from "node:http";
-import { extname, resolve, sep } from "node:path";
->>>>>>> Stashed changes
 import { URL } from "node:url";
 
 import { callPlanner, getProviderHealth, getOllamaModel } from "./agent/client";
@@ -14,21 +8,15 @@ import { buildSafePlan } from "./agent/orchestrator";
 import { listAllowedTools } from "./agent/tools";
 
 const PORT = Number(process.env.PORT ?? 8787);
-<<<<<<< Updated upstream
 const HOST = "127.0.0.1";
 const DIST_DIR = resolve(__dirname, "../dist");
 
 const MIME_TYPES: Record<string, string> = {
-=======
-const DIST_DIR = resolve(process.cwd(), "dist");
-const CONTENT_TYPES: Record<string, string> = {
->>>>>>> Stashed changes
   ".css": "text/css; charset=utf-8",
   ".html": "text/html; charset=utf-8",
   ".ico": "image/x-icon",
   ".js": "text/javascript; charset=utf-8",
   ".json": "application/json; charset=utf-8",
-<<<<<<< Updated upstream
   ".png": "image/png",
   ".svg": "image/svg+xml",
   ".txt": "text/plain; charset=utf-8",
@@ -36,44 +24,6 @@ const CONTENT_TYPES: Record<string, string> = {
   ".woff": "font/woff",
   ".woff2": "font/woff2",
 };
-=======
-  ".svg": "image/svg+xml",
-};
-
-async function serveStatic(pathname: string, response: import("node:http").ServerResponse): Promise<boolean> {
-  let decodedPath: string;
-  try {
-    decodedPath = decodeURIComponent(pathname);
-  } catch {
-    response.writeHead(400);
-    response.end();
-    return true;
-  }
-
-  const relativePath = decodedPath === "/" ? "index.html" : decodedPath.replace(/^[/\\]+/, "");
-  const filePath = resolve(DIST_DIR, relativePath);
-  if (!filePath.startsWith(`${DIST_DIR}${sep}`)) {
-    response.writeHead(404, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ ok: false, error: "Not found" }));
-    return true;
-  }
-
-  try {
-    const content = await readFile(filePath);
-    response.writeHead(200, {
-      "Content-Type": CONTENT_TYPES[extname(filePath).toLowerCase()] ?? "application/octet-stream",
-      "Cache-Control": filePath.endsWith("index.html") ? "no-cache" : "public, max-age=31536000, immutable",
-    });
-    response.end(content);
-    return true;
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT" || (error as NodeJS.ErrnoException).code === "EISDIR") {
-      return false;
-    }
-    throw error;
-  }
-}
->>>>>>> Stashed changes
 
 async function readBody(request: import("node:http").IncomingMessage): Promise<unknown> {
   if (!request.readable) {
@@ -219,16 +169,9 @@ async function handleRequest(request: import("node:http").IncomingMessage, respo
     return;
   }
 
-<<<<<<< Updated upstream
   if (!url.pathname.startsWith("/api/") && url.pathname !== "/api") {
     await serveStatic(request, response, url.pathname);
     return;
-=======
-  if (request.method === "GET" && !url.pathname.startsWith("/api/")) {
-    if (await serveStatic(url.pathname, response)) {
-      return;
-    }
->>>>>>> Stashed changes
   }
 
   response.writeHead(404, { "Content-Type": "application/json" });
@@ -248,11 +191,6 @@ const server = createServer((request, response) => {
   });
 });
 
-<<<<<<< Updated upstream
 server.listen(PORT, HOST, () => {
   console.log(`GovAid Atlas production preview listening on http://${HOST}:${PORT}`);
-=======
-server.listen(PORT, () => {
-  console.log(`GovAid Atlas production preview listening on http://127.0.0.1:${PORT}`);
->>>>>>> Stashed changes
 });
