@@ -863,12 +863,12 @@ footer.foot{padding:22px 0;background:#1b2023;color:#7b868b;font-size:12px;text-
       </div>
       <div class="rv">
         <div class="stats">
-          <div class="stat"><div class="v">≈5.1<small>s</small></div><div class="l">OpenAI planner median</div><div class="s">團隊實測 live runs</div></div>
-          <div class="stat"><div class="v">5 / 5</div><div class="l">OpenAI live runs completed</div><div class="s">團隊實測 live runs</div></div>
+          <div class="stat"><div class="v">≈5.1<small>s</small></div><div class="l">OpenAI planner median</div><div class="s">Measured in five Golden Path validation runs</div></div>
+          <div class="stat"><div class="v">5 / 5</div><div class="l">OpenAI live runs completed</div><div class="s">Measured in five Golden Path validation runs · 0 fallback</div></div>
           <div class="stat"><div class="v">5 / 5</div><div class="l">Ollama local golden runs</div><div class="s">CPU · median planner 63.8 s</div></div>
           <div class="stat"><div class="v">≤0.34<small>s</small></div><div class="l">Human confirm → result</div><div class="s">Deterministic resume</div></div>
         </div>
-        <p class="rel-note">只列出實際量測過的數字，不提供 uptime 宣稱。本展示檔本身不呼叫任何模型，所有流程為離線重播。</p>
+        <p class="rel-note">只列出實際量測過的數字（賽前驗證，非 SLA、非 uptime 保證）。本展示檔本身不呼叫任何模型，所有流程為離線重播。</p>
       </div>
     </div>
   </div>
@@ -1222,6 +1222,7 @@ footer.foot{padding:22px 0;background:#1b2023;color:#7b868b;font-size:12px;text-
       var el=$('[data-bm="'+i+'"]'); var t0=null, dur=reduce?1:1300;
       function f(ts){ if(!t0) t0=ts; var p=Math.min(1,(ts-t0)/dur); var e=1-Math.pow(1-p,3); var v=m.b+(m.a-m.b)*e; el.textContent=(p<1?v.toFixed(m.dec):m.a)+"%"; if(p<1) requestAnimationFrame(f); }
       setTimeout(function(){ requestAnimationFrame(f); },300);
+      setTimeout(function(){ el.textContent=m.a+"%"; },dur+900); // fallback if rAF is throttled
     });
   }
   var bmIO = ("IntersectionObserver" in window) ? new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ animateBench(); bmIO.disconnect(); } }); },{threshold:.35}) : null;
