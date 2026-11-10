@@ -6,6 +6,9 @@ import {
   type ProviderPlannerInput,
   type ProviderPlannerResult,
   validateStructuredAgentDecision,
+  PLANNER_SYSTEM_PROMPT,
+  classifyHttpStatus,
+  classifyThrownError,
 } from "./types";
 
 const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
@@ -43,6 +46,7 @@ export async function healthCheckOllama(): Promise<ProviderHealth> {
         providerStatus: "UNAVAILABLE",
         model,
         error: `OLLAMA_PROVIDER_UNAVAILABLE: ${response.status}`,
+        errorClass: "PROVIDER_UNAVAILABLE",
       };
     }
 
@@ -56,6 +60,7 @@ export async function healthCheckOllama(): Promise<ProviderHealth> {
         providerStatus: "UNAVAILABLE",
         model,
         error: "OLLAMA_MODEL_NOT_AVAILABLE",
+        errorClass: "MODEL_NOT_AVAILABLE",
       };
     }
 
@@ -70,6 +75,7 @@ export async function healthCheckOllama(): Promise<ProviderHealth> {
       providerStatus: "UNAVAILABLE",
       model,
       error: error instanceof Error ? `OLLAMA_PROVIDER_UNAVAILABLE: ${error.message}` : "OLLAMA_PROVIDER_UNAVAILABLE",
+      errorClass: "PROVIDER_UNAVAILABLE",
     };
   }
 }
@@ -85,6 +91,7 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
       providerStatus: "UNAVAILABLE",
       model,
       error: health.error ?? "AGENT_PROVIDER_UNAVAILABLE",
+      errorClass: health.errorClass ?? "PROVIDER_UNAVAILABLE",
     };
   }
 
@@ -101,8 +108,7 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
     messages: [
       {
         role: "system",
-        content:
-          "You are the planning and tool-routing layer for GovAid Atlas. You do not determine eligibility. You may only choose from allowed tools. All policy eligibility status comes exclusively from deterministic tool results. Never convert UNCERTAIN into PASS or FAIL. Never invent policy evidence. If required applicant data is missing, ask for human confirmation and include a non-empty humanQuestion. If policies conflict, request human review. Return only the required structured decision.",
+        content: PLANNER_SYSTEM_PROMPT,
       },
       {
         role: "user",
@@ -126,6 +132,7 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
         model,
         callAttempted: true,
         error: `OLLAMA_REQUEST_FAILED: ${response.status} ${text}`,
+        errorClass: classifyHttpStatus(response.status),
       };
     }
 
@@ -154,6 +161,7 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
         model,
         callAttempted: true,
         error: "OLLAMA_DECISION_PARSE_FAILED",
+        errorClass: "MALFORMED_RESPONSE",
       };
     }
 
@@ -164,6 +172,7 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
         model,
         callAttempted: true,
         error: "AGENT_DECISION_SCHEMA_INVALID",
+        errorClass: "SCHEMA_INVALID",
       };
     }
 
@@ -190,13 +199,16 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
       model,
       callAttempted: true,
       error: error instanceof Error ? `OLLAMA_REQUEST_ERROR: ${error.message}` : "AGENT_PROVIDER_UNAVAILABLE",
+      errorClass: classifyThrownError(error),
     };
   }
 }
 
 export const ollamaProvider: AgentModelProvider = {
   name: "OLLAMA",
-  model: getOllamaModel(),
+  get model() {
+    return getOllamaModel();
+  },
   isConfigured: () => isOllamaConfigured(),
   healthCheck: async () => healthCheckOllama(),
   callPlanner: async (input) => callOllamaPlanner(input),

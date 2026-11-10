@@ -148,4 +148,11 @@ export const auditCopy: Record<string, BilingualCopy> = {
   AGENT_WAITING_FOR_HUMAN: {zh: "等待人工確認", en: "Waiting for human"},
   AGENT_RESUMED: {zh: "恢復代理執行", en: "Agent resumed"},
   AGENT_COMPLETED: {zh: "代理執行完成", en: "Agent completed"},
+  AGENT_PROVIDER_SELECTED: {zh: "選定模型供應者", en: "Provider selected"},
+  AGENT_PROVIDER_CALL_STARTED: {zh: "開始呼叫模型", en: "Provider call started"},
+  AGENT_PROVIDER_CALL_COMPLETED: {zh: "模型呼叫完成", en: "Provider call completed"},
+  AGENT_PROVIDER_CALL_FAILED: {zh: "模型呼叫失敗", en: "Provider call failed"},
+  AGENT_PROVIDER_FALLBACK: {zh: "切換備援模型", en: "Provider fallback"},
+  AGENT_PROVIDER_UNAVAILABLE: {zh: "模型皆無法使用", en: "Provider unavailable"},
+  DETERMINISTIC_WORKFLOW_COMPLETED: {zh: "規則式安全流程完成", en: "Deterministic workflow completed"},
 };

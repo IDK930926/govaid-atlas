@@ -26,7 +26,7 @@ import {
 import {
   createRuntimeMetrics,
   measureSync,
-  recordLlmCall,
+  recordProviderRun,
   recordRuntimeCall,
   recordRuntimeOperation,
   type RuntimeCounterKey,
@@ -100,6 +100,8 @@ type ProviderInfo = {
   provider: ProviderName;
   providerStatus: "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN";
   model: string;
+  /** True when the primary (OpenAI) provider failed and a fallback provider is serving. */
+  fallbackActive?: boolean;
 };
 
 type AgentPlanResponse = {
@@ -112,6 +114,12 @@ type AgentPlanResponse = {
     error?: string | null;
     llmCallAttempted?: boolean;
     llmCallSucceeded?: boolean;
+    llmCalls?: number;
+    fallbackCount?: number;
+    fallbackReason?: string | null;
+    providerEvents?: ProviderPlannerResult["providerEvents"];
+    estimatedCloudCostUsd?: number | null;
+    pricingLabel?: string | null;
   };
 };
 
@@ -191,6 +199,7 @@ function App() {
           providerStatus?: "AVAILABLE" | "UNAVAILABLE";
           model?: string;
           error?: string | null;
+          fallbackActive?: boolean;
         }>;
       })
       .then((health) => {
@@ -198,6 +207,7 @@ function App() {
           provider: health.provider ?? "UNAVAILABLE",
           providerStatus: health.providerStatus ?? "UNAVAILABLE",
           model: health.model ?? "N/A",
+          fallbackActive: health.fallbackActive ?? false,
         });
         setProviderError(health.error ?? null);
       })
@@ -370,16 +380,27 @@ function App() {
         usage: usage ?? undefined,
         callAttempted: payload.metadata?.llmCallAttempted ?? false,
         error: payload.metadata?.error ?? undefined,
+        providerEvents: payload.metadata?.providerEvents ?? [],
+        fallbackCount: payload.metadata?.fallbackCount ?? 0,
+        fallbackReason: payload.metadata?.fallbackReason ?? null,
       };
       setProviderInfo({
         provider: payload.provider,
         providerStatus: payload.providerStatus,
         model: payload.model,
+        fallbackActive: succeeded && (payload.metadata?.fallbackCount ?? 0) > 0,
       });
       setProviderError(payload.metadata?.error ?? null);
-      if (plannerResult.callAttempted) {
-        setRuntimeMetrics((current) => recordLlmCall(current, usage ?? null, payload.provider === "OLLAMA"));
-      }
+      const metadata = payload.metadata;
+      setRuntimeMetrics((current) => recordProviderRun(current, {
+        llmCalls: metadata?.llmCalls ?? (plannerResult.callAttempted ? 1 : 0),
+        inputTokens: usage?.inputTokens ?? null,
+        outputTokens: usage?.outputTokens ?? null,
+        estimatedCloudCostUsd: metadata?.estimatedCloudCostUsd ?? null,
+        pricingLabel: metadata?.pricingLabel ?? null,
+        fallbackCount: metadata?.fallbackCount ?? 0,
+        fallbackReason: metadata?.fallbackReason ?? null,
+      }));
     } catch (error) {
       const message = error instanceof Error ? error.message : "Agent planner request failed.";
       setProviderInfo((current) => ({...current, providerStatus: "UNAVAILABLE"}));
@@ -506,7 +527,9 @@ function App() {
     }
   }, [focusKey, phase, status]);
 
-  const providerKind = providerInfo.provider === "OPENAI" ? "CLOUD AGENT" : "LOCAL AGENT";
+  const providerKind = providerInfo.provider === "OPENAI"
+    ? "OPENAI CLOUD"
+    : providerInfo.provider === "OLLAMA" ? "OLLAMA LOCAL" : "AGENT PROVIDER UNAVAILABLE";
   const providerReady = providerInfo.providerStatus === "AVAILABLE";
 
   return (
@@ -784,13 +807,17 @@ function StartView({
 
 function ProviderBadge({kind, info, error}: {kind: string; info: ProviderInfo; error: string | null}) {
   const state = info.providerStatus;
-  const label = state === "AVAILABLE" ? "AVAILABLE" : state === "UNAVAILABLE" ? "UNAVAILABLE" : "CHECKING";
+  const fallback = state === "AVAILABLE" && info.fallbackActive === true;
+  const label = fallback ? "FALLBACK ACTIVE" : state === "AVAILABLE" ? "AVAILABLE" : state === "UNAVAILABLE" ? "UNAVAILABLE" : "CHECKING";
+  const stateClass = fallback ? "fallback" : state.toLowerCase();
   return (
-    <aside className={"provider provider-" + state.toLowerCase()} aria-label={`模型狀態：${info.model}，${statusCopy[state]?.zh ?? ""}`}>
+    <aside className={"provider provider-" + stateClass} aria-label={`模型狀態：${info.model}，${fallback ? "已切換本機備援" : statusCopy[state]?.zh ?? ""}`}>
       <span className="provider-kind" lang="en">{kind}</span>
       <strong className="provider-model">{info.model}</strong>
       <span className="provider-state"><span className="dot" aria-hidden="true"/><span lang="en">{label}</span></span>
-      {error && <span className="provider-note">模型連線異常，規則檢查仍可執行</span>}
+      {fallback && <span className="provider-note">雲端模型暫時不可用，已切換本機 Agent。<span lang="en"> Cloud provider unavailable. Local fallback active.</span></span>}
+      {!fallback && state === "UNAVAILABLE" && <span className="provider-note">模型無法使用，規則檢查仍可執行 <span lang="en">· Deterministic workflow available</span></span>}
+      {!fallback && state !== "UNAVAILABLE" && error && <span className="provider-note">模型連線異常，規則檢查仍可執行</span>}
     </aside>
   );
 }
@@ -1594,7 +1621,9 @@ function RuntimePanel({
   const known = providerInfo.providerStatus !== "UNKNOWN";
   const cost = metrics.estimatedCostUsd === null
     ? null
-    : metrics.estimatedCostUsd === 0 ? "$0" : `$${metrics.estimatedCostUsd.toFixed(2)}`;
+    : metrics.estimatedCostUsd === 0
+      ? "$0"
+      : `$${metrics.estimatedCostUsd < 0.01 ? metrics.estimatedCostUsd.toFixed(6) : metrics.estimatedCostUsd.toFixed(4)}`;
   return (
     <div className="panel-stack">
       <section className="gov-card" aria-labelledby="runtime-title">
@@ -1610,8 +1639,11 @@ function RuntimePanel({
           <Metric label="Input Tokens" value={metrics.inputTokens}/>
           <Metric label="Output Tokens" value={metrics.outputTokens}/>
           <Metric label="Planner latency" value={lastInferenceSeconds === null ? null : `${lastInferenceSeconds.toFixed(1)} s`}/>
-          <Metric label="Cloud API Cost" value={cost}/>
+          <Metric label="Estimated Cloud API Cost" value={cost}/>
+          <Metric label="Fallback Count" value={metrics.fallbackCount}/>
+          <Metric label="Fallback Reason" value={metrics.fallbackReason}/>
         </div>
+        {metrics.pricingLabel && <p className="muted small" lang="en">Pricing: {metrics.pricingLabel}. Estimate only; excludes credits and hardware.</p>}
         <p className="muted">LLM 負責規劃與工具調度；資格結果一律由規則引擎判斷。</p>
       </section>
 

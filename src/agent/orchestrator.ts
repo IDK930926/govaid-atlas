@@ -110,6 +110,14 @@ export function decideNextStep(context: {
   };
 }
 
+/**
+ * When no LLM provider produced the plan, the run is the deterministic safety workflow and
+ * must not be reported as a completed LLM agent run.
+ */
+function completionAction(run: AgentRun): "AGENT_COMPLETED" | "DETERMINISTIC_WORKFLOW_COMPLETED" {
+  return run.providerStatus === "UNAVAILABLE" ? "DETERMINISTIC_WORKFLOW_COMPLETED" : "AGENT_COMPLETED";
+}
+
 export function runAgenticGoldenCase(
   goal: string,
   applicant: ApplicantProfile,
@@ -130,6 +138,11 @@ export function runAgenticGoldenCase(
   run.lastDecision = decision;
   if (plannerResult) {
     run.providerStatus = plannerResult.providerStatus;
+    // Provider-chain events (selection, calls, fallback) are recorded before any tool runs.
+    // They carry provider/model/latency/safe error class only — never keys or prompts.
+    for (const event of plannerResult.providerEvents ?? []) {
+      run = appendAuditTrail(run, event.action, event.detail, undefined, "AGENT-PROVIDER", "SYSTEM");
+    }
     run = appendAuditTrail(
       run,
       plannerResult.providerStatus === "AVAILABLE" && plannerResult.decision
@@ -190,8 +203,10 @@ export function runAgenticGoldenCase(
   run = appendAuditTrail(run, "AGENT_TOOL_COMPLETED", { toolName: "get_policy_evidence" }, evidenceTool, "EVIDENCE-BINDING");
 
   run.status = "COMPLETED";
-  run.currentStep = "Golden case flow completed";
-  run = appendAuditTrail(run, "AGENT_COMPLETED", { goal }, { finalStatus: run.status }, "AGENTIC-ORCHESTRATOR");
+  run.currentStep = run.providerStatus === "UNAVAILABLE"
+    ? "Deterministic safety workflow completed (agent provider unavailable)"
+    : "Golden case flow completed";
+  run = appendAuditTrail(run, completionAction(run), { goal }, { finalStatus: run.status }, "AGENTIC-ORCHESTRATOR");
 
   return run;
 }
@@ -264,12 +279,14 @@ export function resumeAgentRun(
   nextRun = appendAuditTrail(nextRun, "AGENT_TOOL_COMPLETED", { toolName: "generate_decision_passport" }, passportResult, "DECISION-PASSPORT");
 
   nextRun.status = "COMPLETED";
-  nextRun.currentStep = "Completed after human input";
+  nextRun.currentStep = nextRun.providerStatus === "UNAVAILABLE"
+    ? "Deterministic safety workflow completed after human input (agent provider unavailable)"
+    : "Completed after human input";
   nextRun.lastDecision = {
     reasoningSummary: "A missing field was resolved by a human, and deterministic evaluation resumed successfully.",
     nextAction: "COMPLETE",
   };
-  return appendAuditTrail(nextRun, "AGENT_COMPLETED", { goal: nextRun.goal }, { status: nextRun.status }, "AGENTIC-ORCHESTRATOR");
+  return appendAuditTrail(nextRun, completionAction(nextRun), { goal: nextRun.goal }, { status: nextRun.status }, "AGENTIC-ORCHESTRATOR");
 }
 
 export function runBoundedAgentLoop(

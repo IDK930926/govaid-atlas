@@ -67,9 +67,27 @@ Agent 以本機 Ollama 規劃並選擇 allowlisted tools；資格判斷與人工
 - The agent may only call allowlisted tools (`evaluate_central_rules`, `evaluate_actual_scenario`, `evaluate_what_if_scenario`, `detect_policy_conflict`, `generate_decision_passport`, `get_policy_evidence`).
 - Missing required fields trigger `WAITING_FOR_HUMAN` and block automatic qualification changes.
 - If the provider is unavailable, the app fails safely and keeps the deterministic golden-case workflow working.
-- Local inference uses Ollama with `AGENT_PROVIDER=ollama`, `OLLAMA_BASE_URL=http://127.0.0.1:11434`, and `OLLAMA_MODEL=qwen3.5:4b`.
+- Planner provider is selected by `AGENT_PROVIDER` (see **Provider Strategy** below); local-only inference uses Ollama with `AGENT_PROVIDER=ollama`.
 - Edit the User Goal in the Agent Runtime card and select **Run Agent** to submit a live planning request.
 - When a run waits for home-ownership input, either answer resumes the orchestrator and reruns deterministic rules before continuing policy routing.
+
+### Provider Strategy
+
+`AGENT_PROVIDER=auto` (default): **OpenAI → Ollama → Deterministic**.
+
+| Mode | Behaviour |
+| --- | --- |
+| `auto` | OpenAI Responses API (`OPENAI_MODEL`, default `gpt-5.4-mini`) is the primary planner. On a provider-level failure (missing key, timeout, network/DNS, 401/403, 429, 5xx, malformed or schema-invalid output) it falls back to local Ollama. If both fail, the UI shows `AGENT PROVIDER UNAVAILABLE` and the deterministic safety workflow still runs. |
+| `openai` | OpenAI only. Failures are shown as provider unavailable; no silent switch to another provider. |
+| `ollama` | Local Ollama only (previous behaviour). |
+
+- The model only interprets the goal, plans, routes allowlisted tools, and phrases human questions. PASS / FAIL / UNCERTAIN always come from the deterministic rules engine; an `UNCERTAIN`, `FAIL`, policy conflict, or denied tool is product behaviour and never triggers a provider fallback.
+- OpenAI output uses strict Structured Outputs (`additionalProperties: false`, allowlisted `toolName` enum, no model-supplied tool arguments) and is re-validated at runtime.
+- Every fallback is visible: the provider badge shows `FALLBACK ACTIVE` with 「雲端模型暫時不可用，已切換本機 Agent。」, and the audit trail records `AGENT_PROVIDER_SELECTED / CALL_STARTED / CALL_COMPLETED / CALL_FAILED / FALLBACK / UNAVAILABLE` with provider, model, latency, and a safe error class only (no keys, headers, or prompts).
+- Runtime metrics show the provider actually used, real LLM call count, provider-reported tokens (`N/A` if not reported), planner wall-clock latency, fallback count/reason, and **Estimated Cloud API Cost** from the pricing snapshot in `src/agent/providers/pricing.ts` (`N/A` when billing is unknown).
+- `OPENAI_API_KEY` is read only by the Node server (`process.env` or a gitignored `.env`). The browser calls only GovAid Atlas `/api/*`; never use a `VITE_`-prefixed key.
+
+Environment variables: `AGENT_PROVIDER`, `OPENAI_API_KEY`, `OPENAI_MODEL`, `OLLAMA_BASE_URL`, `OLLAMA_MODEL` (optional: `OPENAI_TIMEOUT_MS`, default 20000; `OPENAI_REASONING_EFFORT`, default `low`).
 
 ### Local Agent Setup
 
@@ -96,15 +114,17 @@ No API key is required for the local provider.
 
 ### Environment
 
-Copy `.env.example` to a local `.env` file and set:
+Copy `.env.example` to a local `.env` file (gitignored; loaded by the server only) and set:
 
 ```sh
-AGENT_PROVIDER=ollama
+AGENT_PROVIDER=auto
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.4-mini
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen3.5:4b
-OPENAI_API_KEY=
-OPENAI_MODEL=
 ```
+
+Leave `OPENAI_API_KEY` empty to run local-only through `auto` (OpenAI is skipped and Ollama is used, shown as a fallback).
 
 ### Local startup
 
@@ -133,7 +153,7 @@ By default, the service listens on `http://127.0.0.1:8787`, serving the built `d
 - 不使用真實個資；Demo 使用 Synthetic Persona。
 - 目前只完成 P0 Golden Case。
 - 尚未串接政府系統或政府 API。
-- Cloud API Cost 為本機 Ollama 呼叫的 `$0`；token 欄位只呈現 provider 實際回報值，缺少 usage 時顯示 `N/A`。
+- Estimated Cloud API Cost：本機 Ollama 為 `$0`；OpenAI 依 `pricing.ts` 價格快照估算（不含 promotion credits、硬體等成本），無法確認計費時顯示 `N/A`。token 欄位只呈現 provider 實際回報值，缺少 usage 時顯示 `N/A`。
 - Rule Conflict、Permission / Role control 與 Benchmark 僅為合成資料 demo。
 - 尚未進行真人 usability validation。
 - 示範規則是有限子集，不可取代正式申請或主管機關審查。

@@ -3,9 +3,17 @@ import { createServer } from "node:http";
 import { extname, relative, resolve, sep } from "node:path";
 import { URL } from "node:url";
 
-import { callPlanner, getProviderHealth, getOllamaModel } from "./agent/client";
+import { callPlanner, getProviderHealth } from "./agent/client";
 import { buildSafePlan } from "./agent/orchestrator";
 import { listAllowedTools } from "./agent/tools";
+
+// Secrets such as OPENAI_API_KEY stay server-side: load an optional, gitignored .env into this
+// process only. Values already present in the real environment take precedence.
+try {
+  process.loadEnvFile(resolve(__dirname, "../.env"));
+} catch {
+  // No .env file: rely on the process environment.
+}
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = "127.0.0.1";
@@ -117,9 +125,13 @@ async function handleRequest(request: import("node:http").IncomingMessage, respo
         ok: health.providerStatus === "AVAILABLE",
         provider: health.provider,
         providerStatus: health.providerStatus,
-        model: health.model ?? getOllamaModel(),
+        model: health.model,
+        mode: health.mode ?? null,
+        fallbackActive: health.fallbackActive ?? false,
+        fallbackReason: health.fallbackReason ?? null,
         status: health.providerStatus === "AVAILABLE" ? "configured" : "provider_unavailable",
-        error: health.error ?? null,
+        // Safe error class only; raw provider messages never leave the server.
+        error: health.errorClass ?? (health.providerStatus === "AVAILABLE" ? null : "PROVIDER_UNAVAILABLE"),
         timestamp: new Date().toISOString(),
       })
     );
@@ -136,10 +148,13 @@ async function handleRequest(request: import("node:http").IncomingMessage, respo
     const allowlistedTools = listAllowedTools();
     const defaultPlan = buildSafePlan(goal);
 
+    const plannerStarted = performance.now();
     const llmResult = await callPlanner({
       goal,
       availableTools: allowlistedTools,
     });
+    const plannerLatencyMs = performance.now() - plannerStarted;
+    const llmCallSucceeded = llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision);
 
     const responseBody = {
       provider: llmResult.provider,
@@ -157,10 +172,29 @@ async function handleRequest(request: import("node:http").IncomingMessage, respo
         },
       },
       metadata: {
+        mode: llmResult.mode ?? null,
         usage: llmResult.usage ?? null,
-        error: llmResult.error ?? null,
+        // Safe error class only; raw provider messages never leave the server.
+        error: llmCallSucceeded ? null : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE",
         llmCallAttempted: llmResult.callAttempted ?? false,
-        llmCallSucceeded: llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision),
+        llmCallSucceeded,
+        llmCalls: (llmResult.attempts ?? []).filter((attempt) => attempt.callAttempted).length,
+        plannerLatencyMs,
+        attempts: (llmResult.attempts ?? []).map((attempt) => ({
+          provider: attempt.provider,
+          model: attempt.model,
+          callAttempted: attempt.callAttempted,
+          outcome: attempt.outcome,
+          latencyMs: Math.round(attempt.latencyMs),
+          errorClass: attempt.errorClass ?? null,
+          inputTokens: attempt.usage?.inputTokens ?? null,
+          outputTokens: attempt.usage?.outputTokens ?? null,
+        })),
+        fallbackCount: llmResult.fallbackCount ?? 0,
+        fallbackReason: llmResult.fallbackReason ?? null,
+        providerEvents: llmResult.providerEvents ?? [],
+        estimatedCloudCostUsd: llmResult.estimatedCloudCostUsd ?? null,
+        pricingLabel: llmResult.pricingLabel ?? null,
       },
     };
 

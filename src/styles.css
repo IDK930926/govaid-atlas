@@ -590,6 +590,19 @@ a {
   font-size: var(--fs-micro);
 }
 
+.provider-fallback {
+  border-left-color: var(--warn);
+}
+
+.provider-fallback .provider-state,
+.provider-fallback .provider-note {
+  color: var(--warn);
+}
+
+.provider-fallback .dot {
+  background: var(--warn);
+}
+
 .start-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;

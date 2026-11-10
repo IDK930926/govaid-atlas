@@ -2,12 +2,84 @@ import type { AgentDecision } from "../types";
 
 export type ProviderName = "OLLAMA" | "OPENAI" | "UNAVAILABLE";
 export type ProviderStatus = "AVAILABLE" | "UNAVAILABLE";
+export type ProviderMode = "auto" | "openai" | "ollama";
+
+/**
+ * Safe, enumerable provider failure classes. These are the only error strings that may
+ * leave the server: raw provider bodies can echo request details (OpenAI 401 bodies echo a
+ * masked API key), so they are never forwarded to the browser or written to audit.
+ */
+export type ProviderErrorClass =
+  | "MISSING_API_KEY"
+  | "AUTH_ERROR"
+  | "RATE_LIMITED"
+  | "SERVER_ERROR"
+  | "BAD_REQUEST"
+  | "TIMEOUT"
+  | "NETWORK_ERROR"
+  | "MALFORMED_RESPONSE"
+  | "SCHEMA_INVALID"
+  | "REFUSAL"
+  | "MODEL_NOT_AVAILABLE"
+  | "PROVIDER_UNAVAILABLE"
+  | "INVALID_PROVIDER_MODE";
+
+export function classifyHttpStatus(status: number): ProviderErrorClass {
+  if (status === 401 || status === 403) return "AUTH_ERROR";
+  if (status === 429) return "RATE_LIMITED";
+  if (status >= 500) return "SERVER_ERROR";
+  if (status === 404) return "MODEL_NOT_AVAILABLE";
+  return "BAD_REQUEST";
+}
+
+export function classifyThrownError(error: unknown): ProviderErrorClass {
+  if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return "TIMEOUT";
+  }
+  return "NETWORK_ERROR";
+}
+
+export const PLANNER_SYSTEM_PROMPT =
+  "You are the planning and tool-routing layer for GovAid Atlas. You do not determine eligibility. You may only choose from allowed tools. All policy eligibility status comes exclusively from deterministic tool results. Never convert UNCERTAIN into PASS or FAIL. Never invent policy evidence. If required applicant data is missing, ask for human confirmation and include a non-empty humanQuestion. If policies conflict, request human review. Return only the required structured decision.";
 
 export type ProviderUsage = {
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;
   localApiCost?: string;
+};
+
+/** One provider attempt inside a single planner request (auto mode may make two). */
+export type ProviderAttempt = {
+  provider: Exclude<ProviderName, "UNAVAILABLE">;
+  model: string;
+  /** True only when a request actually reached the provider's generation endpoint. */
+  callAttempted: boolean;
+  outcome: "COMPLETED" | "FAILED";
+  latencyMs: number;
+  errorClass?: ProviderErrorClass;
+  usage?: ProviderUsage;
+};
+
+export type ProviderAuditEvent = {
+  timestamp: string;
+  action:
+    | "AGENT_PROVIDER_SELECTED"
+    | "AGENT_PROVIDER_CALL_STARTED"
+    | "AGENT_PROVIDER_CALL_COMPLETED"
+    | "AGENT_PROVIDER_CALL_FAILED"
+    | "AGENT_PROVIDER_FALLBACK"
+    | "AGENT_PROVIDER_UNAVAILABLE";
+  detail: {
+    mode?: ProviderMode;
+    provider?: ProviderName;
+    model?: string;
+    from?: ProviderName;
+    to?: ProviderName;
+    latencyMs?: number;
+    errorClass?: ProviderErrorClass;
+    reason?: string;
+  };
 };
 
 export type ProviderPlannerInput = {
@@ -24,6 +96,16 @@ export type ProviderPlannerResult = {
   decision?: AgentDecision;
   usage?: ProviderUsage;
   error?: string;
+  errorClass?: ProviderErrorClass;
+  /** Populated by the provider chain in client.ts; absent on direct provider calls. */
+  mode?: ProviderMode;
+  attempts?: ProviderAttempt[];
+  fallbackCount?: number;
+  fallbackReason?: string | null;
+  providerEvents?: ProviderAuditEvent[];
+  /** Estimated cloud API cost in USD; null = unknown (shown as N/A), 0 = local only. */
+  estimatedCloudCostUsd?: number | null;
+  pricingLabel?: string | null;
 };
 
 export type ProviderHealth = {
@@ -31,6 +113,10 @@ export type ProviderHealth = {
   providerStatus: ProviderStatus;
   model: string;
   error?: string;
+  errorClass?: ProviderErrorClass;
+  mode?: ProviderMode;
+  fallbackActive?: boolean;
+  fallbackReason?: string | null;
 };
 
 export type AgentModelProvider = {
