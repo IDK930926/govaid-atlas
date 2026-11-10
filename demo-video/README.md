@@ -13,6 +13,38 @@
 | 字幕 | 燒入字幕＋另附 [`captions.srt`](captions.srt) |
 | 錄影來源 | 真實 GovAid Atlas live UI（Synthetic Persona、本機 Ollama provider） |
 
+## 最終成品（已產出）
+
+| 項目 | 結果 |
+|---|---|
+| 檔案 | `demo-video/final/GovAidAtlas_Final_Backup_Demo.mp4`（另有無旁白版 `GovAidAtlas_Final_Backup_Demo_noVO.mp4`） |
+| 長度／規格 | 78.000 s・1920×1080・30 fps（2340 frames）・H.264 High yuv420p・AAC-LC 48 kHz stereo・faststart・約 8.5 MB |
+| 錄影來源 | `https://govaid.torchark.tw` 公開網站，Provider `OPENAI CLOUD gpt-5.4-mini · AVAILABLE`，一次不中斷的真實 Golden Path |
+| 加速 | **無**。所有片段 1× 播放；模型等待（約 5.4 秒）完整保留。場景之間只有 clean cut（跳過靜止停留），未加 TIMELAPSE 標示是因為沒有任何片段被加速 |
+| 旁白 | Windows OneCore「Yating」zh-TW 本機 TTS（見 `voiceover-zh.md`） |
+| 字幕 | 燒入 14 段字幕（每段 ≤ 2 行）＋ sidecar `captions.srt` |
+| 預錄標示 | 全片右上角 `預錄畫面 · PRE-RECORDED` |
+| QA 紀錄 | [`final/QA-report.md`](final/QA-report.md)、剪輯表 [`final/edl.json`](final/edl.json) |
+
+成品 MP4 依 `demo-video/.gitignore` 不進 git；請複製到比賽筆電桌面、USB、第二台裝置三份。
+
+### 自動化製作流程（[`pipeline/`](pipeline/)）
+
+1. `record-golden-path.mjs`：Playwright 開啟真實網站（1920×1080、無瀏覽器外框、無個人 profile），以 CDP screencast 錄下整條 Golden Path，並記錄每個操作的時間戳。為了在 headless 畫面中看得到滑鼠，注入一個 `pointer-events:none` 的游標圓點，不改動任何產品 DOM 或邏輯。
+2. `render-card.mjs`：把 `recording-page.html` 的結尾卡（`#2`）輸出成 1920×1080 圖。
+3. `tts-onecore.ps1`：逐段合成旁白。
+4. `build-edit.mjs`：依剪輯表把原始 screencast 影格組成 30 fps 時間軸，並產生 ASS 字幕（含預錄標示）與 `captions.srt`。
+5. ffmpeg：先輸出無字幕的高品質 intermediate，再燒入字幕並混入旁白（兩段式，避免靜止畫面複製影格時字幕不更新）。
+
+```bash
+# 混音（各段旁白已去頭尾靜音，adelay 為旁白起點毫秒）
+ffmpeg -i s1_t.wav ... -i s8_t.wav -filter_complex "[0]aresample=48000,adelay=400:all=1[a0];...;[a0]...[a7]amix=inputs=8:normalize=0,highpass=f=70,apad=whole_dur=78,atrim=0:78,loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,afade=t=out:st=77.7:d=0.3[out]" -map "[out]" vo_mix.wav
+# intermediate
+ffmpeg -f concat -safe 0 -i video.ffconcat -vf "fps=30,scale=1920:1080:in_range=pc:out_range=tv,format=yuv420p" -c:v libx264 -crf 8 -an inter.mp4
+# 成品（清除 metadata）
+ffmpeg -i inter.mp4 -i vo_mix.wav -vf "ass=subs.ass" -c:v libx264 -preset slow -crf 18 -profile:v high -pix_fmt yuv420p -color_range tv -r 30 -c:a aac -b:a 192k -ar 48000 -map_metadata -1 -map_chapters -1 -fflags +bitexact -movflags +faststart GovAidAtlas_Final_Backup_Demo.mp4
+```
+
 ## 檔案
 
 | 檔案 | 內容 |
@@ -63,7 +95,7 @@
 
 **禁止：** 在台上 debug、開 terminal、重開 Ollama、重新整理頁面或重試第二次。
 
-**事前準備：** 影片檔放在桌面 `govaid-atlas-backup.mp4`；VLC 預先開啟並暫停；USB 與第二台裝置各留一份備份。
+**事前準備：** 影片檔 `GovAidAtlas_Final_Backup_Demo.mp4` 放在桌面；VLC 預先開啟並暫停；USB 與第二台裝置各留一份備份。
 
 ## ffmpeg 組裝指令
 

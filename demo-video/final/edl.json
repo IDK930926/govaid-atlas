@@ -1,0 +1,109 @@
+{
+ "total": 78,
+ "edl": [
+  {
+   "scene": "S1 Hero",
+   "raw": [
+    0.3,
+    7.3
+   ],
+   "out": [
+    0,
+    7
+   ],
+   "speed": "1x"
+  },
+  {
+   "scene": "S2 Goal",
+   "raw": [
+    12.6,
+    21.6
+   ],
+   "out": [
+    7,
+    16
+   ],
+   "speed": "1x"
+  },
+  {
+   "scene": "S3 Journey→Gate",
+   "raw": [
+    21.6,
+    34.6
+   ],
+   "out": [
+    16,
+    29
+   ],
+   "speed": "1x"
+  },
+  {
+   "scene": "S4 Gate→Resume",
+   "raw": [
+    40,
+    49
+   ],
+   "out": [
+    29,
+    38
+   ],
+   "speed": "1x"
+  },
+  {
+   "scene": "S5 Actual/What-if",
+   "raw": [
+    53.3,
+    66.3
+   ],
+   "out": [
+    38,
+    51
+   ],
+   "speed": "1x"
+  },
+  {
+   "scene": "S6a Passport",
+   "raw": [
+    75.8,
+    81.3
+   ],
+   "out": [
+    51,
+    56.5
+   ],
+   "speed": "1x"
+  },
+  {
+   "scene": "S6b Evidence",
+   "raw": [
+    83.5,
+    90
+   ],
+   "out": [
+    56.5,
+    63
+   ],
+   "speed": "1x"
+  },
+  {
+   "scene": "S7 Benchmark",
+   "raw": [
+    99.7,
+    109.7
+   ],
+   "out": [
+    63,
+    73
+   ],
+   "speed": "1x"
+  },
+  {
+   "scene": "S8 Ending",
+   "raw": "recording-page.html card 2",
+   "out": [
+    73,
+    78
+   ]
+  }
+ ]
+}
