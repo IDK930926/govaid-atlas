@@ -237,11 +237,23 @@ section { margin-top: 24px; }
 .gate .answer { display: none; margin-top: 14px; font-size: 15px; }
 .gate.answered .answer { display: block; }
 .gate.answered .gate-btns { display: none; }
-.gate .yes-note {
-  display: none; margin-top: 12px; font-size: 14px; padding: 10px 12px; border-radius: var(--radius-sm);
-  background: var(--fail-bg); color: var(--fail-ink); border: 1px solid var(--fail-line);
+.stop-card {
+  display: none; border: 2px solid var(--fail-ink); background: var(--surface);
+  border-radius: var(--radius); padding: 22px 24px; box-shadow: 0 0 0 6px rgba(152,47,40,.06), var(--shadow);
 }
-.gate .yes-note.show { display: block; animation: fade .3s var(--ease); }
+.stop-card.show { display: block; animation: reveal .4s var(--ease); }
+.stop-card .eyebrow { color: var(--fail-ink); }
+.stop-card h2 { font-size: 22px; margin-top: 4px; }
+.stop-card h2 .en { font-size: 15px; }
+.stop-row { margin-top: 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 14px; border-radius: var(--radius-sm); background: var(--fail-bg); border: 1px solid var(--fail-line); font-weight: 600; }
+.stop-row .chip { font-size: 15px; padding: 4px 14px; }
+.stop-reason { margin-top: 12px; font-size: 16px; }
+.stop-note { margin-top: 10px; font-size: 13.5px; color: var(--ink-2); }
+.stop-note .en { font-size: 12.5px; }
+.step[data-state="stopped"] { border-color: var(--fail-line); background: var(--fail-bg); }
+.step[data-state="stopped"] .num { background: var(--fail-ink); color: #fff; }
+.step[data-state="stopped"] .st { color: var(--fail-ink); }
+.tool-row.fail .ic { background: var(--fail-ink); }
 
 /* Results */
 .results { display: none; }
@@ -495,8 +507,16 @@ footer { margin: 28px 0 80px; font-size: 12.5px; color: var(--muted); text-align
           <button class="btn no" id="ansNo" type="button">無自有住宅<span class="en">No</span></button>
           <button class="btn" id="ansYes" type="button">有自有住宅<span class="en">Yes</span></button>
         </div>
-        <div class="yes-note" id="yesNote">選擇「有自有住宅」時，中央租金補貼規則將判定為不符合（FAIL）。本離線備援頁僅完整示範 Golden Path，請選擇「無自有住宅 / No」繼續。<br><span style="opacity:.85">This offline backup only plays the Golden Path. Choose “No” to continue.</span></div>
         <p class="answer" id="gateAnswer"><span class="chip pass">已確認</span>&nbsp; 申請人回覆：<b>無自有住宅</b> <span class="en">(No)</span></p>
+      </div>
+
+      <div class="stop-card" id="stopCard" role="region" aria-label="中央規則未通過 Central rule check failed">
+        <div class="eyebrow">流程已安全停止 · Run stopped safely</div>
+        <h2>中央規則未通過 <span class="en">Central rule check failed</span></h2>
+        <div class="stop-row"><span>中央租屋補助 <span class="en">Central Rent Subsidy</span></span><span class="chip fail">FAIL</span></div>
+        <p class="stop-reason"><b>原因 Reason：</b>申請人持有住宅 <span class="en">Applicant owns a home</span></p>
+        <p class="stop-note">依目前 Demo 已實作規則，此條件未通過；正式資格仍以主管機關審查為準。<br><span class="en">Fails under the rules implemented in this demo; official eligibility is determined by the competent authority.</span></p>
+        <p class="stop-note">Agent 未繼續評估情境比較，也不產出申辦決策護照，以避免呈現誤導性的 PASS 路徑。<br><span class="en">Scenario evaluation and the Decision Passport were not generated, to avoid a misleading PASS path.</span></p>
       </div>
     </div>
   </section>
@@ -618,7 +638,7 @@ footer { margin: 28px 0 80px; font-size: 12.5px; color: var(--muted); text-align
   <div class="dc-panel" id="dcPanel" role="dialog" aria-label="Demo Controls">
     <h4>Demo Controls</h4>
     <div class="dc-row"><kbd>R</kbd><button type="button" data-act="reset">重置 Reset Demo</button></div>
-    <div class="dc-row"><kbd>Space</kbd><button type="button" data-act="step">前進一步 Next step</button></div>
+    <div class="dc-row"><kbd>Space</kbd><button type="button" data-act="step">前進一步 Next step（人工確認時停用）</button></div>
     <div class="dc-row"><kbd>H</kbd><button type="button" data-act="human">跳至人工確認 Human Gate</button></div>
     <div class="dc-row"><kbd>C</kbd><button type="button" data-act="complete">跳至完成 Completed</button></div>
     <div class="dc-row"><kbd>Esc</kbd><button type="button" data-act="close">關閉 Close</button></div>
@@ -661,13 +681,16 @@ footer { margin: 28px 0 80px; font-size: 12.5px; color: var(--muted); text-align
     /* 7 */ { steps: "ddddap", tools: [["central", "ok", "PASS"], ["actual", "ok", "DONE"], ["whatif", "ok", "DONE"]], run: "busy", plan: true, central: "pass", gate: "answered", msg: "繼續執行 · Resuming" },
     /* 8 */ { steps: "ddddap", tools: [["central", "ok", "PASS"], ["actual", "ok", "DONE"], ["whatif", "ok", "DONE"], ["evidence", "ok", "R1 · R6 · R7"]], run: "busy", plan: true, central: "pass", gate: "answered", msg: "繼續執行 · Resuming" },
     /* 9 */ { steps: "ddddda", tools: [["central", "ok", "PASS"], ["actual", "ok", "DONE"], ["whatif", "ok", "DONE"], ["evidence", "ok", "R1 · R6 · R7"], ["passport", "run"]], run: "busy", plan: true, central: "pass", gate: "answered", msg: "正在產出決策… · Generating decision…" },
-    /* 10 */ { steps: "dddddd", tools: [["central", "ok", "PASS"], ["actual", "ok", "DONE"], ["whatif", "ok", "DONE"], ["evidence", "ok", "R1 · R6 · R7"], ["passport", "ok", "DONE"]], run: "done", plan: true, central: "pass", gate: "answered", results: true }
+    /* 10 */ { steps: "dddddd", tools: [["central", "ok", "PASS"], ["actual", "ok", "DONE"], ["whatif", "ok", "DONE"], ["evidence", "ok", "R1 · R6 · R7"], ["passport", "ok", "DONE"]], run: "done", plan: true, central: "pass", gate: "answered", results: true },
+    // ---- Yes branch (ownsHome = true): deterministic FAIL-safe stop, never reaches the PASS path ----
+    /* 11 */ { steps: "ddddap", tools: [["central", "run"]], run: "busy", plan: true, central: "unc", gate: "answered", answer: "yes", msg: "繼續執行 · Resuming" },
+    /* 12 */ { steps: "ddddds", tools: [["central", "fail", "FAIL"]], run: "stopped", plan: true, central: "fail", gate: "answered", answer: "yes", stop: true }
   ];
-  var HUMAN_FRAME = 4, LAST_FRAME = FRAMES.length - 1;
+  var HUMAN_FRAME = 4, LAST_FRAME = 10, YES_FRAME = 11, YES_END = 12;
   // Delay (ms) before auto-advancing from frame i to i+1. null = stop.
-  var DELAYS = [null, 550, 650, 900, null, 500, 450, 450, 450, 500, null];
+  var DELAYS = [null, 550, 650, 900, null, 500, 450, 450, 450, 500, null, 700, null];
 
-  var STEP_LABEL = { p: "等待中 PENDING", a: "執行中 ACTIVE", d: "完成 DONE", w: "等待人工 WAITING" };
+  var STEP_LABEL = { p: "等待中 PENDING", a: "執行中 ACTIVE", d: "完成 DONE", w: "等待人工 WAITING", s: "已停止 STOPPED" };
 
   var $ = function (id) { return document.getElementById(id); };
   var frame = 0, timer = null;
@@ -692,7 +715,7 @@ footer { margin: 28px 0 80px; font-size: 12.5px; color: var(--muted); text-align
     var steps = document.querySelectorAll("#journey .step");
     for (var i = 0; i < steps.length; i++) {
       var s = f.steps.charAt(i);
-      var st = { p: "pending", a: "active", d: "done", w: "wait" }[s];
+      var st = { p: "pending", a: "active", d: "done", w: "wait", s: "stopped" }[s];
       steps[i].setAttribute("data-state", st);
       steps[i].querySelector(".st").textContent = STEP_LABEL[s];
     }
@@ -710,6 +733,7 @@ footer { margin: 28px 0 80px; font-size: 12.5px; color: var(--muted); text-align
         var def = TOOLS[t[0]], status = t[1], res = t[2];
         var chip = status === "run" ? '<span class="chip brand">執行中 RUNNING</span>'
           : status === "warn" ? '<span class="chip unc">' + esc(res) + '</span>'
+          : status === "fail" ? '<span class="chip fail">' + esc(res) + '</span>'
           : '<span class="chip pass">' + esc(res) + '</span>';
         html += '<div class="tool-row ' + (status === "run" ? "running" : status) + '"><span class="ic"></span>' +
           '<span class="name mono">' + def.name + '<span class="desc">' + def.desc + '</span></span>' + chip + '</div>';
@@ -723,6 +747,7 @@ footer { margin: 28px 0 80px; font-size: 12.5px; color: var(--muted); text-align
     if (f.run === "idle") rt.textContent = "尚未執行 · Not started";
     else if (f.run === "busy") rt.textContent = "正在模擬 Agent 流程… · Simulating agent workflow…";
     else if (f.run === "wait") rt.textContent = "等待人工確認 · Waiting for human";
+    else if (f.run === "stopped") rt.textContent = "已停止：中央規則未通過 · Stopped: central rule check failed";
     else rt.textContent = "已完成 · Completed";
     $("runBtn").disabled = f.run === "busy";
 
@@ -737,6 +762,9 @@ footer { margin: 28px 0 80px; font-size: 12.5px; color: var(--muted); text-align
     } else if (f.run === "done") {
       line.innerHTML = '<span class="chip pass">完成</span> 已完成 <span class="en" style="font-size:15px">COMPLETED</span>';
       sub.textContent = "已產出申辦決策護照，請見下方。Decision Passport generated below.";
+    } else if (f.run === "stopped") {
+      line.innerHTML = '<span class="chip fail">停止</span> 中央規則未通過 <span class="en" style="font-size:15px">Central rule check failed</span>';
+      sub.textContent = "人工確認申請人持有住宅，Agent 已安全停止，不繼續資格評估。Stopped safely after the human answer.";
     } else {
       line.innerHTML = '<span class="chip brand">執行中</span> ' + esc(f.msg.split(" · ")[0]) + ' <span class="en" style="font-size:15px">' + esc(f.msg.split(" · ")[1] || "") + '</span>';
       sub.textContent = frame >= 5 ? "已取得人工回覆，Agent 從暫停點繼續執行。Resumed from the human gate." : "模擬流程進行中（離線快照）。Simulated run from offline snapshot.";
@@ -745,6 +773,7 @@ footer { margin: 28px 0 80px; font-size: 12.5px; color: var(--muted); text-align
     var cb = $("centralBox"), cc = $("centralChip");
     cb.classList.toggle("show", !!f.central);
     if (f.central === "pass") { cc.className = "chip pass"; cc.textContent = "通過 PASS"; }
+    else if (f.central === "fail") { cc.className = "chip fail"; cc.textContent = "未通過 FAIL"; }
     else { cc.className = "chip unc"; cc.textContent = "待確認 UNCERTAIN"; }
 
     // Human gate
@@ -752,26 +781,33 @@ footer { margin: 28px 0 80px; font-size: 12.5px; color: var(--muted); text-align
     gate.classList.toggle("show", !!f.gate);
     gate.classList.toggle("answered", f.gate === "answered");
     $("gateEyebrow").textContent = f.gate === "answered" ? "已確認 · Human confirmed" : "流程已暫停 · Paused for human";
-    if (f.gate !== "open") $("yesNote").classList.remove("show");
+    $("gateAnswer").innerHTML = f.answer === "yes"
+      ? '<span class="chip neutral">已確認</span>&nbsp; 申請人回覆：<b>有自有住宅</b> <span class="en">(Yes)</span>'
+      : '<span class="chip pass">已確認</span>&nbsp; 申請人回覆：<b>無自有住宅</b> <span class="en">(No)</span>';
+
+    // Yes-branch stop card
+    $("stopCard").classList.toggle("show", !!f.stop);
 
     // Results
     $("results").classList.toggle("show", !!f.results);
 
-    $("dcFrame").textContent = "frame " + frame + " / " + LAST_FRAME + (frame === HUMAN_FRAME ? " · human gate" : "");
+    $("dcFrame").textContent = "frame " + frame + (frame > LAST_FRAME ? " · yes branch" : " / " + LAST_FRAME) + (frame === HUMAN_FRAME ? " · human gate" : "");
   }
 
   function clearTimer() { if (timer) { clearTimeout(timer); timer = null; } }
 
   function go(n, opts) {
     clearTimer();
-    frame = Math.max(0, Math.min(LAST_FRAME, n));
+    frame = Math.max(0, Math.min(FRAMES.length - 1, n));
     render();
+    // Note: gate buttons are intentionally NOT auto-focused, so no key can answer the gate implicitly.
     if (frame === HUMAN_FRAME) {
+      if (document.activeElement && document.activeElement.tagName === "BUTTON") document.activeElement.blur();
       scrollToEl($("gate"));
-      var no = $("ansNo"); if (no && !(opts && opts.noFocus)) no.focus({ preventScroll: true });
     }
     if (frame === LAST_FRAME) scrollToEl($("results"));
-    if (!(opts && opts.manual) && DELAYS[frame] != null && frame < LAST_FRAME) {
+    if (frame === YES_END) scrollToEl($("gate"));
+    if (!(opts && opts.manual) && DELAYS[frame] != null) {
       timer = setTimeout(function () { go(frame + 1); }, DELAYS[frame]);
     }
   }
@@ -792,11 +828,11 @@ footer { margin: 28px 0 80px; font-size: 12.5px; color: var(--muted); text-align
     go(1);
   }
   function answerNo() { if (frame === HUMAN_FRAME) go(HUMAN_FRAME + 1); }
-  function answerYes() { if (frame === HUMAN_FRAME) $("yesNote").classList.add("show"); }
-  function reset() { clearTimer(); go(0, { manual: true }); window.scrollTo({ top: 0, behavior: "smooth" }); $("yesNote").classList.remove("show"); }
+  function answerYes() { if (frame === HUMAN_FRAME) go(YES_FRAME); }
+  function reset() { clearTimer(); go(0, { manual: true }); window.scrollTo({ top: 0, behavior: "smooth" }); }
   function stepOnce() {
-    if (frame === LAST_FRAME) return;
-    if (frame === HUMAN_FRAME) { answerNo(); return; }  // Space at gate = Golden answer (No)
+    // The human gate must never be answered by a shortcut: Space does nothing there.
+    if (frame === HUMAN_FRAME || frame === LAST_FRAME || frame === YES_END) return;
     go(frame + 1, { manual: true });
   }
   function toHuman() { go(HUMAN_FRAME); }
@@ -832,12 +868,16 @@ footer { margin: 28px 0 80px; font-size: 12.5px; color: var(--muted); text-align
     else if (k === " " || k === "Spacebar") stepOnce();
     else if (k === "h" || k === "H") toHuman();
     else if (k === "c" || k === "C") toComplete();
-    else if (k === "Escape") { setControls(false); $("yesNote").classList.remove("show"); }
+    else if (k === "Escape") setControls(false);
     else handled = false;
     if (handled) {
       e.preventDefault();
       if (document.activeElement && document.activeElement !== document.body && document.activeElement.tagName === "BUTTON" && k === " ") document.activeElement.blur();
     }
+  });
+  // Belt and braces: Space must never activate a focused gate answer button (native button activation fires on keyup).
+  document.addEventListener("keyup", function (e) {
+    if ((e.key === " " || e.key === "Spacebar") && e.target && e.target.closest && e.target.closest(".gate-btns")) e.preventDefault();
   });
 
   renderBench();
