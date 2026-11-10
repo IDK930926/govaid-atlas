@@ -1,0 +1,848 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GovAid Atlas · 離線備援展示 Offline Demo</title>
+<!--
+  GovAid Atlas — Offline Final Demo (backup)
+  Single file. No network, no fetch, no CDN, no fonts, no images.
+  This page SIMULATES the agent workflow with a fixed deterministic snapshot.
+  It does not call any LLM, backend, Ollama, localhost or Cloudflare.
+-->
+<style>
+:root {
+  --bg: #f5f7f7;
+  --surface: #ffffff;
+  --surface-2: #f9fbfb;
+  --ink: #0f1b1f;
+  --ink-2: #3f4c53;
+  --muted: #69767d;
+  --line: #e2e7e9;
+  --line-strong: #cfd7da;
+  --brand: #0f5c55;
+  --brand-strong: #0a4540;
+  --brand-soft: #e7f1ef;
+  --brand-line: #c4dcd7;
+  --pass-bg: #e8f3ec;
+  --pass-ink: #22603d;
+  --pass-line: #cbe3d4;
+  --warn-bg: #fbf3e1;
+  --warn-ink: #855611;
+  --warn-line: #efdcb2;
+  --fail-bg: #fbeceb;
+  --fail-ink: #982f28;
+  --fail-line: #f0d2ce;
+  --neutral-bg: #eef1f2;
+  --neutral-ink: #48555c;
+  --radius: 14px;
+  --radius-sm: 9px;
+  --shadow: 0 1px 2px rgba(15,27,31,.04), 0 4px 16px rgba(15,27,31,.04);
+  --ease: cubic-bezier(.2,.7,.2,1);
+  font-family: "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+* { box-sizing: border-box; }
+html, body { overflow-x: hidden; }
+body { margin: 0; background: var(--bg); }
+h1, h2, h3, h4, p, ul { margin: 0; }
+ul { padding: 0; list-style: none; }
+button { font: inherit; cursor: pointer; }
+.en { color: var(--muted); font-weight: 400; }
+.mono { font-family: Consolas, "Cascadia Mono", "SFMono-Regular", Menlo, monospace; }
+
+/* ---------- Top bar ---------- */
+.topbar {
+  position: sticky; top: 0; z-index: 20;
+  background: rgba(255,255,255,.96);
+  border-bottom: 1px solid var(--line);
+}
+.topbar-inner {
+  max-width: 1480px; margin: 0 auto; padding: 10px 32px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .2px; }
+.logo-mark {
+  width: 28px; height: 28px; border-radius: 8px; background: var(--brand);
+  display: grid; place-items: center; color: #fff; font-size: 14px; font-weight: 700;
+}
+.topbar .spacer { flex: 1; }
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 600;
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2);
+  white-space: nowrap;
+}
+.badge.offline { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-line); }
+.badge.sim { background: var(--neutral-bg); color: var(--neutral-ink); border-color: var(--line-strong); }
+.badge .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+/* ---------- Layout ---------- */
+.wrap { max-width: 1480px; margin: 0 auto; padding: 0 32px; }
+section { margin-top: 24px; }
+.card {
+  background: var(--surface); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 22px 24px;
+}
+.card-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
+.card-title h2 { font-size: 19px; font-weight: 700; }
+.card-title .en { font-size: 14px; }
+.eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--brand); }
+
+/* ---------- Hero ---------- */
+.hero { padding: 34px 0 6px; display: grid; grid-template-columns: 1fr auto; gap: 24px; align-items: end; }
+.hero h1 { font-size: 44px; line-height: 1.1; letter-spacing: -.5px; color: var(--brand-strong); }
+.hero .tag { margin-top: 12px; font-size: 22px; font-weight: 600; color: var(--ink); }
+.hero .tag-en { font-size: 16px; color: var(--muted); margin-top: 2px; }
+.pillars { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pill {
+  padding: 6px 12px; border-radius: var(--radius-sm); background: var(--brand-soft);
+  border: 1px solid var(--brand-line); color: var(--brand-strong); font-weight: 600; font-size: 15px;
+}
+.pill small { display: block; font-weight: 400; font-size: 12px; color: var(--brand); }
+.pillars .x { color: var(--muted); font-weight: 600; }
+.hero-badges { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.hero-badges .badge { font-size: 14px; padding: 6px 14px; }
+.sim-note {
+  margin-top: 14px; font-size: 14px; color: var(--warn-ink);
+  background: var(--warn-bg); border: 1px solid var(--warn-line);
+  border-radius: var(--radius-sm); padding: 8px 12px; display: inline-block;
+}
+
+/* ---------- Main grid ---------- */
+.main-grid { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+.col { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+
+/* Goal */
+.goal-box {
+  width: 100%; min-height: 96px; resize: vertical;
+  border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  padding: 12px 14px; font: inherit; font-size: 17px; line-height: 1.6; color: var(--ink);
+  background: var(--surface-2);
+}
+.goal-box:focus { outline: 2px solid var(--brand-line); border-color: var(--brand); }
+.goal-actions { margin-top: 14px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.btn {
+  border-radius: var(--radius-sm); border: 1px solid var(--line-strong);
+  background: var(--surface); color: var(--ink); padding: 10px 18px; font-weight: 600;
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.btn:hover { background: var(--surface-2); border-color: var(--muted); }
+.btn:active { transform: translateY(1px); }
+.btn:focus-visible { outline: 3px solid var(--brand-line); outline-offset: 2px; }
+.btn.primary { background: var(--brand); border-color: var(--brand); color: #fff; font-size: 17px; padding: 12px 24px; }
+.btn.primary:hover { background: var(--brand-strong); }
+.btn.primary .en { color: rgba(255,255,255,.8); }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+.run-status { font-size: 15px; color: var(--ink-2); display: flex; align-items: center; gap: 8px; }
+.spinner {
+  width: 14px; height: 14px; border-radius: 50%;
+  border: 2px solid var(--brand-line); border-top-color: var(--brand);
+  animation: spin .9s linear infinite; display: none;
+}
+.run-status.busy .spinner { display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Journey */
+.journey { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; }
+.step {
+  position: relative; border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 12px 12px 10px; background: var(--surface-2);
+  transition: border-color .3s var(--ease), background .3s var(--ease), box-shadow .3s var(--ease);
+}
+.step .num {
+  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 13px; font-weight: 700; background: var(--neutral-bg); color: var(--neutral-ink);
+  transition: background .3s, color .3s;
+}
+.step .zh { margin-top: 8px; font-weight: 700; font-size: 15px; }
+.step .en { font-size: 12px; display: block; line-height: 1.3; }
+.step .st {
+  margin-top: 8px; font-size: 11px; font-weight: 700; letter-spacing: .04em;
+  color: var(--muted);
+}
+.step[data-state="active"] { border-color: var(--brand); background: var(--brand-soft); box-shadow: 0 0 0 3px rgba(15,92,85,.08); }
+.step[data-state="active"] .num { background: var(--brand); color: #fff; }
+.step[data-state="active"] .st { color: var(--brand); }
+.step[data-state="done"] { border-color: var(--pass-line); background: var(--surface); }
+.step[data-state="done"] .num { background: var(--pass-bg); color: var(--pass-ink); }
+.step[data-state="done"] .st { color: var(--pass-ink); }
+.step[data-state="wait"] { border-color: var(--warn-line); background: var(--warn-bg); }
+.step[data-state="wait"] .num { background: var(--warn-ink); color: #fff; }
+.step[data-state="wait"] .st { color: var(--warn-ink); }
+
+/* Plan + tool log */
+.plan { margin-top: 16px; display: none; }
+.plan.show { display: block; animation: fade .35s var(--ease); }
+.plan h4, .tools h4 { font-size: 14px; color: var(--ink-2); margin-bottom: 8px; }
+.plan ol { margin: 0; padding-left: 20px; font-size: 14px; color: var(--ink-2); }
+.plan ol li { margin: 2px 0; }
+.tools { margin-top: 16px; }
+.tool-log { border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+.tool-row {
+  display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; align-items: center;
+  padding: 8px 12px; border-top: 1px solid var(--line); font-size: 14px;
+  animation: fade .3s var(--ease);
+}
+.tool-row:first-child { border-top: 0; }
+.tool-row .ic { width: 10px; height: 10px; border-radius: 50%; background: var(--line-strong); justify-self: center; }
+.tool-row.running .ic { background: var(--brand); animation: pulse 1s ease-in-out infinite; }
+.tool-row.ok .ic { background: var(--pass-ink); }
+.tool-row.warn .ic { background: var(--warn-ink); }
+.tool-row .name { font-weight: 600; overflow-wrap: anywhere; }
+.tool-row .desc { color: var(--muted); font-size: 12.5px; display: block; font-family: inherit; font-weight: 400; }
+.tool-empty { padding: 14px 12px; color: var(--muted); font-size: 14px; }
+@keyframes pulse { 50% { opacity: .35; } }
+
+/* Status chips */
+.chip {
+  display: inline-flex; align-items: center; padding: 3px 10px; border-radius: 999px;
+  font-size: 12.5px; font-weight: 700; letter-spacing: .03em; border: 1px solid; white-space: nowrap;
+}
+.chip.pass { background: var(--pass-bg); color: var(--pass-ink); border-color: var(--pass-line); }
+.chip.unc { background: var(--warn-bg); color: var(--warn-ink); border-color: var(--warn-line); }
+.chip.fail { background: var(--fail-bg); color: var(--fail-ink); border-color: var(--fail-line); }
+.chip.neutral { background: var(--neutral-bg); color: var(--neutral-ink); border-color: var(--line-strong); }
+.chip.brand { background: var(--brand-soft); color: var(--brand-strong); border-color: var(--brand-line); }
+
+/* Status / Human gate panel */
+.status-card .state-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 18px; font-weight: 700; }
+.status-card .state-sub { color: var(--muted); font-size: 14px; margin-top: 4px; }
+.status-card .central { margin-top: 16px; display: none; padding: 12px 14px; border-radius: var(--radius-sm); border: 1px solid var(--line); background: var(--surface-2); }
+.status-card .central.show { display: flex; align-items: center; justify-content: space-between; gap: 10px; animation: fade .3s var(--ease); }
+
+.gate {
+  display: none; border: 2px solid var(--warn-ink); background: #fffdf7;
+  border-radius: var(--radius); padding: 24px; box-shadow: 0 0 0 6px rgba(133,86,17,.08), var(--shadow);
+}
+.gate.show { display: block; animation: reveal .4s var(--ease); }
+.gate.answered { border-color: var(--pass-line); box-shadow: var(--shadow); background: var(--surface); }
+.gate .eyebrow { color: var(--warn-ink); }
+.gate.answered .eyebrow { color: var(--pass-ink); }
+.gate h2 { font-size: 24px; margin-top: 4px; }
+.gate h2 .en { font-size: 16px; }
+.gate .q { margin-top: 18px; font-size: 26px; font-weight: 700; color: var(--ink); }
+.gate .q-en { font-size: 16px; color: var(--muted); }
+.gate .why { margin-top: 10px; font-size: 14px; color: var(--ink-2); }
+.gate-btns { margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.gate-btns .btn { padding: 16px; font-size: 18px; text-align: center; }
+.gate-btns .btn .en { display: block; font-size: 13px; }
+.gate-btns .btn.no { background: var(--brand); border-color: var(--brand); color: #fff; }
+.gate-btns .btn.no .en { color: rgba(255,255,255,.8); }
+.gate-btns .btn.no:hover { background: var(--brand-strong); }
+.gate .answer { display: none; margin-top: 14px; font-size: 15px; }
+.gate.answered .answer { display: block; }
+.gate.answered .gate-btns { display: none; }
+.gate .yes-note {
+  display: none; margin-top: 12px; font-size: 14px; padding: 10px 12px; border-radius: var(--radius-sm);
+  background: var(--fail-bg); color: var(--fail-ink); border: 1px solid var(--fail-line);
+}
+.gate .yes-note.show { display: block; animation: fade .3s var(--ease); }
+
+/* Results */
+.results { display: none; }
+.results.show { display: block; animation: reveal .45s var(--ease); }
+.compare { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.scen-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 12px; }
+.scen-tag { font-size: 13px; font-weight: 800; letter-spacing: .08em; padding: 3px 10px; border-radius: 6px; }
+.scen-tag.actual { background: var(--brand); color: #fff; }
+.scen-tag.whatif { background: var(--surface); color: var(--brand-strong); border: 1.5px dashed var(--brand); }
+.scen-loc { font-size: 22px; font-weight: 700; }
+.scen-rent { font-size: 17px; color: var(--ink-2); margin-top: 2px; }
+.scen-rent b { font-variant-numeric: tabular-nums; }
+.rule-list { margin-top: 14px; border-top: 1px solid var(--line); }
+.rule-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); font-weight: 600; }
+.pending-box { margin-top: 12px; font-size: 14px; background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: var(--radius-sm); padding: 10px 12px; color: var(--warn-ink); }
+.pending-box b { display: block; font-size: 12px; letter-spacing: .04em; margin-bottom: 2px; }
+.whatif-note { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+
+.passport {
+  margin-top: 20px; border: 2px solid var(--brand); border-radius: var(--radius);
+  background: var(--surface); box-shadow: 0 0 0 6px rgba(15,92,85,.06), var(--shadow); overflow: hidden;
+}
+.passport-head {
+  background: var(--brand); color: #fff; padding: 18px 24px;
+  display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;
+}
+.passport-head h2 { font-size: 26px; }
+.passport-head h2 .en { color: rgba(255,255,255,.75); font-size: 16px; margin-left: 6px; }
+.passport-head .meta { font-size: 13px; color: rgba(255,255,255,.85); text-align: right; }
+.passport-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-bottom: 1px solid var(--line); }
+.sum-cell { padding: 16px 24px; border-left: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.sum-cell:first-child { border-left: 0; }
+.sum-cell .lbl { font-weight: 700; font-size: 16px; }
+.sum-cell .lbl .en { font-size: 12.5px; display: block; }
+.sum-cell .chip { font-size: 15px; padding: 5px 14px; align-self: flex-start; }
+.passport-body { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pp-sec { padding: 18px 22px; border-left: 1px solid var(--line); }
+.pp-sec:first-child { border-left: 0; }
+.pp-sec h3 { font-size: 16px; margin-bottom: 10px; }
+.pp-sec h3 .en { font-size: 12.5px; display: block; }
+.pp-sec li { font-size: 14.5px; padding: 6px 0 6px 14px; position: relative; color: var(--ink-2); border-top: 1px dashed var(--line); }
+.pp-sec li:first-child { border-top: 0; }
+.pp-sec li::before { content: ""; position: absolute; left: 0; top: 14px; width: 6px; height: 6px; border-radius: 50%; background: var(--line-strong); }
+.pp-sec.missing li::before { background: var(--warn-ink); }
+.pp-sec.risks li::before { background: var(--fail-ink); }
+.pp-sec.next li::before { background: var(--brand); }
+.ev-item { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: start; }
+.pp-sec.evidence li { padding-left: 0; }
+.pp-sec.evidence li::before { display: none; }
+.ev-id { font-weight: 800; font-size: 13px; color: var(--brand-strong); background: var(--brand-soft); border: 1px solid var(--brand-line); border-radius: 6px; padding: 1px 7px; }
+.passport-foot { padding: 12px 24px; background: var(--surface-2); border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+
+/* Lower grid */
+.lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, .8fr); gap: 20px; align-items: stretch; }
+.gov-list li { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px; font-weight: 600; }
+.gov-list li:first-child { border-top: 0; }
+.gov-list li .en { font-size: 12.5px; margin-left: auto; text-align: right; }
+.gov-list li::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--brand); flex: none; }
+
+.bench-legend { display: flex; gap: 16px; font-size: 13px; color: var(--ink-2); margin-bottom: 10px; flex-wrap: wrap; }
+.bench-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.sw.base { background: #b9c3c7; }
+.sw.ours { background: var(--brand); }
+.metric { padding: 8px 0; border-top: 1px solid var(--line); }
+.metric:first-of-type { border-top: 0; }
+.metric-name { font-size: 14px; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; }
+.metric-name .en { font-size: 12px; }
+.metric-name .dir { font-size: 11.5px; color: var(--muted); font-weight: 400; }
+.bar-row { display: grid; grid-template-columns: minmax(0, 1fr) 54px; gap: 8px; align-items: center; margin-top: 4px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.bar-track { height: 10px; background: var(--neutral-bg); border-radius: 5px; overflow: hidden; }
+.bar { height: 100%; border-radius: 5px; }
+.bar.base { background: #b9c3c7; }
+.bar.ours { background: var(--brand); }
+.bar-row .v { text-align: right; font-weight: 700; }
+.bar-row .v.base { color: var(--neutral-ink); font-weight: 600; }
+.disclaimer { margin-top: 12px; font-size: 12.5px; color: var(--ink-2); background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 8px 10px; }
+.manual { margin-top: 8px; display: flex; gap: 8px; align-items: center; font-size: 13px; flex-wrap: wrap; }
+
+.rt-list li { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.rt-list li:first-child { border-top: 0; }
+.rt-list .k { font-weight: 600; font-size: 15px; }
+.rt-list .k .en { font-size: 12px; display: block; }
+.rt-note { margin-top: 10px; font-size: 12.5px; color: var(--muted); }
+
+footer { margin: 28px 0 80px; font-size: 12.5px; color: var(--muted); text-align: center; }
+
+/* Demo controls */
+.dc { position: fixed; right: 16px; bottom: 16px; z-index: 50; font-size: 13px; }
+.dc-toggle {
+  border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-2);
+  border-radius: 999px; padding: 6px 14px; box-shadow: var(--shadow); font-weight: 600; font-size: 13px;
+}
+.dc-panel {
+  display: none; position: absolute; right: 0; bottom: 42px; width: 260px;
+  background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  box-shadow: 0 8px 28px rgba(15,27,31,.14); padding: 12px;
+}
+.dc.open .dc-panel { display: block; animation: fade .2s var(--ease); }
+.dc-panel h4 { font-size: 13px; margin-bottom: 8px; }
+.dc-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 0; }
+.dc-row kbd {
+  font-family: Consolas, monospace; font-size: 12px; min-width: 52px; text-align: center;
+  border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; background: var(--surface-2);
+}
+.dc-row button { flex: 1; text-align: left; border: 0; background: none; padding: 4px 6px; border-radius: 5px; color: var(--ink); font-size: 13px; }
+.dc-row button:hover { background: var(--brand-soft); }
+.dc-frame { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes reveal { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* ---------- Responsive ---------- */
+@media (max-width: 1440px) {
+  .hero h1 { font-size: 38px; }
+  .hero .tag { font-size: 20px; }
+  .passport-body { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pp-sec:nth-child(3) { border-left: 0; }
+  .pp-sec:nth-child(n+3) { border-top: 1px solid var(--line); }
+  .lower { grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr); }
+  .lower .runtime { grid-column: 1 / -1; }
+  .rt-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 20px; }
+  .rt-list li:nth-child(-n+3) { border-top: 0; }
+}
+@media (max-width: 1200px) {
+  .journey { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 980px) {
+  .wrap, .topbar-inner { padding-left: 16px; padding-right: 16px; }
+  .hero { grid-template-columns: 1fr; }
+  .hero-badges { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .main-grid, .compare, .lower { grid-template-columns: 1fr; }
+  .passport-summary { grid-template-columns: 1fr; }
+  .sum-cell { border-left: 0; border-top: 1px solid var(--line); flex-direction: row; justify-content: space-between; align-items: center; }
+  .sum-cell:first-child { border-top: 0; }
+  .rt-list { grid-template-columns: 1fr; }
+  .rt-list li:nth-child(-n+3) { border-top: 1px solid var(--line); }
+  .rt-list li:first-child { border-top: 0; }
+}
+@media (max-width: 600px) {
+  .hero h1 { font-size: 30px; }
+  .hero .tag { font-size: 17px; }
+  .journey { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .passport-body { grid-template-columns: 1fr; }
+  .pp-sec { border-left: 0 !important; border-top: 1px solid var(--line); }
+  .pp-sec:first-child { border-top: 0; }
+  .gate .q { font-size: 21px; }
+  .gate-btns { grid-template-columns: 1fr; }
+  .card { padding: 18px 16px; }
+  .topbar .rt-mini { display: none; }
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="logo"><span class="logo-mark" aria-hidden="true">GA</span>GovAid Atlas</div>
+    <span class="badge offline"><span class="dot"></span>離線備援展示 · OFFLINE DEMO</span>
+    <span class="badge sim">模擬代理流程 · SIMULATED AGENT</span>
+    <span class="spacer"></span>
+    <span class="rt-mini" style="font-size:13px;color:var(--muted)">無網路連線需求 · No network required</span>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- Hero -->
+  <section class="hero" aria-label="GovAid Atlas">
+    <div>
+      <div class="eyebrow">NAPAI Final · Backup Demo</div>
+      <h1>GovAid Atlas</h1>
+      <p class="tag">可追溯、可暫停、可人工確認的政府補助 AI Agent</p>
+      <p class="tag-en">Traceable, Pausable, Human-in-the-loop Benefit Navigator</p>
+      <div class="pillars">
+        <span class="pill">Agent 規劃<small>Agent Planning</small></span><span class="x">×</span>
+        <span class="pill">規則引擎<small>Deterministic Rules</small></span><span class="x">×</span>
+        <span class="pill">官方證據<small>Official Evidence</small></span><span class="x">×</span>
+        <span class="pill">人工覆核<small>Human Review</small></span>
+      </div>
+      <p class="sim-note">本頁為離線備援模擬，未連線任何 LLM 或後端；流程與結果取自固定的決定性快照。<br><span style="opacity:.85">This page simulates the agent workflow from a fixed snapshot. No live LLM or backend is running.</span></p>
+    </div>
+    <div class="hero-badges">
+      <span class="badge offline"><span class="dot"></span>離線備援展示 OFFLINE DEMO</span>
+      <span class="badge sim">模擬代理流程 SIMULATED AGENT</span>
+    </div>
+  </section>
+
+  <!-- Goal + Journey + Status -->
+  <section class="main-grid">
+    <div class="col">
+      <div class="card">
+        <div class="card-title"><h2>申請目標</h2><span class="en">User Goal</span></div>
+        <textarea id="goal" class="goal-box" aria-label="申請目標 User Goal">我目前住在新北市永和區，每月租金 13,500 元。如果搬到臺北市文山區、租金 15,500 元，我有哪些租屋補助可以考慮？還缺什麼資料？</textarea>
+        <div class="goal-actions">
+          <button id="runBtn" class="btn primary" type="button">執行 Agent <span class="en">Run Agent</span></button>
+          <span id="runStatus" class="run-status" aria-live="polite"><span class="spinner"></span><span id="runStatusText">尚未執行 · Not started</span></span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title"><h2>Agent 流程</h2><span class="en">Agent Journey</span></div>
+        <div class="journey" id="journey">
+          <div class="step" data-step="0"><div class="num">1</div><div class="zh">理解目標</div><span class="en">Understand Goal</span><div class="st"></div></div>
+          <div class="step" data-step="1"><div class="num">2</div><div class="zh">規劃</div><span class="en">Plan</span><div class="st"></div></div>
+          <div class="step" data-step="2"><div class="num">3</div><div class="zh">工具執行</div><span class="en">Tool Execution</span><div class="st"></div></div>
+          <div class="step" data-step="3"><div class="num">4</div><div class="zh">人工確認</div><span class="en">Human Gate</span><div class="st"></div></div>
+          <div class="step" data-step="4"><div class="num">5</div><div class="zh">繼續執行</div><span class="en">Resume</span><div class="st"></div></div>
+          <div class="step" data-step="5"><div class="num">6</div><div class="zh">產出決策</div><span class="en">Decision</span><div class="st"></div></div>
+        </div>
+
+        <div class="plan" id="plan">
+          <h4>執行計畫 · Plan</h4>
+          <ol>
+            <li>評估中央租金補貼規則 <span class="en mono">evaluate_central_rules</span></li>
+            <li>評估實際情境（新北市永和區）<span class="en mono">evaluate_actual_scenario</span></li>
+            <li>評估假設情境（臺北市文山區）<span class="en mono">evaluate_what_if_scenario</span></li>
+            <li>綁定官方政策證據 <span class="en mono">get_policy_evidence</span></li>
+            <li>產出申辦決策護照 <span class="en mono">generate_decision_passport</span></li>
+          </ol>
+        </div>
+
+        <div class="tools">
+          <h4>工具呼叫紀錄 · Tool Calls <span class="en" style="font-weight:400">(模擬 simulated)</span></h4>
+          <div class="tool-log" id="toolLog"><div class="tool-empty">尚無工具呼叫 · No tool calls yet</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="card status-card">
+        <div class="card-title"><h2>執行狀態</h2><span class="en">Run Status</span></div>
+        <div class="state-line" id="stateLine"><span class="chip neutral">待命</span> 尚未執行 <span class="en" style="font-size:15px">Idle</span></div>
+        <p class="state-sub" id="stateSub">按下「執行 Agent」開始模擬 Golden Path。Press Run Agent to start.</p>
+        <div class="central" id="centralBox">
+          <div><b>中央規則</b> <span class="en">Central Rules</span></div>
+          <span id="centralChip" class="chip unc">待確認 UNCERTAIN</span>
+        </div>
+      </div>
+
+      <div class="gate" id="gate" role="region" aria-label="需要人工確認 Human Input Required">
+        <div class="eyebrow" id="gateEyebrow">流程已暫停 · Paused for human</div>
+        <h2>需要人工確認 <span class="en">Human Input Required</span></h2>
+        <p class="q">本人是否持有住宅？</p>
+        <p class="q-en">Does the applicant own a home?</p>
+        <p class="why">此條件無法由系統推定，中央規則暫判為「待確認」。Agent 不會自行假設，必須由申請人確認後才繼續。</p>
+        <div class="gate-btns">
+          <button class="btn no" id="ansNo" type="button">無自有住宅<span class="en">No</span></button>
+          <button class="btn" id="ansYes" type="button">有自有住宅<span class="en">Yes</span></button>
+        </div>
+        <div class="yes-note" id="yesNote">選擇「有自有住宅」時，中央租金補貼規則將判定為不符合（FAIL）。本離線備援頁僅完整示範 Golden Path，請選擇「無自有住宅 / No」繼續。<br><span style="opacity:.85">This offline backup only plays the Golden Path. Choose “No” to continue.</span></div>
+        <p class="answer" id="gateAnswer"><span class="chip pass">已確認</span>&nbsp; 申請人回覆：<b>無自有住宅</b> <span class="en">(No)</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Results -->
+  <section class="results" id="results" aria-live="polite">
+    <div class="card-title" style="margin-bottom:12px"><h2>情境比較</h2><span class="en">Scenario Comparison</span></div>
+    <div class="compare">
+      <div class="card">
+        <div class="scen-head"><span class="scen-tag actual">實際情境 ACTUAL</span></div>
+        <div class="scen-loc">新北市永和區</div>
+        <div class="scen-rent"><b>NT$13,500</b> / 月</div>
+        <ul class="rule-list">
+          <li>中央租屋補助 <span class="chip pass">PASS</span></li>
+          <li>新北地方方案 <span class="chip unc">UNCERTAIN</span></li>
+        </ul>
+        <div class="pending-box"><b>待確認 · PENDING</b>確認新北市設籍、就學或就業條件</div>
+      </div>
+      <div class="card">
+        <div class="scen-head"><span class="scen-tag whatif">假設情境 WHAT-IF</span></div>
+        <div class="scen-loc">臺北市文山區</div>
+        <div class="scen-rent"><b>NT$15,500</b> / 月</div>
+        <ul class="rule-list">
+          <li>中央租屋補助 <span class="chip pass">PASS</span></li>
+          <li>臺北地方方案 <span class="chip unc">UNCERTAIN</span></li>
+        </ul>
+        <div class="pending-box"><b>待確認 · PENDING</b>確認中央租金補貼是否已核准</div>
+        <p class="whatif-note">假設搬遷情境，僅供比較 · Hypothetical relocation, for comparison only.</p>
+      </div>
+    </div>
+
+    <div class="passport" id="passport">
+      <div class="passport-head">
+        <h2>申辦決策護照<span class="en">Decision Passport</span></h2>
+        <div class="meta">狀態：已完成 COMPLETED<br>離線快照 · Offline snapshot</div>
+      </div>
+      <div class="passport-summary">
+        <div class="sum-cell"><span class="lbl">中央租屋補助<span class="en">Central Rent Subsidy</span></span><span class="chip pass">PASS</span></div>
+        <div class="sum-cell"><span class="lbl">新北地方方案<span class="en">New Taipei Local Program</span></span><span class="chip unc">UNCERTAIN</span></div>
+        <div class="sum-cell"><span class="lbl">臺北地方方案<span class="en">Taipei Local Program</span></span><span class="chip unc">UNCERTAIN</span></div>
+      </div>
+      <div class="passport-body">
+        <div class="pp-sec missing">
+          <h3>待確認事項<span class="en">Missing Items</span></h3>
+          <ul>
+            <li>確認新北市設籍、就學或就業條件</li>
+            <li>確認中央租金補貼是否已核准</li>
+          </ul>
+        </div>
+        <div class="pp-sec risks">
+          <h3>風險<span class="en">Risks</span></h3>
+          <ul>
+            <li>尚有必要條件未確認，不得輸出確定式資格結論</li>
+            <li>WHAT-IF 為假設搬遷情境，不代表取得正式補助資格</li>
+          </ul>
+        </div>
+        <div class="pp-sec next">
+          <h3>下一步<span class="en">Next Steps</span></h3>
+          <ul>
+            <li>補充未確認條件</li>
+            <li>準備申請文件</li>
+            <li>重新查核最新政策版本</li>
+          </ul>
+        </div>
+        <div class="pp-sec evidence">
+          <h3>政策依據<span class="en">Evidence</span></h3>
+          <ul>
+            <li class="ev-item"><span class="ev-id">R1</span><span>中央租金補貼官方規定</span></li>
+            <li class="ev-item"><span class="ev-id">R6</span><span>臺北市官方政策資料</span></li>
+            <li class="ev-item"><span class="ev-id">R7</span><span>新北市官方政策資料</span></li>
+          </ul>
+        </div>
+      </div>
+      <div class="passport-foot">本護照為申辦前的資格導航參考，不代表政府正式核准或審核結果；實際資格以主管機關審查為準。· This passport is a navigation aid, not an official government approval.</div>
+    </div>
+  </section>
+
+  <!-- Governance / Benchmark / Runtime -->
+  <section class="lower">
+    <div class="card">
+      <div class="card-title"><h2>治理與安全</h2><span class="en">Governance &amp; Safety</span></div>
+      <ul class="gov-list">
+        <li>人工確認關卡 <span class="en">Human-in-the-loop</span></li>
+        <li>工具白名單 <span class="en">Tool Allowlist</span></li>
+        <li>政策衝突偵測 <span class="en">Policy Conflict Detection</span></li>
+        <li>角色權限控管 <span class="en">RBAC</span></li>
+        <li>稽核軌跡 <span class="en">Audit Trail</span></li>
+        <li>證據綁定 <span class="en">Evidence Binding</span></li>
+      </ul>
+    </div>
+
+    <div class="card">
+      <div class="card-title"><h2>基準測試快照</h2><span class="en">Benchmark Snapshot</span></div>
+      <div class="bench-legend">
+        <span><i class="sw base"></i>一般 LLM + Policy Context</span>
+        <span><i class="sw ours"></i>GovAid Atlas</span>
+      </div>
+      <div id="bench"></div>
+      <p class="disclaimer">10 組合成政策導航測試案例，不代表真實世界整體準確率。<br>10 synthetic policy-navigation cases; not a real-world accuracy claim.</p>
+      <div class="manual"><span class="chip neutral">人工基準測試進行中</span><span class="en">Manual baseline pending</span></div>
+    </div>
+
+    <div class="card runtime">
+      <div class="card-title"><h2>執行環境</h2><span class="en">Runtime</span></div>
+      <ul class="rt-list">
+        <li><span class="k">模式<span class="en">Mode</span></span><span class="chip unc">OFFLINE DEMO</span></li>
+        <li><span class="k">Agent<span class="en">Agent</span></span><span class="chip neutral">SIMULATED</span></li>
+        <li><span class="k">規則引擎<span class="en">Policy Engine</span></span><span class="chip brand">DETERMINISTIC SNAPSHOT</span></li>
+      </ul>
+      <p class="rt-note">離線模式不呼叫 LLM，因此不顯示 token 或成本。· No LLM calls offline, so no token or cost figures are shown.</p>
+    </div>
+  </section>
+
+  <footer>GovAid Atlas · 離線備援展示 Offline backup demo · 模擬流程，非即時 Agent 執行 · Simulated, not a live agent run</footer>
+</main>
+
+<!-- Demo controls -->
+<div class="dc" id="dc">
+  <div class="dc-panel" id="dcPanel" role="dialog" aria-label="Demo Controls">
+    <h4>Demo Controls</h4>
+    <div class="dc-row"><kbd>R</kbd><button type="button" data-act="reset">重置 Reset Demo</button></div>
+    <div class="dc-row"><kbd>Space</kbd><button type="button" data-act="step">前進一步 Next step</button></div>
+    <div class="dc-row"><kbd>H</kbd><button type="button" data-act="human">跳至人工確認 Human Gate</button></div>
+    <div class="dc-row"><kbd>C</kbd><button type="button" data-act="complete">跳至完成 Completed</button></div>
+    <div class="dc-row"><kbd>Esc</kbd><button type="button" data-act="close">關閉 Close</button></div>
+    <div class="dc-frame" id="dcFrame">frame 0 / 10</div>
+  </div>
+  <button class="dc-toggle" id="dcToggle" type="button" aria-expanded="false" aria-controls="dcPanel">Demo Controls</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- Static snapshot data (no network) ----
+  var TOOLS = {
+    central:  { name: "evaluate_central_rules",     desc: "中央租金補貼規則評估 · Central rent subsidy rules" },
+    actual:   { name: "evaluate_actual_scenario",   desc: "實際情境：新北市永和區 NT$13,500" },
+    whatif:   { name: "evaluate_what_if_scenario",  desc: "假設情境：臺北市文山區 NT$15,500" },
+    evidence: { name: "get_policy_evidence",        desc: "綁定官方證據 R1 · R6 · R7" },
+    passport: { name: "generate_decision_passport", desc: "產出申辦決策護照 · Decision Passport" }
+  };
+
+  var BENCH = [
+    { zh: "狀態正確率", en: "Status Accuracy", base: 70, ours: 100, better: "higher" },
+    { zh: "證據覆蓋率", en: "Evidence Coverage", base: 77.8, ours: 100, better: "higher" },
+    { zh: "無依據主張率", en: "Unsupported Claim Rate", base: 30, ours: 0, better: "lower" },
+    { zh: "過度確定率", en: "Unsafe Certainty", base: 40, ours: 0, better: "lower" }
+  ];
+
+  // Step states: p=pending a=active d=done w=waiting
+  // tool row status: run | ok | warn ; result label
+  // Each frame fully describes the UI (render is idempotent).
+  var FRAMES = [
+    /* 0 */ { steps: "pppppp", tools: [], run: "idle" },
+    /* 1 */ { steps: "appppp", tools: [], run: "busy", msg: "正在理解目標… · Understanding goal…" },
+    /* 2 */ { steps: "dapppp", tools: [], run: "busy", plan: true, msg: "正在規劃… · Planning…" },
+    /* 3 */ { steps: "ddappp", tools: [["central", "run"]], run: "busy", plan: true, msg: "工具執行中 · Running evaluate_central_rules" },
+    /* 4 */ { steps: "dddwpp", tools: [["central", "warn", "UNCERTAIN"]], run: "wait", plan: true, central: "unc", gate: "open" },
+    /* 5 */ { steps: "ddddap", tools: [["central", "ok", "PASS"]], run: "busy", plan: true, central: "pass", gate: "answered", msg: "繼續執行 · Resuming" },
+    /* 6 */ { steps: "ddddap", tools: [["central", "ok", "PASS"], ["actual", "ok", "DONE"]], run: "busy", plan: true, central: "pass", gate: "answered", msg: "繼續執行 · Resuming" },
+    /* 7 */ { steps: "ddddap", tools: [["central", "ok", "PASS"], ["actual", "ok", "DONE"], ["whatif", "ok", "DONE"]], run: "busy", plan: true, central: "pass", gate: "answered", msg: "繼續執行 · Resuming" },
+    /* 8 */ { steps: "ddddap", tools: [["central", "ok", "PASS"], ["actual", "ok", "DONE"], ["whatif", "ok", "DONE"], ["evidence", "ok", "R1 · R6 · R7"]], run: "busy", plan: true, central: "pass", gate: "answered", msg: "繼續執行 · Resuming" },
+    /* 9 */ { steps: "ddddda", tools: [["central", "ok", "PASS"], ["actual", "ok", "DONE"], ["whatif", "ok", "DONE"], ["evidence", "ok", "R1 · R6 · R7"], ["passport", "run"]], run: "busy", plan: true, central: "pass", gate: "answered", msg: "正在產出決策… · Generating decision…" },
+    /* 10 */ { steps: "dddddd", tools: [["central", "ok", "PASS"], ["actual", "ok", "DONE"], ["whatif", "ok", "DONE"], ["evidence", "ok", "R1 · R6 · R7"], ["passport", "ok", "DONE"]], run: "done", plan: true, central: "pass", gate: "answered", results: true }
+  ];
+  var HUMAN_FRAME = 4, LAST_FRAME = FRAMES.length - 1;
+  // Delay (ms) before auto-advancing from frame i to i+1. null = stop.
+  var DELAYS = [null, 550, 650, 900, null, 500, 450, 450, 450, 500, null];
+
+  var STEP_LABEL = { p: "等待中 PENDING", a: "執行中 ACTIVE", d: "完成 DONE", w: "等待人工 WAITING" };
+
+  var $ = function (id) { return document.getElementById(id); };
+  var frame = 0, timer = null;
+
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+
+  function renderBench() {
+    var html = "";
+    BENCH.forEach(function (m) {
+      html += '<div class="metric"><div class="metric-name"><span>' + m.zh + ' <span class="en">' + m.en + '</span></span>' +
+        '<span class="dir">' + (m.better === "higher" ? "越高越好 ↑" : "越低越好 ↓") + '</span></div>' +
+        '<div class="bar-row"><div class="bar-track"><div class="bar base" style="width:' + m.base + '%"></div></div><span class="v base">' + m.base + '%</span></div>' +
+        '<div class="bar-row"><div class="bar-track"><div class="bar ours" style="width:' + Math.max(m.ours, 0) + '%"></div></div><span class="v">' + m.ours + '%</span></div></div>';
+    });
+    $("bench").innerHTML = html;
+  }
+
+  function render() {
+    var f = FRAMES[frame];
+
+    // Journey
+    var steps = document.querySelectorAll("#journey .step");
+    for (var i = 0; i < steps.length; i++) {
+      var s = f.steps.charAt(i);
+      var st = { p: "pending", a: "active", d: "done", w: "wait" }[s];
+      steps[i].setAttribute("data-state", st);
+      steps[i].querySelector(".st").textContent = STEP_LABEL[s];
+    }
+
+    // Plan
+    $("plan").classList.toggle("show", !!f.plan);
+
+    // Tool log
+    var log = $("toolLog");
+    if (!f.tools.length) {
+      log.innerHTML = '<div class="tool-empty">尚無工具呼叫 · No tool calls yet</div>';
+    } else {
+      var html = "";
+      f.tools.forEach(function (t) {
+        var def = TOOLS[t[0]], status = t[1], res = t[2];
+        var chip = status === "run" ? '<span class="chip brand">執行中 RUNNING</span>'
+          : status === "warn" ? '<span class="chip unc">' + esc(res) + '</span>'
+          : '<span class="chip pass">' + esc(res) + '</span>';
+        html += '<div class="tool-row ' + (status === "run" ? "running" : status) + '"><span class="ic"></span>' +
+          '<span class="name mono">' + def.name + '<span class="desc">' + def.desc + '</span></span>' + chip + '</div>';
+      });
+      log.innerHTML = html;
+    }
+
+    // Run status
+    var rs = $("runStatus"), rt = $("runStatusText");
+    rs.classList.toggle("busy", f.run === "busy");
+    if (f.run === "idle") rt.textContent = "尚未執行 · Not started";
+    else if (f.run === "busy") rt.textContent = "正在模擬 Agent 流程… · Simulating agent workflow…";
+    else if (f.run === "wait") rt.textContent = "等待人工確認 · Waiting for human";
+    else rt.textContent = "已完成 · Completed";
+    $("runBtn").disabled = f.run === "busy";
+
+    // Status card
+    var line = $("stateLine"), sub = $("stateSub");
+    if (f.run === "idle") {
+      line.innerHTML = '<span class="chip neutral">待命</span> 尚未執行 <span class="en" style="font-size:15px">Idle</span>';
+      sub.textContent = "按下「執行 Agent」開始模擬 Golden Path。Press Run Agent to start.";
+    } else if (f.run === "wait") {
+      line.innerHTML = '<span class="chip unc">暫停</span> 等待人工確認 <span class="en" style="font-size:15px">Waiting for human</span>';
+      sub.textContent = "中央規則有必要條件無法判定，Agent 已暫停並請求人工輸入。";
+    } else if (f.run === "done") {
+      line.innerHTML = '<span class="chip pass">完成</span> 已完成 <span class="en" style="font-size:15px">COMPLETED</span>';
+      sub.textContent = "已產出申辦決策護照，請見下方。Decision Passport generated below.";
+    } else {
+      line.innerHTML = '<span class="chip brand">執行中</span> ' + esc(f.msg.split(" · ")[0]) + ' <span class="en" style="font-size:15px">' + esc(f.msg.split(" · ")[1] || "") + '</span>';
+      sub.textContent = frame >= 5 ? "已取得人工回覆，Agent 從暫停點繼續執行。Resumed from the human gate." : "模擬流程進行中（離線快照）。Simulated run from offline snapshot.";
+    }
+
+    var cb = $("centralBox"), cc = $("centralChip");
+    cb.classList.toggle("show", !!f.central);
+    if (f.central === "pass") { cc.className = "chip pass"; cc.textContent = "通過 PASS"; }
+    else { cc.className = "chip unc"; cc.textContent = "待確認 UNCERTAIN"; }
+
+    // Human gate
+    var gate = $("gate");
+    gate.classList.toggle("show", !!f.gate);
+    gate.classList.toggle("answered", f.gate === "answered");
+    $("gateEyebrow").textContent = f.gate === "answered" ? "已確認 · Human confirmed" : "流程已暫停 · Paused for human";
+    if (f.gate !== "open") $("yesNote").classList.remove("show");
+
+    // Results
+    $("results").classList.toggle("show", !!f.results);
+
+    $("dcFrame").textContent = "frame " + frame + " / " + LAST_FRAME + (frame === HUMAN_FRAME ? " · human gate" : "");
+  }
+
+  function clearTimer() { if (timer) { clearTimeout(timer); timer = null; } }
+
+  function go(n, opts) {
+    clearTimer();
+    frame = Math.max(0, Math.min(LAST_FRAME, n));
+    render();
+    if (frame === HUMAN_FRAME) {
+      scrollToEl($("gate"));
+      var no = $("ansNo"); if (no && !(opts && opts.noFocus)) no.focus({ preventScroll: true });
+    }
+    if (frame === LAST_FRAME) scrollToEl($("results"));
+    if (!(opts && opts.manual) && DELAYS[frame] != null && frame < LAST_FRAME) {
+      timer = setTimeout(function () { go(frame + 1); }, DELAYS[frame]);
+    }
+  }
+
+  function scrollToEl(el) {
+    setTimeout(function () {
+      var r = el.getBoundingClientRect();
+      if (r.top < 70 || r.bottom > window.innerHeight) {
+        // offset for sticky header
+        window.scrollTo({ top: Math.max(0, window.pageYOffset + r.top - 76), behavior: "smooth" });
+      }
+    }, 60);
+  }
+
+  function run() {
+    if (FRAMES[frame].run === "busy") return;
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    go(1);
+  }
+  function answerNo() { if (frame === HUMAN_FRAME) go(HUMAN_FRAME + 1); }
+  function answerYes() { if (frame === HUMAN_FRAME) $("yesNote").classList.add("show"); }
+  function reset() { clearTimer(); go(0, { manual: true }); window.scrollTo({ top: 0, behavior: "smooth" }); $("yesNote").classList.remove("show"); }
+  function stepOnce() {
+    if (frame === LAST_FRAME) return;
+    if (frame === HUMAN_FRAME) { answerNo(); return; }  // Space at gate = Golden answer (No)
+    go(frame + 1, { manual: true });
+  }
+  function toHuman() { go(HUMAN_FRAME); }
+  function toComplete() { go(LAST_FRAME); }
+
+  function setControls(open) {
+    $("dc").classList.toggle("open", open);
+    $("dcToggle").setAttribute("aria-expanded", open ? "true" : "false");
+  }
+
+  $("runBtn").addEventListener("click", run);
+  $("ansNo").addEventListener("click", answerNo);
+  $("ansYes").addEventListener("click", answerYes);
+  $("dcToggle").addEventListener("click", function () { setControls(!$("dc").classList.contains("open")); });
+  $("dcPanel").addEventListener("click", function (e) {
+    var b = e.target.closest("button[data-act]"); if (!b) return;
+    var a = b.getAttribute("data-act");
+    if (a === "reset") reset(); else if (a === "step") stepOnce();
+    else if (a === "human") toHuman(); else if (a === "complete") toComplete();
+    else setControls(false);
+  });
+
+  document.addEventListener("keydown", function (e) {
+    var t = e.target, tag = t && t.tagName;
+    if (tag === "TEXTAREA" || tag === "INPUT" || (t && t.isContentEditable)) {
+      if (e.key === "Escape") t.blur();
+      return;
+    }
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    var k = e.key;
+    var handled = true;
+    if (k === "r" || k === "R") reset();
+    else if (k === " " || k === "Spacebar") stepOnce();
+    else if (k === "h" || k === "H") toHuman();
+    else if (k === "c" || k === "C") toComplete();
+    else if (k === "Escape") { setControls(false); $("yesNote").classList.remove("show"); }
+    else handled = false;
+    if (handled) {
+      e.preventDefault();
+      if (document.activeElement && document.activeElement !== document.body && document.activeElement.tagName === "BUTTON" && k === " ") document.activeElement.blur();
+    }
+  });
+
+  renderBench();
+  go(0, { manual: true });
+})();
+</script>
+</body>
+</html>
