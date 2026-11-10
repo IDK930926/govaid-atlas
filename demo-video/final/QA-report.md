@@ -13,7 +13,7 @@ The MP4 files are git-ignored; this report and `edl.json` are the committed reco
 | Video | H.264 High, yuv420p, tv range, BT.709, ~730 kb/s |
 | Audio | AAC-LC, 48000 Hz, stereo, ~132 kb/s |
 | Container | MP4 (isom), `+faststart` |
-| File size | ~8.5 MB (overall ~871 kb/s) |
+| File size | 8,485,932 bytes narrated / 7,206,712 bytes noVO |
 | Format tags | `major_brand`, `minor_version`, `compatible_brands` only |
 | Stream tags | `handler_name=VideoHandler/SoundHandler`, `encoder=Lavc libx264`, `language=zho` (audio) |
 
@@ -43,10 +43,10 @@ The cuts drop only idle dwell time between scenes; no step of the agent run is r
 | Loudness (`ebur128`) | −15.8 LUFS integrated, −4.5 dBFS true peak, no clipping |
 | A/V alignment | Both streams start 0.000 and end 78.000 |
 | Captions | All 14 cues verified rendering at their midpoints; ≤ 2 lines; opaque dark box, Microsoft JhengHei 44 px |
-| PRE-RECORDED badge | Present on every sampled frame 0–78 s (top right, clears the top-bar buttons; in S7 it partly overlaps the drawer's × close button) |
+| PRE-RECORDED badge | Two-line `預錄畫面 / PRE-RECORDED`, top-left corner. Measured against the clean footage at 5 fps (390 frames): present in every frame, footprint x 7–153 / y 5–62, an area that is plain background in all frames (brand starts at x 254; S7 drawer, tabs and × are on the right). No UI control is covered. |
 | Chrome (installed, temp profile) | `canPlayType` "probably", 1920×1080, duration 78, playback advances |
 | Edge (installed, temp profile) | Same as Chrome |
-| Windows Media Foundation (MediaPlayer API) | Plays; 1920×1080, 78 s |
+| Windows Media Foundation (MediaPlayer API) | Both files play; 1920×1080, 78 s |
 | VLC | Not installed on the production machine — not tested |
 | Console errors during recording | 0 |
 
@@ -55,6 +55,10 @@ The cuts drop only idle dwell time between scenes; no step of the agent run is r
 Pass 1 (flow and captions, 1 frame per second, 78 frames) and pass 2 (full-resolution frames from each scene plus the badge and caption strips).
 On screen: product UI only, synthetic persona (20 歲・單身・臺北戶籍・新北永和), model name, case ID `CASE-P0-001`, generation timestamp, public agency names.
 Not present: browser frame or URL bar, bookmarks, profile avatar, notifications, terminal, VS Code, DevTools, file paths, school, names, emails, GitHub username, Cloudflare account, API keys or tunnel tokens.
+
+## Badge patch (re-render only)
+
+The badge was moved from top-right (where it partly covered the S7 drawer's × button) to top-left. The footage, cut list, 14 caption cues, narration mix and benchmark frames are unchanged. Only the badge line in `subs.ass` differs, and the same intermediate video was re-encoded.
 
 ## Open items
 

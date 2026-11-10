@@ -23,7 +23,7 @@
 | 加速 | **無**。所有片段 1× 播放；模型等待（約 5.4 秒）完整保留。場景之間只有 clean cut（跳過靜止停留），未加 TIMELAPSE 標示是因為沒有任何片段被加速 |
 | 旁白 | Windows OneCore「Yating」zh-TW 本機 TTS（見 `voiceover-zh.md`） |
 | 字幕 | 燒入 14 段字幕（每段 ≤ 2 行）＋ sidecar `captions.srt` |
-| 預錄標示 | 全片右上角 `預錄畫面 · PRE-RECORDED` |
+| 預錄標示 | 全片左上角兩行 `預錄畫面 / PRE-RECORDED`（空白角落，不遮任何產品控制項） |
 | QA 紀錄 | [`final/QA-report.md`](final/QA-report.md)、剪輯表 [`final/edl.json`](final/edl.json) |
 
 成品 MP4 依 `demo-video/.gitignore` 不進 git；請複製到比賽筆電桌面、USB、第二台裝置三份。

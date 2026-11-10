@@ -79,11 +79,11 @@ ScaledBorderAndShadow: yes
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 Style: Cap,Microsoft JhengHei,44,&H00FFFFFF,&H00FFFFFF,&H00202020,&H00000000,-1,0,0,0,100,100,1,0,3,14,0,2,80,80,40,1
-Style: Badge,Microsoft JhengHei,20,&H00FFFFFF,&H00FFFFFF,&H00353535,&H00000000,-1,0,0,0,100,100,1,0,3,9,0,9,40,14,16,1
+Style: Badge,Microsoft JhengHei,20,&H00FFFFFF,&H00FFFFFF,&H00353535,&H00000000,-1,0,0,0,100,100,1,0,3,9,0,7,16,40,14,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
-Dialogue: 1,${assT(0)},${assT(out)},Badge,,0,0,0,,預錄畫面 · PRE-RECORDED
+Dialogue: 1,${assT(0)},${assT(out)},Badge,,0,0,0,,預錄畫面\\NPRE-RECORDED
 `;
 let srt = "";
 cues.forEach(([a, b, ...lines], k) => {
