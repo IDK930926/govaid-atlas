@@ -8,8 +8,13 @@
     "dev": "tsx watch src/server.ts & vite --host 0.0.0.0",
     "dev:server": "tsx watch src/server.ts",
     "dev:client": "vite --host 0.0.0.0",
+<<<<<<< Updated upstream
     "build": "tsc --noEmit && vite build",
     "start": "tsx src/server.ts"
+=======
+    "start": "tsx src/server.ts",
+    "build": "tsc --noEmit && vite build"
+>>>>>>> Stashed changes
   },
   "keywords": [],
   "author": "",
