@@ -1,0 +1,9 @@
+# Raw recordings, intermediate renders and final video stay out of git.
+raw/
+build/
+*.mp4
+*.mkv
+*.mov
+*.wav
+*.mp3
+concat.txt
