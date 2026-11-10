@@ -397,7 +397,11 @@ function App() {
     recordAgentToolMetrics(run);
     const centralResult = getCompletedToolResult<{evaluations?: RuleEvaluation[]}>(run, "evaluate_central_rules");
     setCentralEvaluation(centralResult?.evaluations ?? []);
-    setLastInferenceSeconds((performance.now() - (inferenceStartedAt.current ?? performance.now())) / 1000);
+    // Planner latency is only meaningful when the model actually returned a plan; a fast
+    // failure followed by the rule-based fallback must read N/A, not "0.0 s".
+    setLastInferenceSeconds(plannerResult.decision
+      ? (performance.now() - (inferenceStartedAt.current ?? performance.now())) / 1000
+      : null);
     setAgentRunning(false);
   }
 
@@ -1689,7 +1693,7 @@ function EvaluationPanel({deterministic}: {deterministic: ReturnType<typeof runB
             <span className="muted small"> （{coverage.govaidAtlas.denominator} 個需引用官方來源的案例）</span>
           </p>
         )}
-        <p className="eval-note" lang="en">{finalBenchmark.caseCount} synthetic test cases. Not a real-world accuracy claim.</p>
+        <p className="eval-note" lang="en">{finalBenchmark.caseCount} synthetic policy-navigation cases; not a real-world accuracy claim.</p>
         <p className="muted small">
           過度確定率只計算 5 個安全關鍵案例。GovAid Atlas 數據來自規則引擎評估，不含完整 Agent 流程耗時。
           人工基準測試：<strong>{finalBenchmark.manualBaseline === "PENDING" ? "進行中 (Manual Pending)" : finalBenchmark.manualBaseline}</strong>
