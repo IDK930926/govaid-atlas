@@ -713,7 +713,7 @@ function StartView({
       <section className="hero" aria-labelledby="hero-title">
         <div className="hero-copy">
           <h1 id="hero-title">GovAid Atlas</h1>
-          <p className="hero-tagline">把複雜補助條件，變成可驗證的下一步。</p>
+          <p className="hero-tagline"><span>把複雜補助條件，</span><span>變成可驗證的下一步。</span></p>
           <p className="hero-en" lang="en">From complex policies to verifiable next steps.</p>
           <p className="hero-pillars" lang="en">Agent Planning · Deterministic Rules · Official Evidence · Human Review</p>
         </div>
@@ -768,7 +768,7 @@ function StartView({
           <ol className="howto-list">
             <li><span className="howto-num" aria-hidden="true">1</span>理解你的情境</li>
             <li><span className="howto-num" aria-hidden="true">2</span>檢查政策條件</li>
-            <li className="howto-key"><span className="howto-num" aria-hidden="true">3</span>不確定時，暫停並向你確認</li>
+            <li className="howto-key"><span className="howto-num" aria-hidden="true">3</span><span>不確定時，暫停並向你確認<small>Agent 不會自行猜測</small></span></li>
             <li><span className="howto-num" aria-hidden="true">4</span>比較不同地址方案</li>
             <li><span className="howto-num" aria-hidden="true">5</span>產出可追溯的下一步</li>
           </ol>
@@ -914,13 +914,17 @@ function CurrentAction({
       <article className="action-card is-thinking" aria-labelledby="action-title" aria-busy="true">
         <p className="action-eyebrow"><span className="pulse" aria-hidden="true"/>目前動作 <span lang="en">Current Action</span></p>
         <h2 id="action-title" ref={headingRef} tabIndex={-1}>{cloud ? "雲端模型" : "本機模型"}正在理解需求、規劃下一步</h2>
+        <div className="activity" aria-hidden="true"><span/></div>
         <p className="elapsed" role="timer" aria-live="off">
           已執行 <strong>{elapsedSeconds.toFixed(1)}</strong> 秒
         </p>
+        {/* Two deliberate lines so CJK copy never leaves a one-character orphan. */}
         <p className="action-detail">
-          {elapsedSeconds >= 15
-            ? `${cloud ? "雲端" : "本機"}推論可能需要一分鐘以上；畫面沒有卡住，模型回覆後會自動繼續。`
-            : "規劃完成後，Agent 只能從允許清單呼叫政策工具；資格一律由規則引擎判斷。"}
+          {elapsedSeconds >= 15 ? (
+            <><span>{cloud ? "雲端" : "本機"}推論可能需要一分鐘以上。</span><span>畫面沒有卡住，模型回覆後會自動繼續。</span></>
+          ) : (
+            <><span>規劃完成後，Agent 只能從允許清單呼叫政策工具。</span><span>資格一律由規則引擎判斷。</span></>
+          )}
         </p>
         <dl className="action-facts">
           <div><dt>模型</dt><dd><code>{providerInfo.model}</code></dd></div>
@@ -1016,7 +1020,6 @@ function ContextPanel({
     <aside className="context dim-when-gated" aria-labelledby="context-title">
       <div className="col-head">
         <h2 id="context-title">案件摘要</h2>
-        <span className="en-companion" lang="en">Context</span>
       </div>
 
       <p className="context-goal">{run.goal}</p>
@@ -1138,13 +1141,16 @@ function buildVerdicts(passport: DecisionPassport): ProgramVerdict[] {
   });
 }
 
-function ResultBadge({status, size = "md"}: {status: ResultStatus; size?: "md" | "lg"}) {
+const statusGlyph: Record<ResultStatus, string> = {PASS: "✓", UNCERTAIN: "?", FAIL: "✕"};
+
+// Status is carried by glyph + word, never by color alone.
+function ResultBadge({status, size = "md", showEn = false}: {status: ResultStatus; size?: "md" | "lg"; showEn?: boolean}) {
   const copy = resultCopy[status];
   return (
     <span className={`badge badge-${status.toLowerCase()} badge-${size}`}>
-      <span className="badge-dot" aria-hidden="true"/>
+      <span className="badge-glyph" aria-hidden="true">{statusGlyph[status]}</span>
       {copy.zh}
-      <span className="badge-en" lang="en">{copy.en}</span>
+      {showEn && <span className="badge-en" lang="en">{copy.en}</span>}
     </span>
   );
 }
@@ -1177,26 +1183,26 @@ function ResultView({
     .flatMap((program) => program.evidence)
     .filter((item, index, array) => array.findIndex((candidate) => candidate.sourceId === item.sourceId) === index)
     .sort((left, right) => left.sourceId.localeCompare(right.sourceId, "en", {numeric: true}));
+  const generatedAt = new Date(passport.generatedAt).toLocaleString("zh-TW", {hour12: false});
 
   return (
     <div className="result phase-enter">
-      <section className="passport" aria-labelledby="result-title">
-        <header className="passport-head">
-          <div>
-            <p className="eyebrow-en" lang="en">Decision Passport</p>
-            <h1 id="result-title" ref={headingRef} tabIndex={-1}>你的補助決策摘要</h1>
-          </div>
+      {/* 1 — Verdict summary */}
+      <section className="summary" aria-labelledby="result-title">
+        <header className="summary-head">
+          <p className="eyebrow">分析完成 <span lang="en">Decision Result</span></p>
+          <h1 id="result-title" ref={headingRef} tabIndex={-1}>你的補助決策摘要</h1>
           <p className="trace">
             {resumeIndex >= 0 && ownsHome !== null && <>已依你的確認（{ownsHome ? "有" : "沒有"}自有住宅）繼續分析 · </>}
-            執行 {toolsAfterResume} 個政策工具 · {new Date(passport.generatedAt).toLocaleString("zh-TW", {hour12: false})}
+            執行 {toolsAfterResume} 個政策工具
           </p>
         </header>
 
-        <ul className="verdicts" aria-label="各方案結果">
+        <ul className="verdict-band" aria-label="各方案結果">
           {verdicts.map((verdict) => (
             <li key={verdict.policyId + verdict.scope} className={"verdict verdict-" + verdict.status.toLowerCase()}>
               <span className="verdict-name">{policyLabels[verdict.policyId]?.short ?? policyName(verdict.policyId)}</span>
-              <ResultBadge status={verdict.status} size="lg"/>
+              <ResultBadge status={verdict.status} size="lg" showEn/>
               <span className="verdict-scope">{verdict.scope}</span>
             </li>
           ))}
@@ -1204,7 +1210,7 @@ function ResultView({
 
         <div className="verdict-split">
           <div className="split-col split-certain">
-            <h2>目前可以確定 <span className="en-companion" lang="en">Confirmed</span></h2>
+            <h2>目前可以確定</h2>
             {certain.length ? (
               <ul>
                 {certain.map((verdict) => (
@@ -1219,69 +1225,85 @@ function ResultView({
             ) : <p className="muted">目前沒有可確定的方案。</p>}
           </div>
           <div className="split-col split-pending">
-            <h2>目前仍需確認 <span className="en-companion" lang="en">Still uncertain</span></h2>
+            <h2>目前仍需確認</h2>
             {pending.length ? (
               <ul>
                 {pending.map((verdict) => (
                   <li key={verdict.policyId + verdict.scope}>
                     <strong>{policyName(verdict.policyId)}</strong>：{verdict.gap ?? "缺少必要資料"}
-                    <span className="muted">（{verdict.scope}）</span>
+                    <span className="split-scope">{verdict.scope}</span>
                   </li>
                 ))}
               </ul>
             ) : <p className="muted">沒有待確認的項目。</p>}
           </div>
         </div>
+      </section>
 
-        <div className="passport-sections">
-          <section aria-labelledby="ps-missing">
-            <h3 id="ps-missing">需要補充的資料</h3>
-            {passport.missingItems.length
-              ? <ul>{passport.missingItems.map((item) => <li key={item}>{item}</li>)}</ul>
-              : <p className="muted">無</p>}
-          </section>
-          <section aria-labelledby="ps-risks">
-            <h3 id="ps-risks">風險提醒</h3>
-            <ul>{passport.risks.map((item) => <li key={item}>{item}</li>)}</ul>
-          </section>
-          <section aria-labelledby="ps-next">
-            <h3 id="ps-next">建議下一步</h3>
-            <ol>{passport.nextSteps.map((item) => <li key={item}>{item}</li>)}</ol>
-          </section>
+      {/* 2 — Actual vs What-if */}
+      <section className="compare" aria-labelledby="compare-title">
+        <div className="section-head">
+          <h2 id="compare-title">目前住址 vs 搬遷假設</h2>
+          <span className="en-companion" lang="en">Actual vs What-if</span>
         </div>
+        <CompareTable actual={actual} whatIf={whatIf}/>
+      </section>
 
-        <section className="evidence" aria-labelledby="evidence-title">
-          <div className="card-head">
-            <h3 id="evidence-title">官方依據</h3>
-            <span className="en-companion" lang="en">Official Evidence</span>
+      {/* 3 — Decision Passport (the take-away document) */}
+      <article className="passport-doc" aria-labelledby="passport-title">
+        <header className="doc-head">
+          <div>
+            <p className="eyebrow-en" lang="en">Decision Passport</p>
+            <h2 id="passport-title">申辦決策護照</h2>
           </div>
+          <dl className="doc-meta">
+            <div><dt>案件編號</dt><dd><code>{passport.caseId}</code></dd></div>
+            <div><dt>產出時間</dt><dd>{generatedAt}</dd></div>
+            <div><dt>官方依據</dt><dd>{evidence.length} 份文件</dd></div>
+          </dl>
+        </header>
+
+        <section className="doc-section" aria-labelledby="ps-missing">
+          <h3 id="ps-missing"><span className="doc-num" aria-hidden="true">01</span>需要補充的資料</h3>
+          {passport.missingItems.length
+            ? <ul className="checklist">{passport.missingItems.map((item) => <li key={item}>{item}</li>)}</ul>
+            : <p className="muted">無</p>}
+        </section>
+
+        <section className="doc-section" aria-labelledby="ps-next">
+          <h3 id="ps-next"><span className="doc-num" aria-hidden="true">02</span>建議下一步</h3>
+          <ol className="steps">{passport.nextSteps.map((item) => <li key={item}>{item}</li>)}</ol>
+        </section>
+
+        <section className="doc-section" aria-labelledby="ps-risks">
+          <h3 id="ps-risks"><span className="doc-num" aria-hidden="true">03</span>風險提醒</h3>
+          <ul className="risks">{passport.risks.map((item) => <li key={item}>{item}</li>)}</ul>
+        </section>
+
+        <section className="doc-section" aria-labelledby="evidence-title">
+          <h3 id="evidence-title"><span className="doc-num" aria-hidden="true">04</span>官方依據</h3>
           <ul className="evidence-list">
             {evidence.map((item) => (
               <li key={item.sourceId}>
                 <a href={item.url} target="_blank" rel="noreferrer">
-                  <strong className="evidence-agency">{item.agency}</strong>
-                  <span className="evidence-title">{item.policyName}</span>
-                  <span className="evidence-meta"><span className="evidence-id">{item.sourceId}</span> · 查核日 {item.lastVerifiedAt}<span className="visually-hidden">（另開新視窗）</span></span>
+                  <span className="evidence-main">
+                    <strong className="evidence-agency">{item.agency}</strong>
+                    <span className="evidence-title">{item.policyName}</span>
+                  </span>
+                  <span className="evidence-meta">
+                    <span className="evidence-id">{item.sourceId}</span>
+                    <span>查核 {item.lastVerifiedAt}</span>
+                    <span className="evidence-open" aria-hidden="true">開啟 ↗</span>
+                  </span>
+                  <span className="visually-hidden">（另開新視窗）</span>
                 </a>
               </li>
             ))}
           </ul>
         </section>
 
-        <p className="disclaimer">{passport.disclaimer}</p>
-      </section>
-
-      <section className="compare" aria-labelledby="compare-title">
-        <div className="section-head">
-          <h2 id="compare-title">目前住址 vs 搬遷假設</h2>
-          <span className="en-companion" lang="en">Actual vs What-if</span>
-        </div>
-        <div className="compare-grid">
-          <ScenarioCard result={actual} kind="ACTUAL"/>
-          <span className="vs" aria-hidden="true">VS</span>
-          <ScenarioCard result={whatIf} kind="WHAT_IF"/>
-        </div>
-      </section>
+        <footer className="doc-foot">{passport.disclaimer}</footer>
+      </article>
 
       <div className="governance-cta">
         <div>
@@ -1294,44 +1316,91 @@ function ResultView({
   );
 }
 
-function ScenarioCard({result, kind}: {result: ScenarioResult; kind: "ACTUAL" | "WHAT_IF"}) {
+type PolicyKind = "central" | "local";
+
+function policyKind(policyId: string): PolicyKind {
+  return policyId === "CENTRAL_RENT_115" ? "central" : "local";
+}
+
+function CompareCell({result, kind}: {result: ScenarioResult; kind: PolicyKind}) {
+  const policy = result.policyResults.find((candidate) => policyKind(candidate.policyId) === kind);
+  if (!policy) {
+    return <span role="cell" className="ct-cell muted">—</span>;
+  }
+  const gap = policy.overallStatus === "PASS" ? null : describeGap(policy.evaluations);
   return (
-    <article className={"scenario scenario-" + kind.toLowerCase()} aria-label={kind === "ACTUAL" ? "目前住址" : "搬遷假設"}>
-      <header>
-        <p className="scenario-kind">{kind === "ACTUAL" ? "目前住址" : "搬遷假設"} <span lang="en">{kind === "ACTUAL" ? "Actual" : "What-if"}</span></p>
-        <h3>{shortPlace(result.scenario)}</h3>
-        <p className="scenario-rent">NT${result.scenario.monthlyRent.toLocaleString()} <span>/ 月</span></p>
-      </header>
-      <ul className="scenario-policies">
-        {result.policyResults.map((policy) => {
-          const gap = policy.overallStatus === "PASS" ? null : describeGap(policy.evaluations);
-          return (
-            <li key={policy.policyId}>
-              <span className="scenario-policy">
-                <strong>{policyLabels[policy.policyId]?.short ?? policy.policyId}</strong>
-                {gap && <small>{policy.overallStatus === "UNCERTAIN" ? "待確認：" : "不符合："}{gap}</small>}
-              </span>
-              <ResultBadge status={policy.overallStatus}/>
-            </li>
-          );
-        })}
-      </ul>
+    <span role="cell" className="ct-cell">
+      <span className="ct-policy">
+        {kind === "local" && <span className="ct-policy-name">{policyLabels[policy.policyId]?.short ?? policy.policyId}</span>}
+        <ResultBadge status={policy.overallStatus}/>
+      </span>
+      {gap && <small className="ct-gap">{policy.overallStatus === "UNCERTAIN" ? "待確認：" : "不符合："}{gap}</small>}
+    </span>
+  );
+}
+
+// Aligned comparison: the same question on each row, so the eye only moves left ↔ right.
+function CompareTable({actual, whatIf}: {actual: ScenarioResult; whatIf: ScenarioResult}) {
+  const delta = whatIf.scenario.monthlyRent - actual.scenario.monthlyRent;
+  const scenarios = [
+    {key: "actual", label: "目前住址", en: "Actual", result: actual},
+    {key: "whatif", label: "搬遷假設", en: "What-if", result: whatIf},
+  ];
+  return (
+    <div className="compare-wrap">
+      <div className="compare-table" role="table" aria-label="目前住址與搬遷假設比較">
+        <div className="ct-row ct-head" role="row">
+          <span role="columnheader" className="ct-label"><span className="visually-hidden">項目</span></span>
+          {scenarios.map((scenario) => (
+            <span role="columnheader" key={scenario.key} className={"ct-col ct-col-" + scenario.key}>
+              <span className="ct-kind">{scenario.label} <span lang="en">{scenario.en}</span></span>
+              <strong className="ct-place">{shortPlace(scenario.result.scenario)}</strong>
+            </span>
+          ))}
+        </div>
+        <div className="ct-row" role="row">
+          <span role="rowheader" className="ct-label">月租</span>
+          <span role="cell" className="ct-cell ct-rent">NT${actual.scenario.monthlyRent.toLocaleString()}<small> / 月</small></span>
+          <span role="cell" className="ct-cell ct-rent">
+            NT${whatIf.scenario.monthlyRent.toLocaleString()}<small> / 月</small>
+            {delta !== 0 && <span className="ct-delta">{delta > 0 ? "+" : "−"}{Math.abs(delta).toLocaleString()}</span>}
+          </span>
+        </div>
+        <div className="ct-row" role="row">
+          <span role="rowheader" className="ct-label">中央方案</span>
+          <CompareCell result={actual} kind="central"/>
+          <CompareCell result={whatIf} kind="central"/>
+        </div>
+        <div className="ct-row" role="row">
+          <span role="rowheader" className="ct-label">地方方案</span>
+          <CompareCell result={actual} kind="local"/>
+          <CompareCell result={whatIf} kind="local"/>
+        </div>
+      </div>
+
       <details className="rule-details">
         <summary>查看規則細節</summary>
-        {result.policyResults.map((policy) => (
-          <div className="rule-group" key={policy.policyId}>
-            <p className="rule-group-title">{policyLabels[policy.policyId]?.detail ?? policy.policyId}</p>
-            {policy.evaluations.map((evaluation) => (
-              <div className="rule-row" key={evaluation.ruleId}>
-                <code>{evaluation.ruleId}</code>
-                <span className="rule-reason">{evaluation.reason} · {evaluation.sourceId}</span>
-                <ResultBadge status={evaluation.status}/>
-              </div>
-            ))}
-          </div>
-        ))}
+        <div className="rule-details-grid">
+          {scenarios.map((scenario) => (
+            <div key={scenario.key}>
+              <p className="rule-scenario">{scenario.label} · {shortPlace(scenario.result.scenario)}</p>
+              {scenario.result.policyResults.map((policy) => (
+                <div className="rule-group" key={policy.policyId}>
+                  <p className="rule-group-title">{policyLabels[policy.policyId]?.detail ?? policy.policyId}</p>
+                  {policy.evaluations.map((evaluation) => (
+                    <div className="rule-row" key={evaluation.ruleId}>
+                      <code>{evaluation.ruleId}</code>
+                      <span className="rule-reason">{evaluation.reason} · {evaluation.sourceId}</span>
+                      <ResultBadge status={evaluation.status}/>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
       </details>
-    </article>
+    </div>
   );
 }
 
