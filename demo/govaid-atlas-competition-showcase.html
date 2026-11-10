@@ -1,0 +1,1301 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<title>GovAid Atlas · NAPAI 2026 Final Demo</title>
+<link rel="icon" href="data:,">
+<style>
+:root{
+  --bg:#f7f5f0; --surface:#ffffff; --surface-2:#fbfaf7; --ink:#1d2226; --ink-2:#3a4147; --muted:#646b71; --faint:#8b9196;
+  --line:#e4e0d6; --line-2:#d6d1c4;
+  --teal:#0f5f5c; --teal-ink:#0a4441; --teal-soft:#e4efed; --teal-mid:#9cc4bf;
+  --amber:#a86a12; --amber-soft:#f7ecd8; --green:#2d7a4e; --green-soft:#e2f0e6; --red:#a8453a; --red-soft:#f6e3df;
+  --charcoal:#23292d;
+  --r:14px; --r-sm:10px;
+  --shadow:0 1px 2px rgba(20,30,30,.05),0 8px 24px -12px rgba(20,30,30,.12);
+  --shadow-lg:0 2px 4px rgba(20,30,30,.06),0 24px 60px -20px rgba(20,30,30,.28);
+  --sans:"Inter","Segoe UI","Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,-apple-system,sans-serif;
+  --mono:"JetBrains Mono","Cascadia Mono",Consolas,"SFMono-Regular",Menlo,monospace;
+  --wrap:1200px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4,p{margin:0}
+button{font:inherit;color:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--teal);outline-offset:3px;border-radius:6px}
+.wrap{max-width:var(--wrap);margin:0 auto;padding:0 32px}
+.en{color:var(--muted);font-weight:450}
+.mono{font-family:var(--mono)}
+.eyebrow{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);font-weight:650}
+.sec{padding:112px 0;position:relative}
+.sec + .sec{border-top:1px solid var(--line)}
+.sec-head{max-width:760px;margin-bottom:48px}
+.sec-head h2{font-size:clamp(28px,3.2vw,42px);line-height:1.22;letter-spacing:-.01em;margin-top:14px;font-weight:700}
+.sec-head .sub{margin-top:14px;font-size:17px;color:var(--muted)}
+.sec-head .sub b{color:var(--ink-2);font-weight:600}
+
+/* reveal */
+.rv{opacity:0;transform:translateY(16px);transition:opacity .7s ease,transform .7s ease}
+.rv.in{opacity:1;transform:none}
+.no-js .rv{opacity:1;transform:none}
+
+/* top bar */
+.top{position:fixed;inset:0 0 auto 0;z-index:40;height:60px;display:flex;align-items:center;background:rgba(247,245,240,.88);backdrop-filter:saturate(1.4) blur(10px);-webkit-backdrop-filter:saturate(1.4) blur(10px);border-bottom:1px solid transparent;transition:border-color .3s}
+.top.scrolled{border-bottom-color:var(--line)}
+.top .wrap{display:flex;align-items:center;gap:24px;width:100%;max-width:none;padding:0 28px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;letter-spacing:-.01em;text-decoration:none;color:var(--ink);white-space:nowrap}
+.brand svg{flex:none}
+.nav{display:flex;gap:4px;margin-left:12px}
+.nav a{font-size:13.5px;color:var(--muted);text-decoration:none;padding:6px 10px;border-radius:8px}
+.nav a:hover{color:var(--ink);background:rgba(0,0,0,.04)}
+.badges{margin-left:auto;display:flex;gap:8px;align-items:center}
+.badge{font-size:11.5px;font-weight:600;letter-spacing:.04em;padding:5px 10px;border-radius:999px;border:1px solid var(--line-2);color:var(--ink-2);background:var(--surface);white-space:nowrap}
+.badge.teal{border-color:var(--teal-mid);color:var(--teal-ink);background:var(--teal-soft)}
+.badge .dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--amber);margin-right:6px;vertical-align:1px}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:12px;font-weight:600;letter-spacing:.06em;padding:3px 9px;border-radius:6px;white-space:nowrap}
+.chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.chip.pass{color:var(--green);background:var(--green-soft)}
+.chip.unc{color:var(--amber);background:var(--amber-soft)}
+.chip.fail{color:var(--red);background:var(--red-soft)}
+.chip.na{color:var(--muted);background:#efede8}
+.chip.wait{color:var(--teal-ink);background:var(--teal-soft)}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;gap:10px;border:1px solid transparent;border-radius:11px;padding:13px 20px;font-weight:600;font-size:15px;text-decoration:none;transition:background .2s,border-color .2s,transform .15s,box-shadow .2s;line-height:1.25}
+.btn:active{transform:translateY(1px)}
+.btn-primary{background:var(--teal);color:#fff;box-shadow:0 1px 0 rgba(255,255,255,.15) inset,0 6px 18px -8px rgba(15,95,92,.6)}
+.btn-primary:hover{background:var(--teal-ink)}
+.btn-ghost{background:var(--surface);border-color:var(--line-2);color:var(--ink)}
+.btn-ghost:hover{border-color:var(--ink-2)}
+.btn small{display:block;font-weight:500;font-size:12px;opacity:.78;margin-top:2px}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+
+/* HERO */
+.hero{min-height:100vh;min-height:100svh;display:flex;align-items:center;padding:96px 0 72px;position:relative;overflow:hidden;border-top:0}
+.hero::before{content:"";position:absolute;inset:0;background:
+  radial-gradient(900px 520px at 78% 38%,rgba(15,95,92,.07),transparent 70%),
+  linear-gradient(to right,rgba(29,34,38,.035) 1px,transparent 1px) 0 0/56px 56px,
+  linear-gradient(to bottom,rgba(29,34,38,.035) 1px,transparent 1px) 0 0/56px 56px;
+  -webkit-mask-image:linear-gradient(to bottom,#000 55%,transparent);mask-image:linear-gradient(to bottom,#000 55%,transparent);pointer-events:none}
+.hero .wrap{display:grid;grid-template-columns:1.2fr .8fr;gap:64px;align-items:center;position:relative;width:100%;max-width:1360px}
+.hero-name{display:flex;align-items:center;gap:12px;font-weight:700;font-size:18px;letter-spacing:-.01em;color:var(--teal-ink)}
+.hero h1{margin-top:26px;font-size:clamp(27px,3.55vw,60px);line-height:1.18;letter-spacing:-.02em;font-weight:750}
+.hero h1 .ln{display:block;white-space:nowrap}
+.hero h1 .q{color:var(--teal)}
+.hero .tag-en{margin-top:20px;font-size:clamp(17px,1.5vw,21px);color:var(--ink-2);font-weight:500}
+.hero .tag-zh{margin-top:26px;font-size:16px;color:var(--muted)}
+.hero .tag-zh b{color:var(--ink);font-weight:650}
+.pillars{margin-top:22px;display:flex;flex-wrap:wrap;gap:8px 0;font-size:13.5px;color:var(--ink-2);font-weight:550}
+.pillars span{display:inline-flex;align-items:center}
+.pillars span + span::before{content:"";width:4px;height:4px;border-radius:50%;background:var(--line-2);margin:0 12px}
+.hero-cta{margin-top:40px;display:flex;gap:12px;flex-wrap:wrap}
+.hero-foot{position:absolute;left:0;right:0;bottom:22px;display:flex;justify-content:center;font-size:12px;color:var(--faint);letter-spacing:.08em}
+
+/* hero flow */
+.flow{background:var(--surface);border:1px solid var(--line);border-radius:20px;padding:26px 26px 22px;box-shadow:var(--shadow-lg);position:relative}
+.flow-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;font-size:12px;color:var(--muted)}
+.flow-top .mono{color:var(--faint)}
+.flow ol{list-style:none;margin:0;padding:0;position:relative}
+.flow li{position:relative;display:grid;grid-template-columns:36px 1fr auto;gap:14px;align-items:center;padding:11px 12px;border-radius:12px;transition:background .45s}
+.flow li + li{margin-top:16px}
+.flow li + li::before{content:"";position:absolute;left:29px;top:-17px;height:18px;width:2px;background:var(--line)}
+.flow li .ic{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;background:var(--surface-2);border:1px solid var(--line);color:var(--muted);transition:all .45s}
+.flow li .t{font-weight:650;font-size:15px;line-height:1.3}
+.flow li .d{font-size:12.5px;color:var(--muted);line-height:1.4;margin-top:2px}
+.flow li .s{opacity:0;transition:opacity .45s}
+.flow li.on{background:var(--teal-soft)}
+.flow li.on .ic{background:var(--teal);color:#fff;border-color:var(--teal)}
+.flow li.on .s{opacity:1}
+.flow li.gate.on{background:var(--amber-soft)}
+.flow li.gate.on .ic{background:var(--amber);border-color:var(--amber)}
+.flow li.done .ic{color:var(--teal);border-color:var(--teal-mid)}
+.flow-note{margin-top:18px;padding-top:14px;border-top:1px dashed var(--line);font-size:12px;color:var(--faint);display:flex;justify-content:space-between;gap:12px}
+
+/* PROBLEM */
+.probs{display:grid;grid-template-columns:repeat(4,1fr);gap:20px}
+.prob{padding:26px 22px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line)}
+.prob .ic{width:44px;height:44px;border-radius:12px;background:var(--teal-soft);color:var(--teal);display:grid;place-items:center}
+.prob h3{margin-top:18px;font-size:17px;line-height:1.4;font-weight:650}
+.prob p{margin-top:6px;font-size:13.5px;color:var(--muted);line-height:1.5}
+
+/* COMPARE */
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:18px;overflow:hidden;background:var(--surface)}
+.cmp-col{padding:34px 36px}
+.cmp-col + .cmp-col{border-left:1px solid var(--line);background:linear-gradient(180deg,var(--teal-soft),var(--surface) 70%)}
+.cmp-col h3{font-size:14px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:650;display:flex;align-items:center;gap:10px}
+.cmp-col + .cmp-col h3{color:var(--teal-ink)}
+.cmp-col h4{font-size:22px;margin-top:10px;font-weight:700;letter-spacing:-.01em}
+.cmp-col ul{list-style:none;padding:0;margin:24px 0 0}
+.cmp-col li{display:flex;gap:14px;align-items:flex-start;padding:14px 0;border-top:1px solid var(--line)}
+.cmp-col li .k{flex:none;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;margin-top:1px}
+.cmp-col:first-child .k{background:#efede8;color:var(--muted)}
+.cmp-col + .cmp-col .k{background:var(--teal);color:#fff}
+.cmp-col li b{display:block;font-weight:600;font-size:15.5px}
+.cmp-col li span{display:block;font-size:13.5px;color:var(--muted)}
+.cmp-quote{margin-top:36px;text-align:center;font-size:clamp(22px,2.4vw,32px);font-weight:700;letter-spacing:-.01em}
+.cmp-quote span{display:block;font-size:15px;color:var(--muted);font-weight:500;margin-top:6px;letter-spacing:0}
+.cmp-foot{margin-top:14px;text-align:center;font-size:13px;color:var(--faint)}
+
+/* DEMO */
+#demo{background:linear-gradient(180deg,var(--bg),#f1efe8)}
+.demo{display:grid;grid-template-columns:.92fr 1.08fr;gap:28px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}
+.goal{padding:28px}
+.goal .lbl{font-size:13px;color:var(--muted);font-weight:600}
+.goal h3{font-size:22px;margin-top:4px;font-weight:700}
+.bubble{margin-top:20px;padding:20px 22px;border-radius:16px 16px 16px 4px;background:var(--surface-2);border:1px solid var(--line);font-size:16.5px;line-height:1.75;color:var(--ink)}
+.bubble mark{background:none;color:var(--teal-ink);font-weight:650;border-bottom:2px solid var(--teal-mid)}
+.facts{margin-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.fact{padding:12px 14px;border:1px solid var(--line);border-radius:12px;font-size:13px}
+.fact .fk{color:var(--muted);font-size:11.5px;letter-spacing:.04em}
+.fact .fv{font-weight:650;margin-top:2px;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.goal-actions{margin-top:22px;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.goal-note{margin-top:14px;font-size:12px;color:var(--faint)}
+
+.trace{padding:24px 24px 18px}
+.trace-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+.trace-head h3{font-size:15px;font-weight:650}
+.trace-head .st{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.steps{list-style:none;margin:0;padding:8px 0 0}
+.step{display:grid;grid-template-columns:28px 1fr auto;gap:14px;padding:12px 6px;position:relative;opacity:.38;transition:opacity .4s}
+.step::after{content:"";position:absolute;left:19px;top:40px;bottom:-12px;width:2px;background:var(--line)}
+.step:last-child::after{display:none}
+.step .n{width:28px;height:28px;border-radius:50%;border:2px solid var(--line-2);background:var(--surface);display:grid;place-items:center;font-size:12px;font-weight:700;color:var(--muted);position:relative;z-index:1;transition:all .35s}
+.step .t{font-weight:650;font-size:15px;line-height:1.35}
+.step .t .en{font-weight:500;font-size:13px;margin-left:6px}
+.step .d{font-size:13px;color:var(--muted);margin-top:3px;line-height:1.5}
+.step .tool{font-family:var(--mono);font-size:11.5px;color:var(--teal-ink);background:var(--teal-soft);padding:1px 6px;border-radius:5px}
+.step .r{align-self:center}
+.step.active,.step.done,.step.skip{opacity:1}
+.step.active .n{border-color:var(--teal);color:var(--teal)}
+.step.active .n::before{content:"";position:absolute;inset:-6px;border-radius:50%;border:2px solid var(--teal-mid);animation:pulse 1.4s ease-out infinite}
+.step.done .n{background:var(--teal);border-color:var(--teal);color:#fff}
+.step.done::after{background:var(--teal-mid)}
+.step.warn .n{background:var(--amber);border-color:var(--amber);color:#fff}
+.step.stop .n{background:var(--red);border-color:var(--red);color:#fff}
+.step.skip{opacity:.55}
+.step.skip .n{border-style:dashed}
+@keyframes pulse{0%{transform:scale(.8);opacity:1}100%{transform:scale(1.35);opacity:0}}
+.trace-foot{margin-top:6px;padding:14px 6px 2px;border-top:1px solid var(--line);font-size:12px;color:var(--faint);display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+
+.outcome{margin-top:24px;display:none}
+.outcome.show{display:block;animation:rise .6s ease both}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.oc{padding:24px 28px;border-radius:18px;border:1px solid var(--line);background:var(--surface);display:flex;gap:22px;align-items:center;flex-wrap:wrap;box-shadow:var(--shadow)}
+.oc .oi{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;flex:none}
+.oc.ok .oi{background:var(--green-soft);color:var(--green)}
+.oc.no .oi{background:var(--red-soft);color:var(--red)}
+.oc .ot{flex:1 1 320px}
+.oc .ot b{font-size:18px;display:block}
+.oc .ot span{font-size:14px;color:var(--muted)}
+.oc .oa{display:flex;gap:10px;flex-wrap:wrap}
+
+/* HUMAN GATE overlay */
+.gate-back{position:fixed;inset:0;z-index:80;background:rgba(18,26,28,.62);display:none;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px);-webkit-backdrop-filter:blur(2px)}
+.gate-back.show{display:flex;animation:fade .35s ease both}
+@keyframes fade{from{opacity:0}to{opacity:1}}
+.gate{width:min(640px,100%);max-height:calc(100vh - 40px);max-height:calc(100svh - 40px);overflow:auto;background:var(--surface);border-radius:22px;box-shadow:0 0 0 6px rgba(168,106,18,.18),0 40px 100px -20px rgba(0,0,0,.5);padding:34px 36px 28px;animation:pop .45s cubic-bezier(.2,.9,.3,1.1) both}
+@keyframes pop{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
+.gate-kicker{display:flex;align-items:center;gap:10px;color:var(--amber);font-weight:700;font-size:13px;letter-spacing:.06em}
+.gate-kicker .pip{width:10px;height:10px;border-radius:50%;background:var(--amber);box-shadow:0 0 0 0 rgba(168,106,18,.5);animation:ring 1.8s infinite}
+@keyframes ring{0%{box-shadow:0 0 0 0 rgba(168,106,18,.45)}100%{box-shadow:0 0 0 12px rgba(168,106,18,0)}}
+.gate h3{margin-top:18px;font-size:13px;color:var(--muted);font-weight:600;letter-spacing:.02em}
+.gate h4{margin-top:6px;font-size:clamp(24px,3vw,32px);line-height:1.25;font-weight:750;letter-spacing:-.01em}
+.gate h4 .en{display:block;font-size:17px;margin-top:6px;font-weight:500}
+.gate .why{margin-top:20px;padding:14px 16px;border-radius:12px;background:var(--surface-2);border:1px solid var(--line);font-size:14.5px;color:var(--ink-2);line-height:1.65}
+.gate .ctx{margin-top:14px;display:flex;gap:10px;align-items:center;font-size:13px;color:var(--muted);flex-wrap:wrap}
+.gate-btns{margin-top:26px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.gbtn{text-align:left;padding:18px 20px;border-radius:14px;border:1.5px solid var(--line-2);background:var(--surface);transition:all .18s}
+.gbtn:hover{border-color:var(--teal);background:var(--teal-soft)}
+.gbtn b{display:block;font-size:17px}
+.gbtn span{display:block;font-size:13px;color:var(--muted);margin-top:2px}
+.gbtn.primary{border-color:var(--teal);}
+.gate-foot{margin-top:18px;font-size:12px;color:var(--faint);line-height:1.5}
+.toast{position:fixed;left:50%;bottom:28px;transform:translate(-50%,20px);z-index:120;background:var(--charcoal);color:#fff;padding:11px 18px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:all .3s;max-width:calc(100vw - 32px);text-align:center}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* SCENARIO */
+.scn{display:grid;grid-template-columns:1fr 72px 1fr;align-items:stretch}
+.scn-card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:30px;box-shadow:var(--shadow);transition:opacity .6s,transform .6s}
+.scn-card.whatif{border-style:dashed;border-color:var(--teal-mid)}
+.scn-top{display:flex;justify-content:space-between;align-items:center}
+.scn-top .k{font-size:13px;color:var(--muted);font-weight:600}
+.scn-tag{font-family:var(--mono);font-size:11.5px;font-weight:700;letter-spacing:.12em;padding:4px 10px;border-radius:6px;background:var(--charcoal);color:#fff}
+.whatif .scn-tag{background:var(--teal-soft);color:var(--teal-ink)}
+.scn-place{margin-top:18px;font-size:26px;font-weight:750;letter-spacing:-.01em}
+.scn-rent{margin-top:2px;color:var(--muted);font-size:15px}
+.scn-rent b{color:var(--ink);font-weight:650;font-variant-numeric:tabular-nums}
+.scn-rows{margin-top:22px;border-top:1px solid var(--line)}
+.scn-row{padding:16px 0;border-bottom:1px solid var(--line)}
+.scn-row:last-child{border-bottom:0;padding-bottom:0}
+.scn-row .h{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.scn-row .h b{font-weight:650;font-size:15.5px}
+.scn-row p{margin-top:6px;font-size:13.5px;color:var(--muted)}
+.vs{display:grid;place-items:center;position:relative}
+.vs::before{content:"";position:absolute;top:12%;bottom:12%;left:50%;width:1px;background:var(--line-2)}
+.vs span{position:relative;width:46px;height:46px;border-radius:50%;background:var(--bg);border:1px solid var(--line-2);display:grid;place-items:center;font-weight:700;font-size:13px;color:var(--muted);letter-spacing:.04em}
+.scn-note{margin-top:22px;font-size:13px;color:var(--faint);text-align:center}
+.state-banner{display:flex;gap:12px;align-items:center;padding:12px 16px;border-radius:12px;background:var(--surface);border:1px solid var(--line);font-size:13.5px;color:var(--ink-2);margin-bottom:22px;flex-wrap:wrap}
+.state-banner .btn{padding:8px 14px;font-size:13px;margin-left:auto}
+
+/* PASSPORT */
+#passport{background:#f1efe8}
+.pp{background:var(--surface);border-radius:22px;border:1px solid var(--line);box-shadow:var(--shadow-lg);overflow:hidden;transition:opacity .5s}
+.pp-head{display:flex;justify-content:space-between;gap:24px;align-items:flex-end;padding:32px 40px 26px;background:linear-gradient(180deg,#f3f7f6,var(--surface));border-bottom:1px solid var(--line);flex-wrap:wrap}
+.pp-head .lbl{font-size:12px;letter-spacing:.14em;color:var(--teal);font-weight:700;text-transform:uppercase}
+.pp-head h3{font-size:clamp(24px,2.6vw,32px);font-weight:750;letter-spacing:-.01em;margin-top:6px}
+.pp-head h3 .en{font-size:16px;font-weight:500;margin-left:8px}
+.pp-meta{display:grid;grid-template-columns:auto auto;gap:4px 18px;font-size:12.5px;color:var(--muted)}
+.pp-meta b{color:var(--ink-2);font-weight:600;font-family:var(--mono);font-size:12px}
+.pp-body{display:grid;grid-template-columns:1fr 1fr 1fr;gap:0}
+.pp-sec{padding:26px 32px 28px;border-right:1px solid var(--line);border-bottom:1px solid var(--line)}
+.pp-sec:nth-child(3n){border-right:0}
+.pp-sec h4{font-size:14.5px;font-weight:700;display:flex;align-items:center;gap:10px}
+.pp-sec h4 .ic{width:28px;height:28px;border-radius:8px;display:grid;place-items:center;flex:none}
+.pp-sec h4 .en{font-size:12px;font-weight:500;margin-left:auto;letter-spacing:.02em}
+.pp-sec ul{margin:14px 0 0;padding:0;list-style:none}
+.pp-sec li{font-size:14px;line-height:1.55;padding:7px 0 7px 18px;position:relative;color:var(--ink-2)}
+.pp-sec li::before{content:"";position:absolute;left:2px;top:15px;width:6px;height:6px;border-radius:2px;background:var(--line-2)}
+.ok .ic{background:var(--green-soft);color:var(--green)} .ok li::before{background:var(--green)}
+.pend .ic{background:var(--amber-soft);color:var(--amber)} .pend li::before{background:var(--amber)}
+.need .ic{background:var(--teal-soft);color:var(--teal)} .need li::before{background:var(--teal)}
+.risk .ic{background:var(--red-soft);color:var(--red)} .risk li::before{background:var(--red)}
+.next .ic{background:#ece9e1;color:var(--ink-2)}
+.next ol{margin:14px 0 0;padding:0;list-style:none;counter-reset:n}
+.next ol li{counter-increment:n;padding-left:30px}
+.next ol li::before{content:counter(n);width:20px;height:20px;border-radius:50%;background:var(--charcoal);color:#fff;font-size:11px;font-weight:700;display:grid;place-items:center;top:8px;left:0}
+.ev{padding:26px 40px 32px}
+.ev-h{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.ev-h h4{font-size:14.5px;font-weight:700}
+.ev-h span{font-size:12px;color:var(--faint)}
+.ev-list{margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.evi{padding:16px 18px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2)}
+.evi .ag{font-size:12.5px;color:var(--teal-ink);font-weight:650}
+.evi .dt{font-size:14.5px;font-weight:650;margin-top:4px;line-height:1.45}
+.evi .ft{margin-top:10px;display:flex;justify-content:space-between;font-size:11.5px;color:var(--faint);gap:8px}
+.evi .ft .mono{color:var(--muted)}
+.pp-disc{padding:14px 40px;background:var(--surface-2);border-top:1px solid var(--line);font-size:12.5px;color:var(--muted)}
+
+/* ARCH */
+.arch{display:grid;grid-template-columns:repeat(6,1fr);gap:0;align-items:stretch;position:relative}
+.anode{position:relative;padding:20px 16px;text-align:center}
+.anode + .anode::before{content:"";position:absolute;left:-9px;top:46px;width:18px;height:18px;background:no-repeat center/18px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238b9196' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12h14M13 6l6 6-6 6'/%3E%3C/svg%3E")}
+.anode .ic{width:56px;height:56px;margin:0 auto;border-radius:16px;display:grid;place-items:center;background:var(--surface);border:1px solid var(--line);color:var(--ink-2);box-shadow:var(--shadow)}
+.anode.llm .ic{background:var(--charcoal);color:#fff;border-color:var(--charcoal)}
+.anode.rule .ic{background:var(--teal);color:#fff;border-color:var(--teal)}
+.anode.human .ic{background:var(--amber);color:#fff;border-color:var(--amber)}
+.anode b{display:block;margin-top:14px;font-size:15px;font-weight:650}
+.anode span{display:block;font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.45}
+.arch-band{margin-top:28px;display:grid;grid-template-columns:2fr 2fr 1fr 1fr;gap:10px}
+.band{padding:10px 14px;border-radius:10px;font-size:12.5px;font-weight:600;text-align:center}
+.band.a{background:#ebe9e3;color:var(--ink-2)} .band.b{background:var(--teal-soft);color:var(--teal-ink)} .band.c{background:var(--amber-soft);color:var(--amber)} .band.d{background:var(--green-soft);color:var(--green)}
+.slogan{margin-top:56px;text-align:center}
+.slogan p{font-size:clamp(26px,3.4vw,46px);font-weight:750;letter-spacing:-.02em;line-height:1.25}
+.slogan p .m{color:var(--ink)} .slogan p .r{color:var(--teal)} .slogan p .h{color:var(--amber)}
+.slogan small{display:block;margin-top:12px;font-size:15px;color:var(--muted)}
+
+/* GOVERNANCE */
+.gov{display:grid;grid-template-columns:repeat(5,1fr);gap:16px}
+.gcard{padding:24px 20px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line)}
+.gcard .ic{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;background:var(--teal-soft);color:var(--teal)}
+.gcard b{display:block;margin-top:16px;font-size:15.5px;font-weight:650}
+.gcard span{display:block;margin-top:6px;font-size:13.5px;color:var(--muted);line-height:1.5}
+.gov-more{margin-top:24px}
+.gov-toggle{background:none;border:1px solid var(--line-2);border-radius:10px;padding:10px 16px;font-size:14px;font-weight:600;display:inline-flex;align-items:center;gap:8px;background:var(--surface)}
+.gov-toggle svg{transition:transform .25s}
+.gov-toggle[aria-expanded="true"] svg{transform:rotate(180deg)}
+.gov-detail{display:none;margin-top:16px;border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow:hidden}
+.gov-detail.show{display:block;animation:rise .4s ease both}
+.gd-grid{display:grid;grid-template-columns:1fr 1.3fr}
+.gd-grid > div{padding:24px 26px}
+.gd-grid > div + div{border-left:1px solid var(--line)}
+.gd-grid h5{margin:0 0 12px;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.gd-list{margin:0;padding:0;list-style:none;font-size:13.5px}
+.gd-list li{padding:8px 0;border-top:1px solid var(--line);display:flex;gap:10px;justify-content:space-between}
+.gd-list li:first-child{border-top:0}
+.gd-list .mono{font-size:12px;color:var(--teal-ink)}
+.audit{margin:0;padding:0;list-style:none;font-family:var(--mono);font-size:12px;line-height:1.5}
+.audit li{display:grid;grid-template-columns:62px 72px 1fr;gap:10px;padding:7px 0;border-top:1px solid var(--line);color:var(--ink-2)}
+.audit li:first-child{border-top:0}
+.audit .who{color:var(--muted)}
+.audit .ac{color:var(--teal-ink);word-break:break-word}
+
+/* BENCHMARK */
+#benchmark{background:var(--charcoal);color:#eef1f0;border-top:0}
+#benchmark .eyebrow{color:#8fc7c0}
+#benchmark .sec-head .sub{color:#a9b2b4}
+#benchmark .sec-head .sub b{color:#e3e8e7}
+.bm{display:grid;grid-template-columns:repeat(4,1fr);gap:16px}
+.bcard{padding:26px 24px 22px;border-radius:16px;background:#2b3236;border:1px solid #3a4246}
+.bcard .bl{font-size:14px;font-weight:650;color:#e9eeed}
+.bcard .bd{font-size:12px;color:#97a1a3;margin-top:2px}
+.bvals{margin-top:22px;display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.bvals .from{font-size:22px;color:#8b9496;font-variant-numeric:tabular-nums;text-decoration:line-through;text-decoration-color:rgba(139,148,150,.5)}
+.bvals .arr{color:#6f7a7c}
+.bvals .to{font-size:44px;font-weight:750;letter-spacing:-.02em;color:#fff;font-variant-numeric:tabular-nums;line-height:1}
+.bars{margin-top:20px;display:grid;gap:8px}
+.bar{display:grid;grid-template-columns:96px 1fr 50px;gap:10px;align-items:center;font-size:11.5px;color:#a2abad}
+.bar .tr{height:8px;border-radius:4px;background:#3a4246;overflow:hidden}
+.bar .fl{height:100%;width:0;border-radius:4px;transition:width 1.2s cubic-bezier(.2,.8,.2,1)}
+.bar.base .fl{background:#7d8789}
+.bar.atl .fl{background:#5fb3a8}
+.bar .v{text-align:right;font-family:var(--mono);color:#cfd6d7}
+.bdir{margin-top:14px;font-size:11.5px;color:#7f898b}
+.bm-legend{margin-top:26px;display:flex;gap:20px;flex-wrap:wrap;align-items:center;font-size:13px;color:#a9b2b4}
+.bm-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:8px;vertical-align:-1px}
+.pending{display:inline-flex;align-items:center;gap:8px;padding:5px 12px;border-radius:999px;border:1px dashed #5c676a;color:#c8cfd0;font-size:12.5px}
+.bm-disc{margin-top:28px;padding:18px 22px;border-radius:12px;border:1px solid #3e474b;background:#262c30;font-size:14px;color:#cdd4d5;line-height:1.65}
+.bm-disc b{color:#fff}
+
+/* RELIABILITY */
+.rel{display:grid;grid-template-columns:1.1fr .9fr;gap:40px;align-items:center}
+.tiers{display:grid;gap:0}
+.tier{display:grid;grid-template-columns:52px 1fr auto;gap:18px;align-items:center;padding:20px 22px;background:var(--surface);border:1px solid var(--line);border-radius:14px;position:relative}
+.tier + .tier{margin-top:34px}
+.tier + .tier::before{content:"if unavailable ↓";position:absolute;top:-26px;left:46px;font-size:11.5px;color:var(--faint);font-family:var(--mono)}
+.tier .ic{width:52px;height:52px;border-radius:14px;display:grid;place-items:center}
+.tier:nth-child(1) .ic{background:var(--charcoal);color:#fff}
+.tier:nth-child(2) .ic{background:#ebe9e3;color:var(--ink-2)}
+.tier:nth-child(3) .ic{background:var(--teal);color:#fff}
+.tier:nth-child(3){border-color:var(--teal-mid);background:linear-gradient(90deg,var(--teal-soft),var(--surface))}
+.tier b{font-size:16.5px;display:block}
+.tier span{font-size:13.5px;color:var(--muted);display:block}
+.tier .lvl{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.1em}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.stat{padding:22px;border-radius:14px;background:var(--surface);border:1px solid var(--line)}
+.stat .v{font-size:34px;font-weight:750;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1}
+.stat .v small{font-size:16px;font-weight:600;color:var(--muted);margin-left:4px}
+.stat .l{font-size:13px;color:var(--ink-2);margin-top:6px;font-weight:600}
+.stat .s{font-size:12px;color:var(--faint);margin-top:2px}
+.rel-note{margin-top:16px;font-size:12.5px;color:var(--muted);line-height:1.6}
+
+/* DEPLOY */
+.dep{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.dcard{padding:26px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line);position:relative}
+.dcard .k{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;color:var(--muted);font-weight:700}
+.dcard .v{margin-top:14px;font-family:var(--mono);font-size:19px;font-weight:600;color:var(--ink);word-break:break-all}
+.dcard p{margin-top:10px;font-size:13.5px;color:var(--muted)}
+.dcard .here{position:absolute;top:22px;right:22px}
+
+/* JOURNEY */
+.jr{display:grid;grid-template-columns:repeat(5,1fr);gap:0;position:relative;counter-reset:j}
+.jr::before{content:"";position:absolute;left:10%;right:10%;top:27px;height:2px;background:var(--line)}
+.jr .fillline{position:absolute;left:10%;top:27px;height:2px;background:var(--teal);width:0;transition:width 1.6s ease}
+.js{text-align:center;padding:0 12px;position:relative}
+.js .n{width:56px;height:56px;margin:0 auto;border-radius:50%;background:var(--surface);border:2px solid var(--line-2);display:grid;place-items:center;font-weight:750;font-size:18px;color:var(--muted);position:relative;transition:all .5s}
+.js.on .n{background:var(--teal);border-color:var(--teal);color:#fff}
+.js.on.gatestep .n{background:var(--amber);border-color:var(--amber)}
+.js b{display:block;margin-top:18px;font-size:16px;font-weight:650;line-height:1.35}
+.js span{display:block;margin-top:4px;font-size:13px;color:var(--muted)}
+
+/* IMPACT */
+.imp{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.icard{padding:30px 28px;border-radius:var(--r);background:var(--surface);border:1px solid var(--line)}
+.icard .ic{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--teal-soft);color:var(--teal)}
+.icard h3{margin-top:18px;font-size:19px;font-weight:700}
+.icard h3 .en{display:block;font-size:13px;font-weight:500;margin-top:2px}
+.icard ul{margin:16px 0 0;padding:0;list-style:none}
+.icard li{padding:9px 0;border-top:1px solid var(--line);font-size:14.5px;color:var(--ink-2)}
+.icard li .en{display:block;font-size:12.5px}
+.icard.future{border-style:dashed}
+.icard.future .ic{background:#ebe9e3;color:var(--ink-2)}
+.future-tag{display:inline-block;margin-top:10px;font-size:11.5px;font-weight:650;letter-spacing:.06em;color:var(--amber);background:var(--amber-soft);padding:3px 9px;border-radius:6px}
+.domains{margin-top:16px;display:flex;flex-wrap:wrap;gap:8px}
+.domains span{padding:7px 12px;border-radius:8px;border:1px solid var(--line);font-size:13.5px;background:var(--surface-2)}
+.domains span.cur{border-color:var(--teal-mid);background:var(--teal-soft);color:var(--teal-ink);font-weight:600}
+
+/* FINAL */
+.final{padding:140px 0 150px;text-align:center;background:var(--charcoal);color:#fff;border-top:0;position:relative;overflow:hidden}
+.final::before{content:"";position:absolute;inset:0;background:radial-gradient(700px 360px at 50% 0%,rgba(95,179,168,.16),transparent 70%);pointer-events:none}
+.final .wrap{position:relative}
+.final .nm{font-size:15px;letter-spacing:.2em;text-transform:uppercase;color:#8fc7c0;font-weight:700}
+.final h2{margin-top:20px;font-size:clamp(44px,6vw,84px);font-weight:780;letter-spacing:-.03em;line-height:1.05}
+.final p{margin-top:28px;font-size:clamp(18px,1.8vw,24px);color:#c8d0d1;line-height:1.7}
+.final .cta{margin-top:44px;display:flex;justify-content:center;gap:12px;flex-wrap:wrap}
+.final .btn-ghost{background:transparent;color:#fff;border-color:#59646a}
+.final .btn-ghost:hover{border-color:#fff}
+.final .btn-primary{background:#fff;color:var(--teal-ink);box-shadow:none}
+.final .btn-primary:hover{background:#e4efed}
+.final .fine{margin-top:56px;font-size:12.5px;color:#88939a;line-height:1.7}
+footer.foot{padding:22px 0;background:#1b2023;color:#7b868b;font-size:12px;text-align:center}
+
+/* DEMO CONTROLS */
+.dc{position:fixed;right:20px;bottom:20px;z-index:60;font-size:13px}
+.dc-btn{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:12px;background:var(--charcoal);color:#fff;border:0;box-shadow:var(--shadow-lg);font-weight:600;font-size:13px}
+@media (max-width:1700px){.dc-btn .lbl-full{display:none}}
+.dc-btn kbd{font-family:var(--mono);font-size:11px;background:rgba(255,255,255,.14);padding:1px 6px;border-radius:4px}
+.dc-panel{position:absolute;right:0;bottom:52px;width:270px;background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-lg);padding:14px;display:none}
+.dc.open .dc-panel{display:block;animation:rise .25s ease both}
+.dc-panel h6{margin:2px 4px 10px;font-size:11.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.dc-row{display:flex;align-items:center;gap:12px;width:100%;padding:8px 8px;border-radius:8px;border:0;background:none;text-align:left}
+.dc-row:hover{background:var(--surface-2)}
+.dc-row kbd{min-width:44px;text-align:center;font-family:var(--mono);font-size:11.5px;font-weight:700;padding:3px 6px;border-radius:6px;border:1px solid var(--line-2);border-bottom-width:2px;background:var(--surface-2);color:var(--ink-2)}
+.dc-row span{font-size:13px}
+.dc-row span em{font-style:normal;color:var(--muted);font-size:12px;display:block}
+.dc-note{margin:10px 4px 2px;font-size:11.5px;color:var(--faint);line-height:1.5;border-top:1px solid var(--line);padding-top:10px}
+
+/* RESPONSIVE */
+@media (max-width:1366px){
+  .sec{padding:92px 0}
+  .hero .wrap{gap:48px}
+  .gov{grid-template-columns:repeat(5,1fr);gap:12px}
+  .gcard{padding:20px 16px}
+}
+@media (max-width:1100px){
+  .nav{display:none}
+  .hero .wrap{grid-template-columns:1fr;gap:40px}
+  .flow{max-width:560px}
+  .probs{grid-template-columns:1fr 1fr}
+  .demo{grid-template-columns:1fr}
+  .bm{grid-template-columns:1fr 1fr}
+  .gov{grid-template-columns:repeat(3,1fr)}
+  .arch{grid-template-columns:repeat(3,1fr);row-gap:20px}
+  .anode:nth-child(4)::before{display:none}
+  .arch-band{display:none}
+  .rel{grid-template-columns:1fr}
+  .pp-body{grid-template-columns:1fr 1fr}
+  .pp-sec:nth-child(3n){border-right:1px solid var(--line)}
+  .pp-sec:nth-child(2n){border-right:0}
+  .ev-list{grid-template-columns:1fr}
+}
+@media (max-width:760px){
+  .wrap{padding:0 16px}
+  .top .wrap{padding:0 16px;gap:10px}
+  .top{height:54px}
+  .badges .badge.hide-sm{display:none}
+  .sec{padding:72px 0}
+  .sec-head{margin-bottom:32px}
+  .hero{padding:84px 0 64px}
+  .hero h1{margin-top:18px}
+  .pillars{gap:6px 14px}
+  .pillars span + span::before{display:none}
+  .hero-cta .btn{flex:1 1 100%;justify-content:center}
+  .flow{padding:18px 16px}
+  .flow li{grid-template-columns:32px 1fr;padding:9px 8px}
+  .flow li .s{display:none}
+  .flow li + li::before{left:23px}
+  .flow li .ic{width:32px;height:32px}
+  .probs{grid-template-columns:1fr;gap:12px}
+  .prob{padding:20px 18px;display:grid;grid-template-columns:44px 1fr;gap:4px 16px}
+  .prob .ic{grid-row:span 2}
+  .prob h3{margin-top:0}
+  .prob p{margin-top:0}
+  .cmp{grid-template-columns:1fr}
+  .cmp-col{padding:26px 20px}
+  .cmp-col + .cmp-col{border-left:0;border-top:1px solid var(--line)}
+  .goal,.trace{padding:20px 16px}
+  .facts{grid-template-columns:1fr}
+  .goal-actions .btn{flex:1 1 100%;justify-content:center}
+  .step{grid-template-columns:28px 1fr;gap:12px}
+  .step .r{grid-column:2;justify-self:start;margin-top:4px}
+  .gate{padding:24px 20px 20px;border-radius:18px}
+  .gate-btns{grid-template-columns:1fr}
+  .scn{grid-template-columns:1fr;gap:0}
+  .vs{height:64px}
+  .vs::before{top:0;bottom:0}
+  .scn-card{padding:22px 18px}
+  .pp-head{padding:24px 18px 20px}
+  .pp-body{grid-template-columns:1fr}
+  .pp-sec{padding:20px 18px;border-right:0!important}
+  .ev{padding:20px 18px 24px}
+  .pp-disc{padding:14px 18px}
+  .arch{grid-template-columns:1fr;row-gap:0}
+  .anode{display:grid;grid-template-columns:56px 1fr;gap:4px 16px;text-align:left;padding:14px 0}
+  .anode .ic{grid-row:span 2;margin:0}
+  .anode b{margin-top:4px}
+  .anode + .anode::before{left:19px;top:-9px;transform:rotate(90deg);display:block!important}
+  .gov{grid-template-columns:1fr 1fr}
+  .gd-grid{grid-template-columns:1fr}
+  .gd-grid > div + div{border-left:0;border-top:1px solid var(--line)}
+  .gd-grid > div{padding:20px 16px}
+  .audit li{grid-template-columns:54px 1fr;}
+  .audit li .who{display:none}
+  .bm{grid-template-columns:1fr}
+  .bvals .to{font-size:38px}
+  .tier{grid-template-columns:44px 1fr;padding:16px}
+  .tier .ic{width:44px;height:44px}
+  .tier .lvl{display:none}
+  .stats{grid-template-columns:1fr 1fr}
+  .stat{padding:16px}
+  .stat .v{font-size:26px}
+  .dep{grid-template-columns:1fr}
+  .jr{grid-template-columns:1fr;gap:0}
+  .jr::before,.jr .fillline{display:none}
+  .js{display:grid;grid-template-columns:56px 1fr;gap:2px 16px;text-align:left;padding:10px 0}
+  .js .n{grid-row:span 2;margin:0}
+  .js b{margin-top:6px}
+  .imp{grid-template-columns:1fr}
+  .final{padding:96px 0 104px}
+  .final .cta .btn{flex:1 1 100%;justify-content:center}
+  .dc{right:12px;bottom:12px}
+  .dc-btn .lbl-full{display:none}
+}
+@media (max-width:420px){
+  .brand .bn{display:none}
+  .gov{grid-template-columns:1fr}
+}
+@media (max-height:820px) and (min-width:1101px){
+  .hero{padding:80px 0 56px}
+  .hero h1{margin-top:18px}
+  .hero-cta{margin-top:30px}
+  .flow li + li{margin-top:10px}
+  .flow li + li::before{top:-11px;height:12px}
+  .flow li{padding:9px 12px}
+}
+</style>
+</head>
+<body class="no-js">
+
+<!-- Inline SVG icon sprite -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-logo" viewBox="0 0 32 32"><rect x="1" y="1" width="30" height="30" rx="9" fill="#0f5f5c"/><path d="M9 21.5 14 10l4.2 8.4L20.5 15 24 21.5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="20.5" cy="10.5" r="2" fill="#e7b864"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/></symbol>
+    <symbol id="i-plan" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></symbol>
+    <symbol id="i-tool" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.2L3.5 17.3a1.8 1.8 0 0 0 2.5 2.5l5.8-5.8a4 4 0 0 0 5.2-5.4l-2.6 2.6-2.3-.6-.6-2.3z"/></symbol>
+    <symbol id="i-hand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7.5" r="3.5"/><path d="M5 20.5c.6-3.9 3.4-6 7-6s6.4 2.1 7 6"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h4"/></symbol>
+    <symbol id="i-pass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2.5"/><circle cx="12" cy="10" r="3"/><path d="M8 17h8"/></symbol>
+    <symbol id="i-compass" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></symbol>
+    <symbol id="i-puzzle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h3a2 2 0 1 1 4 0h3v3a2 2 0 1 1 0 4v3h-3a2 2 0 1 0-4 0H4v-3a2 2 0 1 0 0-4z"/><path d="M18 7h2M19 6v2" /></symbol>
+    <symbol id="i-split" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v6a6 6 0 0 0 6 6h0a6 6 0 0 1 6 6"/><path d="M18 3v6a6 6 0 0 1-3 5.2"/><circle cx="6" cy="3" r="0.5"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4.5 6v5.5c0 4.6 3.1 8.2 7.5 9.5 4.4-1.3 7.5-4.9 7.5-9.5V6z"/><path d="m9 12 2.2 2.2L15.5 10"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+    <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.5" fill="currentColor"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6v12M15 6v12"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.8 19.5h18.4z"/><path d="M12 10v4.5M12 17.2v.1"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4h6v3H9zM9 12h6M9 16h4"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13a.8.8 0 0 0 1.2.7l10.3-6.5a.8.8 0 0 0 0-1.4L9.2 4.8A.8.8 0 0 0 8 5.5z"/></symbol>
+    <symbol id="i-replay" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/></symbol>
+    <symbol id="i-conflict" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16M17 4v16"/><path d="M7 9h4M13 15h4M11 9l2 6"/></symbol>
+    <symbol id="i-trail" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="12" r="2"/><circle cx="6" cy="18" r="2"/><path d="M8 6h4a4 4 0 0 1 4 4M16 14a4 4 0 0 1-4 4H8"/></symbol>
+    <symbol id="i-mask" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 19c.5-3.2 2.7-5 5.5-5 1.3 0 2.5.4 3.4 1.1"/><rect x="14" y="14" width="7" height="6" rx="1.4"/><path d="M15.5 14v-1.3a2 2 0 0 1 4 0V14"/></symbol>
+    <symbol id="i-cloud" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 18h10a4 4 0 0 0 .6-8A6 6 0 0 0 6 9.5 4.3 4.3 0 0 0 7 18z"/></symbol>
+    <symbol id="i-chip" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/></symbol>
+    <symbol id="i-rules" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18M5 7h14"/><path d="M5 7 2.5 13a3 3 0 0 0 5 0zM19 7l-2.5 6a3 3 0 0 0 5 0z"/><path d="M8 21h8"/></symbol>
+    <symbol id="i-people" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3.5 19c.5-3.2 2.7-5 5.5-5s5 1.8 5.5 5"/><circle cx="17" cy="9" r="2.4"/><path d="M16 14.2c2.4.1 4 1.7 4.5 4.8"/></symbol>
+    <symbol id="i-gov" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9.5 12 4l9 5.5M5 10v8M9.7 10v8M14.3 10v8M19 10v8M3 20.5h18"/></symbol>
+    <symbol id="i-grid" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><path d="M16.5 13.5v6M13.5 16.5h6"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="m9.5 14 2 2 3.5-3.5"/></symbol>
+    <symbol id="i-chat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 18.5V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H8z"/></symbol>
+  </defs>
+</svg>
+
+<header class="top" id="top">
+  <div class="wrap">
+    <a class="brand" href="#hero" aria-label="GovAid Atlas"><svg width="28" height="28"><use href="#i-logo"/></svg><span class="bn">GovAid Atlas</span></a>
+    <nav class="nav" aria-label="Sections">
+      <a href="#problem">Problem</a>
+      <a href="#demo">Demo</a>
+      <a href="#passport">Passport</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#governance">Safety</a>
+      <a href="#benchmark">Benchmark</a>
+      <a href="#impact">Impact</a>
+    </nav>
+    <div class="badges">
+      <span class="badge hide-sm">NAPAI 2026 Final Demo</span>
+      <span class="badge teal" id="modeBadge">Competition Showcase</span>
+      <span class="badge"><span class="dot"></span>Synthetic Scenario</span>
+    </div>
+  </div>
+</header>
+
+<main>
+
+<!-- 1 HERO -->
+<section class="hero sec" id="hero" data-step>
+  <div class="wrap">
+    <div>
+      <div class="hero-name rv"><svg width="34" height="34"><use href="#i-logo"/></svg>GovAid Atlas</div>
+      <h1 class="rv"><span class="ln">讓補助申請從<span class="q">「找資料」</span></span><span class="ln">變成<span class="q">「知道下一步」</span>。</span></h1>
+      <p class="tag-en rv">From scattered policies to verifiable next steps.</p>
+      <p class="tag-zh rv"><b>可追溯、可暫停、可人工確認的政府補助 AI Agent</b><br><span class="en">Traceable · Pausable · Human-in-the-loop</span></p>
+      <div class="pillars rv"><span>Agent Planning</span><span>Deterministic Rules</span><span>Official Evidence</span><span>Human Review</span></div>
+      <div class="hero-cta rv">
+        <a class="btn btn-primary" href="#demo" data-go="demo"><svg width="18" height="18"><use href="#i-play"/></svg><span>查看完整 Agent 流程<small>Explore the Decision Flow</small></span></a>
+        <a class="btn btn-ghost" href="#passport" data-go="passport"><svg width="18" height="18"><use href="#i-pass"/></svg><span>Decision Passport<small>看最終交付物</small></span></a>
+      </div>
+    </div>
+    <div class="flow rv" aria-label="Product flow: Goal, Plan, Tool, Human Gate, Decision">
+      <div class="flow-top"><span>Agent run · golden scenario</span><span class="mono" id="flowClock">step 1 / 5</span></div>
+      <ol id="heroFlow">
+        <li class="on"><div class="ic"><svg width="18" height="18"><use href="#i-target"/></svg></div><div><div class="t">Goal 理解需求</div><div class="d">永和 → 文山，租金 13,500 → 15,500</div></div><span class="s chip wait">READ</span></li>
+        <li><div class="ic"><svg width="18" height="18"><use href="#i-plan"/></svg></div><div><div class="t">Plan 規劃</div><div class="d">中央資格 → 地方方案 → 情境比較</div></div><span class="s chip wait">PLAN</span></li>
+        <li><div class="ic"><svg width="18" height="18"><use href="#i-tool"/></svg></div><div><div class="t">Tool 規則檢查</div><div class="d">Deterministic rule engine</div></div><span class="s chip unc">UNCERTAIN</span></li>
+        <li class="gate"><div class="ic"><svg width="18" height="18"><use href="#i-hand"/></svg></div><div><div class="t">Human Gate 人工確認</div><div class="d">缺資料時暫停，不自行猜測</div></div><span class="s chip unc">PAUSED</span></li>
+        <li><div class="ic"><svg width="18" height="18"><use href="#i-pass"/></svg></div><div><div class="t">Decision 決策摘要</div><div class="d">結論綁定官方依據</div></div><span class="s chip pass">READY</span></li>
+      </ol>
+      <div class="flow-note"><span>Illustrative · no model call in this file</span><span>Synthetic</span></div>
+    </div>
+  </div>
+  <div class="hero-foot">SCROLL · 或按 Space 進入下一步</div>
+</section>
+
+<!-- 2 PROBLEM -->
+<section class="sec" id="problem" data-step>
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">The Problem</div>
+      <h2>政府補助真正難的，<br>不是「找不到網站」。</h2>
+      <p class="sub">The hard part is not finding a website.<br><b>It is knowing whether the answer is complete, safe, and explainable.</b></p>
+    </div>
+    <div class="probs">
+      <div class="prob rv"><div class="ic"><svg width="22" height="22"><use href="#i-compass"/></svg></div><h3>不知道自己適用哪個方案</h3><p>Which program applies to me?</p></div>
+      <div class="prob rv"><div class="ic"><svg width="22" height="22"><use href="#i-puzzle"/></svg></div><h3>不知道還缺哪些資料</h3><p>What information is still missing?</p></div>
+      <div class="prob rv"><div class="ic"><svg width="22" height="22"><use href="#i-split"/></svg></div><h3>不知道換地址結果會不會變</h3><p>Does moving change the outcome?</p></div>
+      <div class="prob rv"><div class="ic"><svg width="22" height="22"><use href="#i-shield"/></svg></div><h3>不知道 AI 的答案能不能相信</h3><p>Can I trust what the AI says?</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- 3 WHY NOT LLM -->
+<section class="sec" id="compare" data-step>
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Why not just a chatbot?</div>
+      <h2>同一個問題，兩種架構。</h2>
+      <p class="sub">General-purpose LLMs are great at language. Eligibility decisions need a different architecture.</p>
+    </div>
+    <div class="cmp rv">
+      <div class="cmp-col">
+        <h3><svg width="18" height="18"><use href="#i-chat"/></svg>General LLM</h3>
+        <h4>一般大型語言模型</h4>
+        <ul>
+          <li><span class="k"><svg width="12" height="12"><use href="#i-dot"/></svg></span><div><b>Answers directly</b><span>直接生成答案</span></div></li>
+          <li><span class="k"><svg width="12" height="12"><use href="#i-dot"/></svg></span><div><b>May overstate certainty</b><span>可能把「不確定」說成「確定」</span></div></li>
+          <li><span class="k"><svg width="12" height="12"><use href="#i-dot"/></svg></span><div><b>Evidence may be incomplete</b><span>依據可能不完整</span></div></li>
+          <li><span class="k"><svg width="12" height="12"><use href="#i-dot"/></svg></span><div><b>Missing fields may be guessed</b><span>缺少的資料可能被推測補上</span></div></li>
+        </ul>
+      </div>
+      <div class="cmp-col">
+        <h3><svg width="18" height="18"><use href="#i-logo"/></svg>GovAid Atlas</h3>
+        <h4>規則決定，人來確認</h4>
+        <ul>
+          <li><span class="k"><svg width="12" height="12"><use href="#i-check"/></svg></span><div><b>Uses deterministic rules</b><span>資格由確定性規則計算，不由模型生成</span></div></li>
+          <li><span class="k"><svg width="12" height="12"><use href="#i-check"/></svg></span><div><b>Stops on missing data</b><span>缺資料時暫停，回報 UNCERTAIN</span></div></li>
+          <li><span class="k"><svg width="12" height="12"><use href="#i-check"/></svg></span><div><b>Requires human confirmation</b><span>關鍵事實由使用者明確確認</span></div></li>
+          <li><span class="k"><svg width="12" height="12"><use href="#i-check"/></svg></span><div><b>Binds conclusions to evidence</b><span>每個結論對應官方文件</span></div></li>
+        </ul>
+      </div>
+    </div>
+    <p class="cmp-quote rv">AI should know when not to answer.<span>AI 應該知道什麼時候不該回答。</span></p>
+    <p class="cmp-foot">An architectural comparison, not a judgment of any specific product.</p>
+  </div>
+</section>
+
+<!-- 4 GOLDEN DEMO -->
+<section class="sec" id="demo" data-step>
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Golden Demo · Interactive</div>
+      <h2>你想確認什麼補助？</h2>
+      <p class="sub">一個真實的問題，一條完整的 Agent 流程。<b>按下開始，看它在哪裡停下來。</b></p>
+    </div>
+    <div class="demo">
+      <div class="panel goal rv">
+        <div class="lbl">Golden Goal · 使用者的問題</div>
+        <h3>搬家之後，補助會不會改變？</h3>
+        <div class="bubble">我目前住在<mark>新北市永和區</mark>，每月租金 <mark>13,500 元</mark>。如果搬到<mark>臺北市文山區</mark>、租金 <mark>15,500 元</mark>，我有哪些租屋補助可以考慮？還缺什麼資料？</div>
+        <div class="facts">
+          <div class="fact"><div class="fk">ACTUAL 目前住址</div><div class="fv">新北市永和區 · NT$13,500</div></div>
+          <div class="fact"><div class="fk">WHAT-IF 搬遷假設</div><div class="fv">臺北市文山區 · NT$15,500</div></div>
+          <div class="fact"><div class="fk">其他住宅補貼</div><div class="fv">未領取 <span class="chip pass">KNOWN</span></div></div>
+          <div class="fact"><div class="fk">是否持有住宅</div><div class="fv" id="factHome">尚未提供 <span class="chip unc">UNKNOWN</span></div></div>
+        </div>
+        <div class="goal-actions">
+          <button class="btn btn-primary" id="startBtn" type="button"><svg width="18" height="18"><use href="#i-play"/></svg><span>開始分析<small>Start Analysis</small></span></button>
+          <button class="btn btn-ghost" id="resetDemoBtn" type="button" hidden><svg width="18" height="18"><use href="#i-replay"/></svg><span>重新開始<small>Reset demo</small></span></button>
+        </div>
+        <p class="goal-note">合成情境（Synthetic）。本頁不呼叫任何模型或政府 API；流程依 GovAid Atlas 已實作規則重播。</p>
+      </div>
+
+      <div class="panel trace rv" aria-live="polite">
+        <div class="trace-head"><h3>Agent Trace</h3><span class="st" id="traceState">IDLE · 等待開始</span></div>
+        <ol class="steps" id="steps"></ol>
+        <div class="trace-foot"><span>Planner proposes · rules decide · human confirms</span><span class="mono" id="traceTool">tools: allowlisted</span></div>
+      </div>
+    </div>
+
+    <div class="outcome" id="outcome"></div>
+  </div>
+</section>
+
+<!-- 5 SCENARIO -->
+<section class="sec" id="scenario" data-step>
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Scenario Comparison</div>
+      <h2>情境比較：現在 vs 搬家之後</h2>
+      <p class="sub">同一位申請人、同一套規則，只改變地址與租金。<b>差異一眼可見，缺口清楚列出。</b></p>
+    </div>
+    <div class="state-banner rv" id="scnBanner"></div>
+    <div class="scn" id="scn">
+      <div class="scn-card rv" id="scnActual"></div>
+      <div class="vs"><span>VS</span></div>
+      <div class="scn-card whatif rv" id="scnWhatif"></div>
+    </div>
+    <p class="scn-note">依目前 Demo 已實作規則評估 · 結果不代表政府正式審核 · Not an official eligibility determination.</p>
+  </div>
+</section>
+
+<!-- 6 PASSPORT -->
+<section class="sec" id="passport" data-step>
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Deliverable</div>
+      <h2>你的補助決策摘要</h2>
+      <p class="sub">Decision Passport — 不是一段聊天回覆，而是<b>一份可以帶去臨櫃、可以被檢查的交付物</b>。</p>
+    </div>
+    <div class="state-banner rv" id="ppBanner"></div>
+    <article class="pp rv" id="pp" aria-label="Decision Passport"></article>
+  </div>
+</section>
+
+<!-- 7 ARCHITECTURE -->
+<section class="sec" id="architecture" data-step>
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Why it is Agentic</div>
+      <h2>模型負責規劃，<br>規則負責判斷，人負責確認。</h2>
+      <p class="sub">The LLM never decides eligibility. It plans which allowlisted tools to call; deterministic rules produce every status.</p>
+    </div>
+    <div class="arch rv">
+      <div class="anode"><div class="ic"><svg width="24" height="24"><use href="#i-target"/></svg></div><b>User Goal</b><span>自然語言需求</span></div>
+      <div class="anode llm"><div class="ic"><svg width="24" height="24"><use href="#i-plan"/></svg></div><b>LLM Planner</b><span>拆解任務、產生計畫</span></div>
+      <div class="anode"><div class="ic"><svg width="24" height="24"><use href="#i-tool"/></svg></div><b>Tool Selection</b><span>只能選白名單工具</span></div>
+      <div class="anode rule"><div class="ic"><svg width="24" height="24"><use href="#i-rules"/></svg></div><b>Deterministic Rules</b><span>PASS / FAIL / UNCERTAIN</span></div>
+      <div class="anode human"><div class="ic"><svg width="24" height="24"><use href="#i-hand"/></svg></div><b>Human Gate</b><span>缺資料即暫停</span></div>
+      <div class="anode"><div class="ic"><svg width="24" height="24"><use href="#i-pass"/></svg></div><b>Decision Passport</b><span>結論 + 官方依據</span></div>
+    </div>
+    <div class="arch-band rv"><div class="band a">Language model · planning only</div><div class="band b">Code · rules & evidence</div><div class="band c">Human</div><div class="band d">Output</div></div>
+    <div class="slogan rv">
+      <p><span class="m">The model plans.</span><br><span class="r">The rules decide.</span><br><span class="h">The human confirms.</span></p>
+      <small>模型規劃 · 規則判斷 · 人工確認</small>
+    </div>
+  </div>
+</section>
+
+<!-- 8 GOVERNANCE -->
+<section class="sec" id="governance" data-step>
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Safety & Governance</div>
+      <h2>Built to fail safely.</h2>
+      <p class="sub">出錯時，寧可停下來問，也不給一個看似肯定的錯誤答案。</p>
+    </div>
+    <div class="gov">
+      <div class="gcard rv"><div class="ic"><svg width="20" height="20"><use href="#i-hand"/></svg></div><b>Human-in-the-loop</b><span>關鍵事實未知時強制暫停，必須明確點選才會繼續。</span></div>
+      <div class="gcard rv"><div class="ic"><svg width="20" height="20"><use href="#i-list"/></svg></div><b>Tool Allowlist</b><span>Planner 只能呼叫預先登錄的工具；未知工具直接拒絕。</span></div>
+      <div class="gcard rv"><div class="ic"><svg width="20" height="20"><use href="#i-conflict"/></svg></div><b>Policy Conflict Detection</b><span>規定互相矛盾時標記為需人工審閱，而非擇一。</span></div>
+      <div class="gcard rv"><div class="ic"><svg width="20" height="20"><use href="#i-trail"/></svg></div><b>Audit Trail</b><span>每次規劃、工具呼叫、人工確認都留下紀錄。</span></div>
+      <div class="gcard rv"><div class="ic"><svg width="20" height="20"><use href="#i-mask"/></svg></div><b>RBAC / Masking</b><span>依角色控制可見欄位，敏感資料遮罩。</span></div>
+    </div>
+    <div class="gov-more rv">
+      <button class="gov-toggle" id="govToggle" type="button" aria-expanded="false" aria-controls="govDetail">View Governance Details <svg width="16" height="16"><use href="#i-down"/></svg></button>
+      <div class="gov-detail" id="govDetail">
+        <div class="gd-grid">
+          <div>
+            <h5>Safety guarantees</h5>
+            <ul class="gd-list">
+              <li><span>未知欄位 → 狀態</span><span class="mono">UNCERTAIN</span></li>
+              <li><span>未登錄工具呼叫</span><span class="mono">REJECTED</span></li>
+              <li><span>政策衝突</span><span class="mono">HUMAN_REVIEW</span></li>
+              <li><span>模型呼叫失敗</span><span class="mono">fail safe · no fake success</span></li>
+              <li><span>結論缺少依據</span><span class="mono">blocked</span></li>
+              <li><span>Human Gate 自動作答</span><span class="mono">not allowed</span></li>
+            </ul>
+          </div>
+          <div>
+            <h5>Audit trail · golden run (excerpt)</h5>
+            <ul class="audit" id="auditList"></ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 9 BENCHMARK -->
+<section class="sec" id="benchmark" data-step>
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Benchmark</div>
+      <h2>Safety Before Certainty</h2>
+      <p class="sub">同樣 10 個政策導航案例，比較「LLM + 政策內容」與 GovAid Atlas。<b>重點不是更快，而是不在該停的地方說「確定」。</b></p>
+    </div>
+    <div class="bm" id="bm"></div>
+    <div class="bm-legend rv">
+      <span><i style="background:#7d8789"></i>LLM + Policy Context</span>
+      <span><i style="background:#5fb3a8"></i>GovAid Atlas</span>
+      <span class="pending">Manual baseline · Pending</span>
+    </div>
+    <div class="bm-disc rv"><b>10 synthetic policy-navigation cases. Not a real-world accuracy claim.</b><br>10 組合成政策導航測試案例，不代表真實世界整體準確率。Unsafe Certainty 僅計算 5 個安全關鍵案例；Evidence Coverage 計算 9 個需引用依據的案例。</div>
+  </div>
+</section>
+
+<!-- 10 RELIABILITY -->
+<section class="sec" id="reliability" data-step>
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Reliability</div>
+      <h2>Designed for live use.</h2>
+      <p class="sub">雲端模型失效時，切換本地模型；模型全部失效時，安全工作流程仍然成立，<b>不會假裝成功</b>。</p>
+    </div>
+    <div class="rel">
+      <div class="tiers rv">
+        <div class="tier"><div class="ic"><svg width="24" height="24"><use href="#i-cloud"/></svg></div><div><b>OpenAI Primary</b><span>雲端 Planner，低延遲</span></div><span class="lvl">TIER 1</span></div>
+        <div class="tier"><div class="ic"><svg width="24" height="24"><use href="#i-chip"/></svg></div><div><b>Ollama Local Fallback</b><span>本機模型，不需外網</span></div><span class="lvl">TIER 2</span></div>
+        <div class="tier"><div class="ic"><svg width="24" height="24"><use href="#i-shield"/></svg></div><div><b>Deterministic Safety Workflow</b><span>規則、Human Gate、依據 — 不依賴模型</span></div><span class="lvl">ALWAYS ON</span></div>
+      </div>
+      <div class="rv">
+        <div class="stats">
+          <div class="stat"><div class="v">≈5.1<small>s</small></div><div class="l">OpenAI planner median</div><div class="s">團隊實測 live runs</div></div>
+          <div class="stat"><div class="v">5 / 5</div><div class="l">OpenAI live runs completed</div><div class="s">團隊實測 live runs</div></div>
+          <div class="stat"><div class="v">5 / 5</div><div class="l">Ollama local golden runs</div><div class="s">CPU · median planner 63.8 s</div></div>
+          <div class="stat"><div class="v">≤0.34<small>s</small></div><div class="l">Human confirm → result</div><div class="s">Deterministic resume</div></div>
+        </div>
+        <p class="rel-note">只列出實際量測過的數字，不提供 uptime 宣稱。本展示檔本身不呼叫任何模型，所有流程為離線重播。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 11 DEPLOYMENT -->
+<section class="sec" id="deployment" data-step>
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Deployment</div>
+      <h2>三條路徑，評審現場一定看得到。</h2>
+    </div>
+    <div class="dep">
+      <div class="dcard rv"><div class="k">PUBLIC DEMO</div><div class="v">govaid.torchark.tw</div><p>正式線上版本，完整 Agent 流程。</p></div>
+      <div class="dcard rv"><div class="k">LOCAL FALLBACK</div><div class="v">127.0.0.1</div><p>本機伺服器 + 本地模型，網路中斷時使用。</p></div>
+      <div class="dcard rv" id="offlineCard"><div class="k">OFFLINE BACKUP</div><div class="v">Single-file HTML</div><p>就是你現在看到的這一頁。無網路、無後端、可雙擊開啟。</p><span class="here chip wait" id="hereChip" hidden>YOU ARE HERE</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 12 JOURNEY -->
+<section class="sec" id="journey" data-step>
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">User Journey</div>
+      <h2>五個步驟，從問題到下一步。</h2>
+    </div>
+    <div class="jr rv" id="jr">
+      <div class="fillline" id="jrFill"></div>
+      <div class="js"><div class="n">1</div><b>Tell us your situation</b><span>說出你的情況</span></div>
+      <div class="js"><div class="n">2</div><b>Agent checks policy logic</b><span>Agent 檢查政策規則</span></div>
+      <div class="js gatestep"><div class="n">3</div><b>You confirm missing facts</b><span>你確認缺少的事實</span></div>
+      <div class="js"><div class="n">4</div><b>Compare actual vs what-if</b><span>比較現在與搬家後</span></div>
+      <div class="js"><div class="n">5</div><b>Receive your Decision Passport</b><span>取得決策摘要</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- 13 IMPACT -->
+<section class="sec" id="impact" data-step>
+  <div class="wrap">
+    <div class="sec-head rv">
+      <div class="eyebrow">Impact</div>
+      <h2>對民眾、對政府、對未來。</h2>
+    </div>
+    <div class="imp">
+      <div class="icard rv"><div class="ic"><svg width="22" height="22"><use href="#i-people"/></svg></div><h3>民眾<span class="en">For Citizens</span></h3>
+        <ul><li>少花時間翻政策<span class="en">Less policy searching</span></li><li>清楚知道缺什麼資料<span class="en">Clear missing information</span></li><li>看得懂的判斷理由<span class="en">More explainable decisions</span></li></ul></div>
+      <div class="icard rv"><div class="ic"><svg width="22" height="22"><use href="#i-gov"/></svg></div><h3>政府<span class="en">For Government</span></h3>
+        <ul><li>減少資料不完整的詢問<span class="en">Fewer incomplete inquiries</span></li><li>推理過程可追溯<span class="en">Traceable reasoning</span></li><li>更安全的 AI 協助<span class="en">Safer AI assistance</span></li></ul></div>
+      <div class="icard future rv"><div class="ic"><svg width="22" height="22"><use href="#i-grid"/></svg></div><h3>擴充<span class="en">For Expansion</span></h3>
+        <span class="future-tag">Future policy domains · 尚未實作</span>
+        <div class="domains"><span class="cur">Housing 租屋（本 Demo）</span><span>Childcare 育兒</span><span>Education 教育</span><span>Social welfare 社福</span></div>
+        <ul style="margin-top:14px"><li style="border-top:0;font-size:13px;color:var(--muted)">同一套「規劃 → 規則 → 確認 → 依據」架構，可延伸至其他補助領域。目前僅租屋補助已實作。</li></ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 14 FINAL -->
+<section class="final" id="final" data-step>
+  <div class="wrap">
+    <div class="nm rv">GovAid Atlas</div>
+    <h2 class="rv">Safe before certain.</h2>
+    <p class="rv">不是讓 AI 猜得更肯定，<br>而是讓每一步更可驗證。</p>
+    <div class="cta rv">
+      <button class="btn btn-primary" type="button" id="replayBtn"><svg width="18" height="18"><use href="#i-replay"/></svg><span>Replay Demo<small>重新播放 Golden Demo</small></span></button>
+      <a class="btn btn-ghost" href="#passport" data-go="passport"><svg width="18" height="18"><use href="#i-pass"/></svg><span>View Decision Passport<small>查看決策摘要</small></span></a>
+    </div>
+    <p class="fine">Synthetic scenario · Not an official eligibility determination · No real personal data<br>合成情境 · 結果不代表政府正式核准或駁回 · 未使用真實個人資料</p>
+  </div>
+</section>
+</main>
+<footer class="foot">GovAid Atlas · NAPAI 2026 Final Demo · Competition Showcase</footer>
+
+<!-- HUMAN GATE -->
+<div class="gate-back" id="gateBack" role="dialog" aria-modal="true" aria-labelledby="gateQ" aria-describedby="gateWhy">
+  <div class="gate">
+    <div class="gate-kicker"><span class="pip"></span>需要你的確認 · Human Confirmation Required</div>
+    <h3>Agent 已暫停 · Paused at central eligibility check</h3>
+    <h4 id="gateQ">本人是否持有住宅？<span class="en">Does the applicant own a home?</span></h4>
+    <p class="why" id="gateWhy">這項資訊會直接影響資格判斷。<br><b>GovAid Atlas 不會自行猜測。</b><br><span class="en" style="font-size:13px">This fact directly affects eligibility. GovAid Atlas will not guess it.</span></p>
+    <div class="ctx"><span class="chip unc">UNCERTAIN</span><span>中央租金補貼 · 欄位 <span class="mono">ownsHome</span> = 未知</span></div>
+    <div class="gate-btns">
+      <button class="gbtn primary" type="button" id="gateNo"><b>沒有自有住宅</b><span>No — applicant does not own a home</span></button>
+      <button class="gbtn" type="button" id="gateYes"><b>有自有住宅</b><span>Yes — applicant owns a home</span></button>
+    </div>
+    <p class="gate-foot">必須明確點選才會繼續；鍵盤快捷鍵不會替你作答。結果依目前 Demo 已實作規則計算，不代表官方核准或駁回。</p>
+  </div>
+</div>
+
+<!-- DEMO CONTROLS -->
+<div class="dc" id="dc">
+  <div class="dc-panel" id="dcPanel" role="menu" aria-label="Demo Controls">
+    <h6>Demo Controls</h6>
+    <button class="dc-row" type="button" data-act="reset"><kbd>R</kbd><span>Reset<em>回到開頭並重設 Demo</em></span></button>
+    <button class="dc-row" type="button" data-act="next"><kbd>Space</kbd><span>Next presentation step<em>下一個段落 / 推進 Demo</em></span></button>
+    <button class="dc-row" type="button" data-act="gate"><kbd>H</kbd><span>Human Gate<em>直接跑到人工確認</em></span></button>
+    <button class="dc-row" type="button" data-act="passport"><kbd>D</kbd><span>Decision Passport<em>跳到決策摘要</em></span></button>
+    <button class="dc-row" type="button" data-act="bench"><kbd>B</kbd><span>Benchmark<em>跳到評測結果</em></span></button>
+    <p class="dc-note">Human Gate 必須用滑鼠明確點選，Space 不會自動作答。</p>
+  </div>
+  <button class="dc-btn" type="button" id="dcBtn" aria-expanded="false" aria-controls="dcPanel"><svg width="16" height="16"><use href="#i-sliders"/></svg><span class="lbl-full">Demo Controls</span><kbd>?</kbd></button>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function(){
+  "use strict";
+  document.body.classList.remove("no-js");
+  var $ = function(s,r){return (r||document).querySelector(s)};
+  var $$ = function(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))};
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  /* ---------- mode badge (truthful) ---------- */
+  var isFile = location.protocol === "file:";
+  $("#modeBadge").textContent = isFile ? "Offline Showcase" : "Competition Showcase";
+  if (isFile) { $("#hereChip").hidden = false; }
+
+  /* ---------- toast ---------- */
+  var toastT;
+  function toast(msg){ var t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(toastT); toastT=setTimeout(function(){t.classList.remove("show")},2600); }
+
+  /* ---------- scroll helpers ---------- */
+  function go(id){ var el=document.getElementById(id); if(!el) return; var y=el.getBoundingClientRect().top+window.pageYOffset-(id==="hero"?0:56); window.scrollTo({top:Math.max(0,y),behavior:reduce?"auto":"smooth"}); }
+  $$("[data-go]").forEach(function(a){ a.addEventListener("click",function(e){ e.preventDefault(); go(a.getAttribute("data-go")); }); });
+  $$(".nav a,.brand").forEach(function(a){ a.addEventListener("click",function(e){ e.preventDefault(); go(a.getAttribute("href").slice(1)); }); });
+  window.addEventListener("scroll",function(){ $("#top").classList.toggle("scrolled",window.pageYOffset>8); },{passive:true});
+
+  /* ---------- reveal ---------- */
+  var rvEls=$$(".rv");
+  if ("IntersectionObserver" in window && !reduce){
+    var io=new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ e.target.classList.add("in"); io.unobserve(e.target);} }); },{threshold:.12,rootMargin:"0px 0px -6% 0px"});
+    rvEls.forEach(function(el,i){ el.style.transitionDelay=((i%4)*60)+"ms"; io.observe(el); });
+  } else { rvEls.forEach(function(el){el.classList.add("in")}); }
+
+  /* ---------- hero flow loop ---------- */
+  var flowItems=$$("#heroFlow li"), flowI=0, flowTimer=null;
+  function flowTick(){
+    flowI=(flowI+1)%flowItems.length;
+    flowItems.forEach(function(li,i){ li.classList.toggle("on",i===flowI); li.classList.toggle("done",i<flowI); });
+    $("#flowClock").textContent="step "+(flowI+1)+" / "+flowItems.length;
+    flowTimer=setTimeout(flowTick, flowI===3?2600:1500);
+  }
+  if(!reduce){ flowTimer=setTimeout(flowTick,1600); }
+
+  /* ---------- DEMO STATE ---------- */
+  var S={phase:"idle",answer:null,timers:[]};
+  var STEPS=[
+    {id:"understand",t:"理解需求",en:"Understand",d:"ACTUAL 新北市永和區 NT$13,500 · WHAT-IF 臺北市文山區 NT$15,500"},
+    {id:"plan",t:"規劃",en:"Plan",d:"Planner 提出計畫：中央資格 → 地方方案 → 情境比較 → 決策摘要"},
+    {id:"central",t:"檢查中央資格",en:"Tool call",d:'<span class="tool">check_central_rent_rules</span> 住宅持有狀態尚未確認'},
+    {id:"gate",t:"Human Gate",en:"需要你的確認",d:"關鍵事實未知 → 暫停，等待明確確認"},
+    {id:"resume",t:"Resume",en:"依確認繼續",d:"以確認後的事實重新執行規則"},
+    {id:"compare",t:"情境比較",en:"Actual / What-if",d:'<span class="tool">compare_scenarios</span> 新北地方方案 · 臺北地方方案'},
+    {id:"passport",t:"Decision Passport",en:"決策摘要",d:"結論綁定官方依據 R1 · R6 · R7"}
+  ];
+  // per-step state: pending|active|done|warn|stop|skip ; result chip html
+  var stepState={};
+  function chip(k,txt){ return '<span class="chip '+k+'">'+txt+'</span>'; }
+  function renderSteps(){
+    $("#steps").innerHTML=STEPS.map(function(s,i){
+      var st=stepState[s.id]||{s:"pending"};
+      var cls="step "+(st.s==="pending"?"":st.s)+(st.s==="warn"||st.s==="stop"?" done":"");
+      var n=(st.s==="done")?'<svg width="14" height="14"><use href="#i-check"/></svg>':(st.s==="warn")?'<svg width="14" height="14"><use href="#i-pause"/></svg>':(st.s==="stop")?'<svg width="13" height="13"><use href="#i-x"/></svg>':(i+1);
+      return '<li class="'+cls+'"><div class="n">'+n+'</div><div><div class="t">'+s.t+'<span class="en">'+s.en+'</span></div><div class="d">'+(st.d||s.d)+'</div></div><div class="r">'+(st.r||"")+'</div></li>';
+    }).join("");
+  }
+  function setStep(id,o){ stepState[id]=o; renderSteps(); }
+  function later(fn,ms){ var t=setTimeout(fn,reduce?Math.min(ms,80):ms); S.timers.push(t); }
+  function clearTimers(){ S.timers.forEach(clearTimeout); S.timers=[]; }
+  function setTrace(txt){ $("#traceState").textContent=txt; }
+
+  function resetDemo(){
+    clearTimers(); S.phase="idle"; S.answer=null; stepState={};
+    renderSteps(); setTrace("IDLE · 等待開始");
+    $("#startBtn").disabled=false; $("#startBtn").hidden=false; $("#resetDemoBtn").hidden=true;
+    $("#factHome").innerHTML='尚未提供 '+chip("unc","UNKNOWN");
+    var oc=$("#outcome"); oc.classList.remove("show"); oc.innerHTML="";
+    closeGate(); renderAll();
+  }
+
+  function startDemo(fast){
+    if(S.phase!=="idle") return;
+    S.phase="running";
+    $("#startBtn").disabled=true; $("#resetDemoBtn").hidden=false;
+    var k=fast?0.35:1;
+    setTrace("RUNNING · 理解需求");
+    setStep("understand",{s:"active"});
+    later(function(){ setStep("understand",{s:"done",r:chip("pass","PARSED")}); setStep("plan",{s:"active"}); setTrace("RUNNING · 規劃"); },900*k);
+    later(function(){ setStep("plan",{s:"done",r:chip("pass","4 TOOLS")}); setStep("central",{s:"active"}); setTrace("RUNNING · 呼叫工具"); },1900*k);
+    later(function(){ setStep("central",{s:"warn",r:chip("unc","UNCERTAIN"),d:'<span class="tool">check_central_rent_rules</span> 中央規則 UNCERTAIN — 原因：<b>住宅持有狀態尚未確認</b>'}); setTrace("PAUSED · 缺少必要資料"); },3100*k);
+    later(function(){ setStep("gate",{s:"active",r:chip("wait","WAITING")}); S.phase="gate"; setTrace("PAUSED · 等待人工確認"); openGate(); },3900*k);
+  }
+
+  var lastFocus=null;
+  function openGate(){ lastFocus=document.activeElement; var g=$("#gateBack"); g.classList.add("show"); document.documentElement.style.overflow="hidden"; setTimeout(function(){ $("#gateNo").focus({preventScroll:true}); },60); }
+  function closeGate(){ $("#gateBack").classList.remove("show"); document.documentElement.style.overflow=""; }
+  // focus trap
+  $("#gateBack").addEventListener("keydown",function(e){
+    if(e.key==="Tab"){ var a=$("#gateNo"),b=$("#gateYes"); if(e.shiftKey&&document.activeElement===a){e.preventDefault();b.focus();} else if(!e.shiftKey&&document.activeElement===b){e.preventDefault();a.focus();} }
+  });
+
+  function answer(ans, ev){
+    if(S.phase!=="gate") return;
+    // explicit pointer/keyboard activation on the button only
+    S.answer=ans; S.phase="resuming"; closeGate();
+    $("#factHome").innerHTML=(ans==="no"?"沒有自有住宅 ":"有自有住宅 ")+chip("wait","CONFIRMED BY USER");
+    setStep("gate",{s:"done",r:chip("pass","CONFIRMED"),d:"使用者明確確認：「"+(ans==="no"?"沒有自有住宅":"有自有住宅")+"」"});
+    setStep("resume",{s:"active"}); setTrace("RESUMING · 重新執行規則");
+    later(function(){
+      if(ans==="no"){
+        setStep("central",{s:"done",r:chip("pass","PASS"),d:'<span class="tool">check_central_rent_rules</span> 中央規則 PASS — 依目前 Demo 已實作規則'});
+        setStep("resume",{s:"done",r:chip("pass","PASS"),d:"中央租金補貼：依已實作規則符合基本條件"});
+        setStep("compare",{s:"active"}); setTrace("RUNNING · 情境比較");
+        later(function(){
+          setStep("compare",{s:"done",r:chip("unc","2 UNCERTAIN"),d:'<span class="tool">compare_scenarios</span> 新北 / 臺北地方方案仍需確認條件'});
+          setStep("passport",{s:"active"});
+        },900);
+        later(function(){
+          setStep("passport",{s:"done",r:chip("pass","READY")}); S.phase="done"; setTrace("COMPLETED · 決策摘要已產生");
+          renderAll(); showOutcome("no");
+        },1700);
+      } else {
+        setStep("central",{s:"stop",r:chip("fail","FAIL"),d:'<span class="tool">check_central_rent_rules</span> 中央規則 FAIL — 持有自有住宅'});
+        setStep("resume",{s:"stop",r:chip("fail","FAIL"),d:"依目前 Demo 已實作規則，中央租金補貼條件不符合"});
+        setStep("compare",{s:"skip",r:chip("na","SKIPPED"),d:"中央條件不符，地方加碼方案不再進一步評估"});
+        setStep("passport",{s:"done",r:chip("pass","READY"),d:"摘要說明不符合原因與可確認的下一步"});
+        S.phase="done"; setTrace("COMPLETED · 依規則停止");
+        renderAll(); showOutcome("yes");
+      }
+    },800);
+  }
+  $("#gateNo").addEventListener("click",function(e){ answer("no",e); });
+  $("#gateYes").addEventListener("click",function(e){ answer("yes",e); });
+
+  function showOutcome(ans){
+    var oc=$("#outcome");
+    if(ans==="no"){
+      oc.innerHTML='<div class="oc ok"><div class="oi"><svg width="24" height="24"><use href="#i-check"/></svg></div><div class="ot"><b>中央租金補貼：依目前 Demo 已實作規則 PASS</b><span>新北 / 臺北地方方案仍為 UNCERTAIN，缺口已列入 Decision Passport。這不是政府正式核准。</span></div><div class="oa"><button class="btn btn-ghost" type="button" data-go2="scenario">查看情境比較</button><button class="btn btn-primary" type="button" data-go2="passport">Decision Passport <svg width="16" height="16"><use href="#i-arrow"/></svg></button></div></div>';
+    } else {
+      oc.innerHTML='<div class="oc no"><div class="oi"><svg width="24" height="24"><use href="#i-x"/></svg></div><div class="ot"><b>中央租金補貼：依目前 Demo 已實作規則 FAIL</b><span>原因：本人持有自有住宅。這不是官方駁回；實際資格以主管機關審查為準。</span></div><div class="oa"><button class="btn btn-ghost" type="button" data-act2="regate">重新回答 Human Gate</button><button class="btn btn-primary" type="button" data-go2="passport">Decision Passport <svg width="16" height="16"><use href="#i-arrow"/></svg></button></div></div>';
+    }
+    oc.classList.add("show");
+    $$("[data-go2]",oc).forEach(function(b){ b.addEventListener("click",function(){ go(b.getAttribute("data-go2")); }); });
+    $$("[data-act2]",oc).forEach(function(b){ b.addEventListener("click",function(){ jumpToGate(); }); });
+  }
+
+  function jumpToGate(){
+    resetDemo(); go("demo");
+    later(function(){ startDemo(true); },reduce?0:450);
+  }
+
+  $("#startBtn").addEventListener("click",function(){ startDemo(false); });
+  $("#resetDemoBtn").addEventListener("click",function(){ resetDemo(); });
+  $("#replayBtn").addEventListener("click",function(){ resetDemo(); go("demo"); later(function(){ startDemo(false); },reduce?0:700); });
+
+  /* ---------- SCENARIO + PASSPORT render ---------- */
+  var EVID=[
+    {id:"R1",ag:"內政部國土管理署",dt:"三百億元中央擴大租金補貼專案計畫作業規定（115年度）",v:"2026-10-16"},
+    {id:"R6",ag:"臺北市政府都市發展局",dt:"115年度臺北幸福租－民間租屋租金加碼補貼",v:"2026-10-16"},
+    {id:"R7",ag:"新北市政府城鄉發展局",dt:"115年度新北市青年租金補貼",v:"2026-10-16"}
+  ];
+  function row(name,c,reason){ return '<div class="scn-row"><div class="h"><b>'+name+'</b>'+c+'</div>'+(reason?'<p>'+reason+'</p>':'')+'</div>'; }
+  function renderScenario(){
+    var a=S.answer, cen;
+    if(a==="no") cen=chip("pass","PASS"); else if(a==="yes") cen=chip("fail","FAIL"); else cen=chip("unc","UNCERTAIN");
+    var cenReason = a==="no" ? "依確認：無自有住宅、未領取其他住宅補貼" : a==="yes" ? "依確認：本人持有自有住宅" : "住宅持有狀態尚未確認";
+    var ntp = a==="yes" ? row("新北地方方案",chip("na","NOT EVALUATED"),"中央條件不符，未進一步評估") : row("新北地方方案",chip("unc","UNCERTAIN"),"仍需確認設籍 / 就學 / 就業條件");
+    var tpe = a==="yes" ? row("臺北地方方案",chip("na","NOT EVALUATED"),"中央條件不符，未進一步評估") : row("臺北地方方案",chip("unc","UNCERTAIN"),"中央補貼核准狀態尚未確認");
+    $("#scnActual").innerHTML='<div class="scn-top"><span class="k">目前住址</span><span class="scn-tag">ACTUAL</span></div><div class="scn-place">新北市永和區</div><div class="scn-rent"><b>NT$13,500</b> / month</div><div class="scn-rows">'+row("中央租屋補助",cen,cenReason)+ntp+'</div>';
+    $("#scnWhatif").innerHTML='<div class="scn-top"><span class="k">搬遷假設</span><span class="scn-tag">WHAT-IF</span></div><div class="scn-place">臺北市文山區</div><div class="scn-rent"><b>NT$15,500</b> / month</div><div class="scn-rows">'+row("中央租屋補助",cen,cenReason)+tpe+'</div>';
+    var b=$("#scnBanner");
+    if(a==="no") b.innerHTML=chip("pass","LIVE")+'<span>已依你在 Human Gate 的確認（沒有自有住宅）更新。</span>';
+    else if(a==="yes") b.innerHTML=chip("fail","YES BRANCH")+'<span>你確認「有自有住宅」：中央條件不符，地方加碼方案未進一步評估。</span><button class="btn btn-ghost" type="button" data-regate>改選另一個答案</button>';
+    else b.innerHTML=chip("unc","PAUSED")+'<span>尚未完成 Human Gate，中央規則維持 UNCERTAIN。</span><button class="btn btn-ghost" type="button" data-regate>前往 Human Gate</button>';
+    var rb=$("[data-regate]",b); if(rb) rb.addEventListener("click",jumpToGate);
+  }
+  function li(arr){ return arr.map(function(x){return "<li>"+x+"</li>"}).join(""); }
+  function ppSec(cls,icon,zh,en,body){ return '<section class="pp-sec '+cls+'"><h4><span class="ic"><svg width="16" height="16"><use href="#'+icon+'"/></svg></span>'+zh+'<span class="en">'+en+'</span></h4>'+body+'</section>'; }
+  function renderPassport(){
+    var a=S.answer, yes=a==="yes";
+    var known = yes
+      ? ["依目前 Demo 已實作規則，<b>中央租金補貼條件不符合</b>（本人持有自有住宅）","此結果來自確定性規則，不是模型推測","臺北 / 新北地方加碼方案未進一步評估"]
+      : ["依目前 Demo 已實作規則，<b>中央租金補貼符合基本條件</b>（無自有住宅、未領取其他住宅補貼）","兩個情境的中央判斷相同：搬家不改變中央結果","比較的差異集中在地方加碼方案"];
+    var pend = yes
+      ? ["住宅持有的認定方式（如共有、配偶持有）需依官方規定確認"]
+      : ["<b>新北</b>地方方案：設籍 / 就學 / 就業條件","<b>臺北</b>地方方案：中央租金補貼核准狀態"];
+    var need = yes
+      ? ["自有住宅相關證明（如建物所有權資料）","若持有狀態有誤，請重新回答 Human Gate"]
+      : ["新北市設籍、就學或就業證明","中央租金補貼核定通知（申請臺北加碼時）","租賃契約（實際租金 NT$13,500 / 15,500）"];
+    var risk = yes
+      ? ["本摘要不是官方駁回，實際資格以主管機關審查為準","政策年度與細則可能更新"]
+      : ["中央結果尚待主管機關審查，<b>不代表已核准</b>","搬遷後須重新確認租約與地址資格","政策年度與細則可能更新"];
+    var next = yes
+      ? ["向主管機關確認住宅持有的認定標準","若有其他身分條件，詢問是否有其他協助方案","保留本摘要作為諮詢紀錄"]
+      : ["備妥租約，提出中央租金補貼申請","若留在新北：補充設籍 / 就學 / 就業證明","若搬到臺北：取得中央核定後再申請加碼"];
+    $("#pp").innerHTML=
+      '<header class="pp-head"><div><div class="lbl">Decision Passport</div><h3>你的補助決策摘要<span class="en">Decision Passport</span></h3></div>'+
+      '<div class="pp-meta"><span>Case</span><b>GOLDEN-SYN-01</b><span>Scenario</span><b>ACTUAL + WHAT-IF</b><span>Human Gate</span><b>'+(a==="no"?"ownsHome = false (user)":yes?"ownsHome = true (user)":"pending")+'</b><span>Basis</span><b>Demo rules · Synthetic</b></div></header>'+
+      '<div class="pp-body">'+
+        ppSec("ok","i-check","目前可以確定","Confirmed",'<ul>'+li(known)+'</ul>')+
+        ppSec("pend","i-pause","目前仍需確認","Pending",'<ul>'+li(pend)+'</ul>')+
+        ppSec("need","i-clip","需要補充的資料","Documents",'<ul>'+li(need)+'</ul>')+
+        ppSec("risk","i-alert","風險提醒","Risks",'<ul>'+li(risk)+'</ul>')+
+        ppSec("next","i-arrow","建議下一步","Next steps",'<ol>'+li(next)+'</ol>')+
+        ppSec("ok","i-shield","判斷方式","Method",'<ul>'+li(["資格狀態由確定性規則計算","缺少事實時暫停並詢問","每項結論對應下方官方依據"])+'</ul>')+
+      '</div>'+
+      '<div class="ev"><div class="ev-h"><h4>官方依據 · Official Evidence</h4><span>Last verified 2026-10-16</span></div><div class="ev-list">'+
+        EVID.map(function(e){ return '<div class="evi"><div class="ag">'+e.ag+'</div><div class="dt">'+e.dt+'</div><div class="ft"><span>官方文件</span><span class="mono">'+e.id+'</span></div></div>'; }).join("")+
+      '</div></div>'+
+      '<div class="pp-disc">依目前 Demo 已實作規則與合成情境產生，不代表政府正式核准或駁回。 · Generated from implemented demo rules on a synthetic scenario; not an official determination.</div>';
+    var b=$("#ppBanner");
+    if(a==="no") b.innerHTML=chip("pass","GENERATED")+'<span>已依你在 Human Gate 的明確確認產生。</span>';
+    else if(yes) b.innerHTML=chip("fail","YES BRANCH")+'<span>依「有自有住宅」產生的摘要。</span><button class="btn btn-ghost" type="button" data-regate>改選另一個答案</button>';
+    else b.innerHTML=chip("wait","PREVIEW")+'<span>預覽：Golden Demo 選擇「沒有自有住宅」後的摘要內容。完成 Human Gate 後即會依你的選擇產生。</span><button class="btn btn-ghost" type="button" data-regate>前往 Human Gate</button>';
+    var rb=$("[data-regate]",b); if(rb) rb.addEventListener("click",jumpToGate);
+  }
+  function renderAudit(){
+    var a=S.answer;
+    var rows=[["00.0s","USER","CASE_CREATED · synthetic profile"],["00.9s","AGENT","PLAN_PROPOSED · 4 allowlisted tools"],["03.1s","TOOL","check_central_rent_rules → UNCERTAIN (ownsHome)"],["03.9s","SYSTEM","HUMAN_GATE_OPENED"]];
+    if(a){ rows.push(["—","USER","HUMAN_CONFIRMED · ownsHome="+(a==="yes")]); rows.push(["—","TOOL","check_central_rent_rules → "+(a==="no"?"PASS":"FAIL")]); rows.push(["—","SYSTEM","DECISION_PASSPORT_CREATED · evidence R1 R6 R7"]); }
+    else rows.push(["—","SYSTEM","waiting for explicit confirmation"]);
+    $("#auditList").innerHTML=rows.map(function(r){return '<li><span>'+r[0]+'</span><span class="who">'+r[1]+'</span><span class="ac">'+r[2]+'</span></li>'}).join("");
+  }
+  function renderAll(){ renderScenario(); renderPassport(); renderAudit(); }
+
+  /* ---------- governance toggle ---------- */
+  $("#govToggle").addEventListener("click",function(){ var b=this, open=b.getAttribute("aria-expanded")!=="true"; b.setAttribute("aria-expanded",open); $("#govDetail").classList.toggle("show",open); });
+
+  /* ---------- benchmark ---------- */
+  var BM=[
+    {l:"Status Accuracy",d:"狀態判斷正確率 · 10 cases",b:70,a:100,dir:"higher is better",dec:0},
+    {l:"Evidence Coverage",d:"官方依據覆蓋率 · 9 cases",b:77.8,a:100,dir:"higher is better",dec:1},
+    {l:"Unsupported Claims",d:"無依據主張比例 · 10 cases",b:30,a:0,dir:"lower is better",dec:0},
+    {l:"Unsafe Certainty",d:"不安全的肯定 · 5 safety-critical cases",b:40,a:0,dir:"lower is better",dec:0}
+  ];
+  $("#bm").innerHTML=BM.map(function(m,i){
+    return '<div class="bcard rv"><div class="bl">'+m.l+'</div><div class="bd">'+m.d+'</div>'+
+      '<div class="bvals"><span class="from">'+m.b+'%</span><span class="arr">→</span><span class="to" data-bm="'+i+'">'+m.b+'%</span></div>'+
+      '<div class="bars"><div class="bar base"><span>LLM + Context</span><div class="tr"><div class="fl" data-w="'+m.b+'"></div></div><span class="v">'+m.b+'%</span></div>'+
+      '<div class="bar atl"><span>GovAid Atlas</span><div class="tr"><div class="fl" data-w="'+m.a+'"></div></div><span class="v">'+m.a+'%</span></div></div>'+
+      '<div class="bdir">'+m.dir+'</div></div>';
+  }).join("");
+  $$("#bm .rv").forEach(function(el){ if(io) io.observe(el); else el.classList.add("in"); });
+  var bmDone=false;
+  function animateBench(){
+    if(bmDone) return; bmDone=true;
+    $$("#bm .fl").forEach(function(f){ f.style.width=Math.max(f.getAttribute("data-w"),1.5)+"%"; });
+    BM.forEach(function(m,i){
+      var el=$('[data-bm="'+i+'"]'); var t0=null, dur=reduce?1:1300;
+      function f(ts){ if(!t0) t0=ts; var p=Math.min(1,(ts-t0)/dur); var e=1-Math.pow(1-p,3); var v=m.b+(m.a-m.b)*e; el.textContent=(p<1?v.toFixed(m.dec):m.a)+"%"; if(p<1) requestAnimationFrame(f); }
+      setTimeout(function(){ requestAnimationFrame(f); },300);
+    });
+  }
+  var bmIO = ("IntersectionObserver" in window) ? new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ animateBench(); bmIO.disconnect(); } }); },{threshold:.35}) : null;
+  if(bmIO) bmIO.observe($("#bm")); else animateBench();
+
+  /* ---------- journey ---------- */
+  var jrDone=false;
+  function animateJourney(){
+    if(jrDone) return; jrDone=true;
+    var steps=$$("#jr .js");
+    steps.forEach(function(s,i){ setTimeout(function(){ s.classList.add("on"); },reduce?0:250+i*320); });
+    setTimeout(function(){ $("#jrFill").style.width="80%"; },reduce?0:250);
+  }
+  var jrIO = ("IntersectionObserver" in window) ? new IntersectionObserver(function(es){ es.forEach(function(e){ if(e.isIntersecting){ animateJourney(); jrIO.disconnect(); } }); },{threshold:.4}) : null;
+  if(jrIO) jrIO.observe($("#jr")); else animateJourney();
+
+  /* ---------- presentation stepping ---------- */
+  var ORDER=$$("[data-step]").map(function(s){return s.id});
+  function currentSection(){
+    var y=window.pageYOffset+window.innerHeight*0.35, cur=ORDER[0];
+    ORDER.forEach(function(id){ var el=document.getElementById(id); if(el.offsetTop<=y) cur=id; });
+    return cur;
+  }
+  function nextStep(){
+    if(S.phase==="gate"){ toast("Human Gate 需要明確點選答案 · Space 不會自動作答"); return; }
+    var cur=currentSection();
+    if(cur==="demo"){
+      if(S.phase==="idle"){ startDemo(false); return; }
+      if(S.phase==="running"||S.phase==="resuming"){ toast("Agent 執行中…"); return; }
+    }
+    var i=ORDER.indexOf(cur);
+    if(i<ORDER.length-1) go(ORDER[i+1]); else toast("已是最後一頁 · 按 R 重新開始");
+  }
+  function resetAll(){
+    resetDemo(); bmDone=false;
+    $$("#bm .fl").forEach(function(f){ f.style.width="0"; });
+    BM.forEach(function(m,i){ $('[data-bm="'+i+'"]').textContent=m.b+"%"; });
+    if(bmIO){ bmIO.observe($("#bm")); }
+    var gd=$("#govDetail"); gd.classList.remove("show"); $("#govToggle").setAttribute("aria-expanded","false");
+    go("hero"); toast("已重設 · Reset");
+  }
+  function act(a){
+    if(a==="reset") resetAll();
+    else if(a==="next") nextStep();
+    else if(a==="gate"){ if(S.phase==="gate"){ toast("Human Gate 已開啟，請明確點選"); return; } jumpToGate(); }
+    else if(a==="passport"){ if(S.phase==="gate"){ toast("請先完成 Human Gate"); return; } go("passport"); }
+    else if(a==="bench"){ if(S.phase==="gate"){ toast("請先完成 Human Gate"); return; } go("benchmark"); }
+  }
+  document.addEventListener("keydown",function(e){
+    if(e.ctrlKey||e.metaKey||e.altKey) return;
+    var tag=(e.target&&e.target.tagName)||"";
+    if(/INPUT|TEXTAREA|SELECT/.test(tag)) return;
+    var k=e.key;
+    if(k===" "||k==="Spacebar"){
+      // never let Space activate a focused Human Gate button
+      e.preventDefault(); nextStep(); return;
+    }
+    if(k==="Enter" && S.phase==="gate"){ /* Enter on a focused gate button is an explicit choice by the presenter; allow native click */ return; }
+    var m={r:"reset",h:"gate",d:"passport",b:"bench"}[k.toLowerCase()];
+    if(m){ e.preventDefault(); act(m); return; }
+    if(k==="?"){ toggleDc(); }
+    if(k==="Escape"){ if($("#dc").classList.contains("open")) toggleDc(false); }
+  });
+  // Space keyup would click focused button natively — block it on gate buttons
+  ["#gateNo","#gateYes"].forEach(function(s){ $(s).addEventListener("keyup",function(e){ if(e.key===" "||e.key==="Spacebar"){ e.preventDefault(); } }); });
+
+  function toggleDc(force){ var d=$("#dc"), open=typeof force==="boolean"?force:!d.classList.contains("open"); d.classList.toggle("open",open); $("#dcBtn").setAttribute("aria-expanded",open); }
+  $("#dcBtn").addEventListener("click",function(){ toggleDc(); });
+  $$(".dc-row").forEach(function(b){ b.addEventListener("click",function(){ act(b.getAttribute("data-act")); }); });
+  document.addEventListener("click",function(e){ if(!$("#dc").contains(e.target)) toggleDc(false); });
+
+  /* ---------- init ---------- */
+  renderSteps(); renderAll();
+})();
+</script>
+</body>
+</html>
