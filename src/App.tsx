@@ -54,6 +54,7 @@ import type {DecisionPassport} from "./passport";
 import {
   createAgentRun,
   resumeAgentRun,
+  resumeAgentWithFieldResponse,
   runAgenticGoldenCase,
 } from "./agent/orchestrator";
 import {listAllowedTools} from "./agent/tools";
@@ -406,15 +407,22 @@ function App() {
     setAgentRunning(false);
   }
 
-  function respondToHuman(ownsHome: boolean) {
+  function respondToHuman(answer: boolean | number | string) {
     if (agentRun.status !== "WAITING_FOR_HUMAN" || agentRunning) {
       return;
     }
-    const updatedApplicant = {...applicant, ownsHome};
+    const targetField = agentRun.missingField ?? "ownsHome";
     const existingAuditCount = agentRun.auditTrail.length;
-    setApplicant(updatedApplicant);
-    audit("USER", "FIELD_CONFIRMED", {field: "ownsHome", value: ownsHome});
-    const resumed = resumeAgentRun(agentRun, updatedApplicant, actualScenario, whatIfScenario);
+    audit("USER", "FIELD_CONFIRMED", {field: targetField, value: answer});
+    const resumed =
+      targetField === "ownsHome" && typeof answer === "boolean"
+        ? resumeAgentRun(agentRun, {...applicant, ownsHome: answer}, actualScenario, whatIfScenario)
+        : resumeAgentWithFieldResponse(agentRun, targetField, answer, actualScenario, whatIfScenario);
+    if (resumed.state?.applicant) {
+      setApplicant(resumed.state.applicant);
+    } else if (targetField === "ownsHome" && typeof answer === "boolean") {
+      setApplicant({...applicant, ownsHome: answer});
+    }
     setAgentRun(resumed);
     recordAgentToolMetrics(resumed, existingAuditCount);
 

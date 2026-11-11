@@ -1,0 +1,246 @@
+{
+  "schemaVersion": "wave2-trace-v1",
+  "runId": "trace-a-valid-proposal",
+  "exportedAt": "2026-11-11T03:03:59.748Z",
+  "goalSummary": "比較目前住址與搬遷地址的租屋補助",
+  "maxSteps": 8,
+  "stepsTaken": 1,
+  "finalStatus": "COMPLETED",
+  "finalEligibilityStatus": "PARTIAL_CHECK",
+  "coverageStatus": "COVERED",
+  "events": [
+    {
+      "timestamp": "2026-11-11T03:03:59.746Z",
+      "runId": "agent-1794366239735-a7e457",
+      "step": 0,
+      "currentStateSummary": {
+        "status": "RUNNING_TOOL",
+        "knownFields": [
+          "ownsHome",
+          "receivesOtherHousingAid",
+          "city",
+          "age",
+          "centralRentApproved",
+          "newTaipeiResidenceStudyWork",
+          "registeredCity"
+        ],
+        "missingFields": [
+          "monthlyIncome"
+        ],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": [
+          "evaluate_actual_scenario"
+        ]
+      },
+      "plannerProposal": {
+        "nextAction": "CALL_TOOL",
+        "toolName": "evaluate_actual_scenario",
+        "missingField": null
+      },
+      "plannerReasoningSummary": "Start by evaluating actual residence scenario first.",
+      "selectedTool": "evaluate_actual_scenario",
+      "toolArgumentsSafeSummary": {
+        "city": "新北市",
+        "type": "ACTUAL"
+      },
+      "validationResult": "VALID",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "Actual scenario evaluated for 新北市: PARTIAL_CHECK",
+      "coverageStatus": "COVERED",
+      "eligibilityStatus": "PARTIAL_CHECK",
+      "humanGate": null,
+      "fallbackUsed": false,
+      "provider": "OLLAMA",
+      "latencyMs": 3.677,
+      "finalStatus": "RUNNING_TOOL"
+    },
+    {
+      "timestamp": "2026-11-11T03:03:59.747Z",
+      "runId": "agent-1794366239735-a7e457",
+      "step": 2,
+      "currentStateSummary": {
+        "status": "RUNNING_TOOL",
+        "knownFields": [
+          "ownsHome",
+          "receivesOtherHousingAid",
+          "city",
+          "age",
+          "centralRentApproved",
+          "newTaipeiResidenceStudyWork",
+          "registeredCity"
+        ],
+        "missingFields": [
+          "monthlyIncome"
+        ],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": [
+          "evaluate_actual_scenario",
+          "evaluate_central_rules"
+        ]
+      },
+      "plannerProposal": null,
+      "plannerReasoningSummary": null,
+      "selectedTool": "evaluate_central_rules",
+      "toolArgumentsSafeSummary": {
+        "profileFieldsProvided": [
+          "age",
+          "maritalStatus",
+          "childrenCount",
+          "registeredCity",
+          "ownsHome",
+          "receivesOtherHousingAid",
+          "monthlyIncome",
+          "centralRentApproved",
+          "newTaipeiResidenceStudyWork"
+        ]
+      },
+      "validationResult": "NOT_APPLICABLE",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "Central rules evaluated: PARTIAL_CHECK",
+      "coverageStatus": "COVERED",
+      "eligibilityStatus": "PARTIAL_CHECK",
+      "humanGate": null,
+      "fallbackUsed": false,
+      "provider": "DETERMINISTIC",
+      "latencyMs": 0.402,
+      "finalStatus": "RUNNING_TOOL"
+    },
+    {
+      "timestamp": "2026-11-11T03:03:59.747Z",
+      "runId": "agent-1794366239735-a7e457",
+      "step": 3,
+      "currentStateSummary": {
+        "status": "RUNNING_TOOL",
+        "knownFields": [
+          "ownsHome",
+          "receivesOtherHousingAid",
+          "city",
+          "age",
+          "centralRentApproved",
+          "newTaipeiResidenceStudyWork",
+          "registeredCity"
+        ],
+        "missingFields": [
+          "monthlyIncome"
+        ],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": [
+          "evaluate_actual_scenario",
+          "evaluate_central_rules",
+          "evaluate_what_if_scenario"
+        ]
+      },
+      "plannerProposal": null,
+      "plannerReasoningSummary": null,
+      "selectedTool": "evaluate_what_if_scenario",
+      "toolArgumentsSafeSummary": {
+        "city": "臺北市",
+        "type": "WHAT_IF"
+      },
+      "validationResult": "NOT_APPLICABLE",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "What-if scenario evaluated for 臺北市: PARTIAL_CHECK",
+      "coverageStatus": "COVERED",
+      "eligibilityStatus": "PARTIAL_CHECK",
+      "humanGate": null,
+      "fallbackUsed": false,
+      "provider": "DETERMINISTIC",
+      "latencyMs": 0.279,
+      "finalStatus": "RUNNING_TOOL"
+    },
+    {
+      "timestamp": "2026-11-11T03:03:59.748Z",
+      "runId": "agent-1794366239735-a7e457",
+      "step": 4,
+      "currentStateSummary": {
+        "status": "RUNNING_TOOL",
+        "knownFields": [
+          "ownsHome",
+          "receivesOtherHousingAid",
+          "city",
+          "age",
+          "centralRentApproved",
+          "newTaipeiResidenceStudyWork",
+          "registeredCity"
+        ],
+        "missingFields": [
+          "monthlyIncome"
+        ],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": [
+          "evaluate_actual_scenario",
+          "evaluate_central_rules",
+          "evaluate_what_if_scenario",
+          "get_policy_evidence"
+        ]
+      },
+      "plannerProposal": null,
+      "plannerReasoningSummary": null,
+      "selectedTool": "get_policy_evidence",
+      "toolArgumentsSafeSummary": {
+        "evaluationCount": 2
+      },
+      "validationResult": "NOT_APPLICABLE",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "2 evidence records bound",
+      "coverageStatus": "COVERED",
+      "eligibilityStatus": "PARTIAL_CHECK",
+      "humanGate": null,
+      "fallbackUsed": false,
+      "provider": "DETERMINISTIC",
+      "latencyMs": 0.287,
+      "finalStatus": "RUNNING_TOOL"
+    },
+    {
+      "timestamp": "2026-11-11T03:03:59.748Z",
+      "runId": "agent-1794366239735-a7e457",
+      "step": 1,
+      "currentStateSummary": {
+        "status": "COMPLETED",
+        "knownFields": [
+          "ownsHome",
+          "receivesOtherHousingAid",
+          "city",
+          "age",
+          "centralRentApproved",
+          "newTaipeiResidenceStudyWork",
+          "registeredCity"
+        ],
+        "missingFields": [
+          "monthlyIncome"
+        ],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": [
+          "evaluate_actual_scenario",
+          "evaluate_central_rules",
+          "evaluate_what_if_scenario",
+          "get_policy_evidence"
+        ]
+      },
+      "plannerProposal": null,
+      "plannerReasoningSummary": null,
+      "selectedTool": "complete",
+      "toolArgumentsSafeSummary": {},
+      "validationResult": "NOT_APPLICABLE",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "Workflow completed with eligibilityStatus=PARTIAL_CHECK",
+      "coverageStatus": "COVERED",
+      "eligibilityStatus": "PARTIAL_CHECK",
+      "humanGate": null,
+      "fallbackUsed": false,
+      "provider": "DETERMINISTIC",
+      "latencyMs": 0.049,
+      "finalStatus": "COMPLETED"
+    }
+  ]
+}

@@ -12,6 +12,7 @@ export const agentStatusCopy: Record<AgentStatus, BilingualCopy> = {
   RESUMING: {zh: "繼續執行", en: "Resuming"},
   COMPLETED: {zh: "已完成", en: "Completed"},
   FAILED: {zh: "執行失敗", en: "Failed"},
+  ABORTED: {zh: "已安全中止", en: "Aborted"},
   HUMAN_REVIEW_REQUIRED: {zh: "需要人工審查", en: "Human review required"},
   NOT_COVERED: {zh: "尚未涵蓋", en: "Not covered"},
 };
@@ -25,6 +26,7 @@ export const statusDisplayCopy: Record<AgentStatus, string> = {
   RESUMING: "繼續分析",
   COMPLETED: "分析完成",
   FAILED: "分析未完成",
+  ABORTED: "已安全中止",
   HUMAN_REVIEW_REQUIRED: "需要人工審查",
   NOT_COVERED: "尚未涵蓋",
 };
@@ -97,6 +99,10 @@ export const currentStepCopy: Record<AgentStatus, {title: BilingualCopy; descrip
     title: agentStatusCopy.FAILED,
     description: {zh: "本次執行未能完成，請檢查除錯資訊後重試。", en: "This run could not finish. Check debug details before retrying."},
   },
+  ABORTED: {
+    title: agentStatusCopy.ABORTED,
+    description: {zh: "已達安全步數上限並中止執行。", en: "Execution aborted safely after reaching the step limit."},
+  },
   HUMAN_REVIEW_REQUIRED: {
     title: agentStatusCopy.HUMAN_REVIEW_REQUIRED,
     description: {zh: "政策資料需要人工查核，Agent 已停止確定式判斷。", en: "Policy information needs human review; definitive judgment has paused."},
@@ -114,6 +120,9 @@ export const toolCopy: Record<string, BilingualCopy> = {
   detect_policy_conflict: {zh: "政策衝突檢查", en: "Conflict check"},
   generate_decision_passport: {zh: "產出決策護照", en: "Decision passport"},
   get_policy_evidence: {zh: "取得政策依據", en: "Policy evidence"},
+  request_missing_field: {zh: "請求補充必要欄位", en: "Request missing field"},
+  request_human_confirmation: {zh: "請求人工確認", en: "Request human confirmation"},
+  complete: {zh: "完成導航評估", en: "Complete workflow"},
 };
 
 export const roleCopy: Record<string, BilingualCopy> = {
@@ -161,4 +170,6 @@ export const auditCopy: Record<string, BilingualCopy> = {
   AGENT_RESUMED: {zh: "恢復代理執行", en: "Agent resumed"},
   AGENT_COMPLETED: {zh: "代理執行完成", en: "Agent completed"},
   AGENT_NOT_COVERED: {zh: "超出目前涵蓋範圍", en: "Outside coverage boundary"},
+  AGENT_PROPOSAL_REJECTED: {zh: "拒絕不安全規劃提案", en: "Proposal rejected"},
+  AGENT_HUMAN_INPUT_INVALID: {zh: "人工輸入格式無效", en: "Invalid human input"},
 };

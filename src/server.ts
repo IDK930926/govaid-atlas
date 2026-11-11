@@ -1,15 +1,83 @@
 import { readFile, stat } from "node:fs/promises";
-import { createServer } from "node:http";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { extname, relative, resolve, sep } from "node:path";
 import { URL } from "node:url";
 
-import { callPlanner, getProviderHealth, getOllamaModel } from "./agent/client";
+import { callPlanner, getProviderHealth, getOllamaModel, DEFAULT_PROVIDER_TIMEOUT_MS } from "./agent/client";
 import { buildSafePlan } from "./agent/orchestrator";
 import { listAllowedTools } from "./agent/tools";
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = "127.0.0.1";
 const DIST_DIR = resolve(__dirname, "../dist");
+
+export const MAX_REQUEST_BODY_BYTES = 16 * 1024; // 16 KB
+export const MAX_GOAL_LENGTH = 800; // characters
+export const RATE_LIMIT_WINDOW_MS = 60_000; // 60 seconds
+export const RATE_LIMIT_MAX_REQUESTS = 20;
+
+let configuredRateLimitMax = RATE_LIMIT_MAX_REQUESTS;
+
+type RateBucket = {
+  count: number;
+  resetAt: number;
+};
+
+const rateLimitBuckets = new Map<string, RateBucket>();
+
+export function resetRateLimiter(): void {
+  rateLimitBuckets.clear();
+  configuredRateLimitMax = RATE_LIMIT_MAX_REQUESTS;
+}
+
+export function setRateLimitMaxRequests(limit: number): void {
+  configuredRateLimitMax = limit;
+}
+
+export function checkRateLimit(
+  clientKey: string,
+  now = Date.now()
+): { allowed: boolean; remaining: number; retryAfterSeconds: number } {
+  const existing = rateLimitBuckets.get(clientKey);
+  if (!existing || now >= existing.resetAt) {
+    rateLimitBuckets.set(clientKey, {
+      count: 1,
+      resetAt: now + RATE_LIMIT_WINDOW_MS,
+    });
+    return {
+      allowed: true,
+      remaining: Math.max(0, configuredRateLimitMax - 1),
+      retryAfterSeconds: 0,
+    };
+  }
+
+  if (existing.count >= configuredRateLimitMax) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
+    return {
+      allowed: false,
+      remaining: 0,
+      retryAfterSeconds,
+    };
+  }
+
+  existing.count += 1;
+  return {
+    allowed: true,
+    remaining: Math.max(0, configuredRateLimitMax - existing.count),
+    retryAfterSeconds: 0,
+  };
+}
+
+class ApiHttpError extends Error {
+  readonly statusCode: number;
+  readonly errorCode: string;
+
+  constructor(statusCode: number, errorCode: string, message: string) {
+    super(message);
+    this.statusCode = statusCode;
+    this.errorCode = errorCode;
+  }
+}
 
 const MIME_TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
@@ -25,29 +93,72 @@ const MIME_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
-async function readBody(request: import("node:http").IncomingMessage): Promise<unknown> {
+function sendJson(
+  response: ServerResponse,
+  statusCode: number,
+  body: Record<string, unknown>,
+  extraHeaders?: Record<string, string>
+): void {
+  response.writeHead(statusCode, {
+    "Content-Type": "application/json; charset=utf-8",
+    ...extraHeaders,
+  });
+  response.end(JSON.stringify(body));
+}
+
+async function readBody(
+  request: IncomingMessage,
+  maxBytes = MAX_REQUEST_BODY_BYTES
+): Promise<Record<string, unknown>> {
+  const declaredLength = Number(request.headers?.["content-length"]);
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new ApiHttpError(
+      413,
+      "PAYLOAD_TOO_LARGE",
+      `Request body exceeds maximum size of ${maxBytes} bytes.`
+    );
+  }
+
   if (!request.readable) {
     return {};
   }
 
   const chunks: Buffer[] = [];
+  let totalBytes = 0;
+
   for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+    totalBytes += buf.byteLength;
+    if (totalBytes > maxBytes) {
+      throw new ApiHttpError(
+        413,
+        "PAYLOAD_TOO_LARGE",
+        `Request body exceeds maximum size of ${maxBytes} bytes.`
+      );
+    }
+    chunks.push(buf);
   }
 
-  const raw = Buffer.concat(chunks).toString("utf8");
+  const raw = Buffer.concat(chunks).toString("utf8").trim();
   if (!raw) {
     return {};
   }
 
+  let parsed: unknown;
   try {
-    return JSON.parse(raw);
+    parsed = JSON.parse(raw);
   } catch {
-    return {};
+    throw new ApiHttpError(400, "INVALID_JSON_BODY", "Request body must be valid JSON.");
   }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new ApiHttpError(400, "INVALID_BODY_OBJECT", "Request body must be a JSON object.");
+  }
+
+  return parsed as Record<string, unknown>;
 }
 
-async function serveStatic(request: import("node:http").IncomingMessage, response: import("node:http").ServerResponse, pathname: string): Promise<void> {
+async function serveStatic(request: IncomingMessage, response: ServerResponse, pathname: string): Promise<void> {
   if (request.method !== "GET" && request.method !== "HEAD") {
     response.writeHead(405, { Allow: "GET, HEAD" });
     response.end();
@@ -106,46 +217,117 @@ async function serveStatic(request: import("node:http").IncomingMessage, respons
   response.end(request.method === "HEAD" ? undefined : content);
 }
 
-async function handleRequest(request: import("node:http").IncomingMessage, response: import("node:http").ServerResponse): Promise<void> {
+function getClientIp(request: IncomingMessage): string {
+  return request.socket?.remoteAddress ?? "127.0.0.1";
+}
+
+export async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     const health = await getProviderHealth();
-    response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(
-      JSON.stringify({
-        ok: health.providerStatus === "AVAILABLE",
-        provider: health.provider,
-        providerStatus: health.providerStatus,
-        model: health.model ?? getOllamaModel(),
-        status: health.providerStatus === "AVAILABLE" ? "configured" : "provider_unavailable",
-        error: health.error ?? null,
-        timestamp: new Date().toISOString(),
-      })
-    );
+    sendJson(response, 200, {
+      ok: health.providerStatus === "AVAILABLE",
+      provider: health.provider,
+      providerStatus: health.providerStatus,
+      model: health.model ?? getOllamaModel(),
+      status: health.providerStatus === "AVAILABLE" ? "configured" : "provider_unavailable",
+      error: health.error ?? null,
+      timestamp: new Date().toISOString(),
+    });
     return;
   }
 
   if (request.method === "POST" && url.pathname === "/api/agent/plan") {
-    const body = (await readBody(request)) as {
-      goal?: string;
-      profile?: Record<string, unknown>;
-    };
+    const clientIp = getClientIp(request);
+    const rateStatus = checkRateLimit(clientIp);
+    if (!rateStatus.allowed) {
+      sendJson(
+        response,
+        429,
+        {
+          ok: false,
+          errorCode: "RATE_LIMIT_EXCEEDED",
+          error: "Too many requests. Please wait before retrying.",
+          retryAfterSeconds: rateStatus.retryAfterSeconds,
+        },
+        { "Retry-After": String(rateStatus.retryAfterSeconds) }
+      );
+      return;
+    }
 
-    const goal = body.goal ?? "Compare rental subsidy options.";
+    let body: Record<string, unknown>;
+    try {
+      body = await readBody(request, MAX_REQUEST_BODY_BYTES);
+    } catch (error) {
+      if (error instanceof ApiHttpError) {
+        sendJson(response, error.statusCode, {
+          ok: false,
+          errorCode: error.errorCode,
+          error: error.message,
+        });
+        return;
+      }
+      throw error;
+    }
+
+    if (body.goal !== undefined && typeof body.goal !== "string") {
+      sendJson(response, 400, {
+        ok: false,
+        errorCode: "INVALID_GOAL_TYPE",
+        error: "Field 'goal' must be a string.",
+      });
+      return;
+    }
+
+    const rawGoal = typeof body.goal === "string" ? body.goal : "Compare rental subsidy options.";
+    const trimmedGoal = rawGoal.trim();
+    if (!trimmedGoal) {
+      sendJson(response, 400, {
+        ok: false,
+        errorCode: "EMPTY_GOAL",
+        error: "Field 'goal' must not be empty.",
+      });
+      return;
+    }
+
+    if (rawGoal.length > MAX_GOAL_LENGTH) {
+      sendJson(response, 400, {
+        ok: false,
+        errorCode: "GOAL_TOO_LONG",
+        error: `Field 'goal' exceeds maximum length of ${MAX_GOAL_LENGTH} characters.`,
+      });
+      return;
+    }
+
+    if (
+      body.profile !== undefined &&
+      (typeof body.profile !== "object" || body.profile === null || Array.isArray(body.profile))
+    ) {
+      sendJson(response, 400, {
+        ok: false,
+        errorCode: "INVALID_PROFILE",
+        error: "Field 'profile' must be a JSON object.",
+      });
+      return;
+    }
+
     const allowlistedTools = listAllowedTools();
-    const defaultPlan = buildSafePlan(goal);
+    const defaultPlan = buildSafePlan(trimmedGoal);
+    const timeoutMs = Number(process.env.AGENT_PROVIDER_TIMEOUT_MS ?? DEFAULT_PROVIDER_TIMEOUT_MS);
 
     const llmResult = await callPlanner({
-      goal,
+      goal: trimmedGoal,
       availableTools: allowlistedTools,
+      timeoutMs,
     });
 
     const responseBody = {
+      ok: true,
       provider: llmResult.provider,
       providerStatus: llmResult.providerStatus,
       model: llmResult.model,
-      goal,
+      goal: trimmedGoal,
       plan: defaultPlan,
       allowedTools: allowlistedTools,
       decision: llmResult.decision ?? {
@@ -153,7 +335,7 @@ async function handleRequest(request: import("node:http").IncomingMessage, respo
         nextAction: "CALL_TOOL",
         toolName: "evaluate_central_rules",
         toolArguments: {
-          profile: body.profile ?? {},
+          profile: (body.profile as Record<string, unknown> | undefined) ?? {},
         },
       },
       metadata: {
@@ -164,8 +346,7 @@ async function handleRequest(request: import("node:http").IncomingMessage, respo
       },
     };
 
-    response.writeHead(200, { "Content-Type": "application/json" });
-    response.end(JSON.stringify(responseBody));
+    sendJson(response, 200, responseBody);
     return;
   }
 
@@ -174,11 +355,10 @@ async function handleRequest(request: import("node:http").IncomingMessage, respo
     return;
   }
 
-  response.writeHead(404, { "Content-Type": "application/json" });
-  response.end(JSON.stringify({ ok: false, error: "Not found" }));
+  sendJson(response, 404, { ok: false, errorCode: "NOT_FOUND", error: "Not found" });
 }
 
-const server = createServer((request, response) => {
+export const server = createServer((request, response) => {
   void handleRequest(request, response).catch((error: unknown) => {
     console.error("Request failed", error);
     if (response.headersSent) {
@@ -186,11 +366,16 @@ const server = createServer((request, response) => {
       return;
     }
 
-    response.writeHead(500, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ ok: false, error: "Internal server error" }));
+    sendJson(response, 500, {
+      ok: false,
+      errorCode: "INTERNAL_SERVER_ERROR",
+      error: "Internal server error",
+    });
   });
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`GovAid Atlas production preview listening on http://${HOST}:${PORT}`);
-});
+if (typeof require !== "undefined" && require.main === module) {
+  server.listen(PORT, HOST, () => {
+    console.log(`GovAid Atlas production preview listening on http://${HOST}:${PORT}`);
+  });
+}

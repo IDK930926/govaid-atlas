@@ -1,4 +1,5 @@
 import type { CoverageAssessment } from "../coverage";
+import type { AddressScenario, ApplicantProfile, EligibilityStatus } from "../types";
 
 export type AgentStatus =
   | "IDLE"
@@ -8,6 +9,7 @@ export type AgentStatus =
   | "RESUMING"
   | "COMPLETED"
   | "FAILED"
+  | "ABORTED"
   | "HUMAN_REVIEW_REQUIRED"
   | "NOT_COVERED";
 
@@ -17,7 +19,20 @@ export type AgentToolName =
   | "evaluate_what_if_scenario"
   | "detect_policy_conflict"
   | "generate_decision_passport"
-  | "get_policy_evidence";
+  | "get_policy_evidence"
+  | "request_missing_field"
+  | "request_human_confirmation"
+  | "complete";
+
+export type SupportedMissingField =
+  | "ownsHome"
+  | "receivesOtherHousingAid"
+  | "city"
+  | "monthlyIncome"
+  | "age"
+  | "centralRentApproved"
+  | "newTaipeiResidenceStudyWork"
+  | "registeredCity";
 
 export type AgentDecisionAction =
   | "CALL_TOOL"
@@ -31,6 +46,7 @@ export type AgentDecision = {
   toolName?: AgentToolName;
   toolArguments?: unknown;
   humanQuestion?: string;
+  missingField?: SupportedMissingField;
 };
 
 export type ToolExecutionResult = {
@@ -50,8 +66,72 @@ export type AgentAuditEvent = {
   policyVersion?: string;
 };
 
+export type AgentTraceStateSummary = {
+  status: string;
+  knownFields: string[];
+  missingFields: string[];
+  actualCity?: string;
+  whatIfCity?: string;
+  completedTools: string[];
+};
+
+export type AgentTraceHumanGate = {
+  triggered: boolean;
+  missingField?: string;
+  question?: string;
+  beforeState?: Record<string, unknown>;
+  userResponse?: string | number | boolean;
+  validatedUpdate?: {
+    field: string;
+    value: unknown;
+    valid: boolean;
+    error?: string;
+  };
+  afterState?: Record<string, unknown>;
+  nextPlannerAction?: string;
+};
+
+export type AgentTraceEvent = {
+  timestamp: string;
+  runId: string;
+  step: number;
+  currentStateSummary: AgentTraceStateSummary;
+  plannerProposal: {
+    nextAction?: string;
+    toolName?: string;
+    missingField?: string;
+  } | null;
+  plannerReasoningSummary: string | null;
+  selectedTool: string | null;
+  toolArgumentsSafeSummary: Record<string, unknown> | null;
+  validationResult: "VALID" | "REJECTED" | "NOT_APPLICABLE";
+  proposalRejected: boolean;
+  rejectionReason: string | null;
+  toolResultSummary: string | null;
+  coverageStatus: "COVERED" | "NOT_COVERED" | "MISSING";
+  eligibilityStatus: EligibilityStatus | "HUMAN_REVIEW_REQUIRED" | null;
+  humanGate: AgentTraceHumanGate | null;
+  fallbackUsed: boolean;
+  provider: string;
+  latencyMs: number;
+  finalStatus: string;
+};
+
+export type AgentWorkflowState = {
+  applicant: ApplicantProfile;
+  actualScenario: AddressScenario;
+  whatIfScenario: AddressScenario;
+  requiredFields: SupportedMissingField[];
+  completedTools: AgentToolName[];
+  centralStatus?: EligibilityStatus;
+  actualStatus?: EligibilityStatus;
+  whatIfStatus?: EligibilityStatus;
+  overallEligibilityStatus?: EligibilityStatus | "HUMAN_REVIEW_REQUIRED";
+};
+
 export type AgentRun = {
   id: string;
+  runId: string;
   status: AgentStatus;
   goal: string;
   currentStep: string;
@@ -62,8 +142,11 @@ export type AgentRun = {
   lastDecision?: AgentDecision;
   toolResult?: ToolExecutionResult;
   humanInputRequired?: string;
+  missingField?: SupportedMissingField;
   providerStatus: "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN";
   errorCode?: string;
   coverage?: CoverageAssessment;
+  state?: AgentWorkflowState;
   auditTrail: AgentAuditEvent[];
+  trace: AgentTraceEvent[];
 };

@@ -14,6 +14,7 @@ export type ProviderPlannerInput = {
   goal: string;
   availableTools: string[];
   structuredSchema?: unknown;
+  timeoutMs?: number;
 };
 
 export type ProviderPlannerResult = {
@@ -64,6 +65,9 @@ export const ALLOWED_AGENT_TOOL_NAMES = [
   "detect_policy_conflict",
   "generate_decision_passport",
   "get_policy_evidence",
+  "request_missing_field",
+  "request_human_confirmation",
+  "complete",
 ] as const;
 
 export function validateStructuredAgentDecision(value: unknown): value is AgentDecision {

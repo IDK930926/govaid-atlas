@@ -1,0 +1,54 @@
+{
+  "schemaVersion": "wave2-trace-v1",
+  "runId": "trace-d-not-covered",
+  "exportedAt": "2026-11-11T03:03:59.801Z",
+  "goalSummary": "請問 1 歲幼兒的育兒津貼與托育補助怎麼申請？",
+  "maxSteps": 8,
+  "stepsTaken": 0,
+  "finalStatus": "NOT_COVERED",
+  "finalEligibilityStatus": "NOT_COVERED",
+  "coverageStatus": "NOT_COVERED",
+  "events": [
+    {
+      "timestamp": "2026-11-11T03:03:59.800Z",
+      "runId": "agent-1794366239799-d1ea98",
+      "step": 1,
+      "currentStateSummary": {
+        "status": "NOT_COVERED",
+        "knownFields": [
+          "ownsHome",
+          "receivesOtherHousingAid",
+          "city",
+          "age",
+          "centralRentApproved",
+          "newTaipeiResidenceStudyWork",
+          "registeredCity"
+        ],
+        "missingFields": [
+          "monthlyIncome"
+        ],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": []
+      },
+      "plannerProposal": {
+        "nextAction": "CALL_TOOL",
+        "toolName": "evaluate_central_rules"
+      },
+      "plannerReasoningSummary": "Try calling central rental rules on childcare query.",
+      "selectedTool": null,
+      "toolArgumentsSafeSummary": null,
+      "validationResult": "REJECTED",
+      "proposalRejected": true,
+      "rejectionReason": "QUERY_OUTSIDE_COVERAGE: CHILDCARE_POLICY_NOT_IMPLEMENTED",
+      "toolResultSummary": "目前版本尚未涵蓋育兒／托育相關補助，因此無法作成資格判定。這不代表您無法申請，請以主管機關官方公告為準。",
+      "coverageStatus": "NOT_COVERED",
+      "eligibilityStatus": "NOT_COVERED",
+      "humanGate": null,
+      "fallbackUsed": true,
+      "provider": "OLLAMA",
+      "latencyMs": 0,
+      "finalStatus": "NOT_COVERED"
+    }
+  ]
+}

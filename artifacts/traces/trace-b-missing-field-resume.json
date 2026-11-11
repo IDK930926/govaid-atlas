@@ -1,0 +1,187 @@
+{
+  "schemaVersion": "wave2-trace-v1",
+  "runId": "trace-b-missing-field-resume",
+  "exportedAt": "2026-11-11T03:03:59.783Z",
+  "goalSummary": "我想查詢租屋補助，但尚未填寫月所得",
+  "maxSteps": 8,
+  "stepsTaken": 2,
+  "finalStatus": "COMPLETED",
+  "finalEligibilityStatus": "PARTIAL_CHECK",
+  "coverageStatus": "COVERED",
+  "events": [
+    {
+      "timestamp": "2026-11-11T03:03:59.779Z",
+      "runId": "agent-1794366239779-5b2bd6",
+      "step": 1,
+      "currentStateSummary": {
+        "status": "WAITING_FOR_HUMAN",
+        "knownFields": [
+          "ownsHome",
+          "receivesOtherHousingAid",
+          "city",
+          "age",
+          "centralRentApproved",
+          "newTaipeiResidenceStudyWork",
+          "registeredCity"
+        ],
+        "missingFields": [
+          "monthlyIncome"
+        ],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": []
+      },
+      "plannerProposal": null,
+      "plannerReasoningSummary": null,
+      "selectedTool": "request_missing_field",
+      "toolArgumentsSafeSummary": {
+        "field": "monthlyIncome"
+      },
+      "validationResult": "NOT_APPLICABLE",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "Missing field requested: monthlyIncome",
+      "coverageStatus": "COVERED",
+      "eligibilityStatus": "UNCERTAIN",
+      "humanGate": {
+        "triggered": true,
+        "missingField": "monthlyIncome",
+        "question": "請問您的家庭平均月所得約是多少？",
+        "beforeState": {
+          "age": 20,
+          "registeredCity": "臺北市",
+          "ownsHome": false,
+          "receivesOtherHousingAid": false,
+          "monthlyIncomeProvided": false,
+          "centralRentApproved": true,
+          "newTaipeiResidenceStudyWork": true,
+          "actualCity": "新北市"
+        }
+      },
+      "fallbackUsed": false,
+      "provider": "DETERMINISTIC",
+      "latencyMs": 0.284,
+      "finalStatus": "WAITING_FOR_HUMAN"
+    },
+    {
+      "timestamp": "2026-11-11T03:03:59.781Z",
+      "runId": "trace-b-missing-field-resume",
+      "step": 2,
+      "currentStateSummary": {
+        "status": "RESUMING",
+        "knownFields": [
+          "ownsHome",
+          "receivesOtherHousingAid",
+          "city",
+          "monthlyIncome",
+          "age",
+          "centralRentApproved",
+          "newTaipeiResidenceStudyWork",
+          "registeredCity"
+        ],
+        "missingFields": [],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": []
+      },
+      "plannerProposal": {
+        "nextAction": "CALL_TOOL",
+        "toolName": "evaluate_central_rules"
+      },
+      "plannerReasoningSummary": "Validated user update for monthlyIncome; resuming deterministic evaluation.",
+      "selectedTool": "evaluate_central_rules",
+      "toolArgumentsSafeSummary": {
+        "updatedField": "monthlyIncome"
+      },
+      "validationResult": "VALID",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "State updated for monthlyIncome",
+      "coverageStatus": "COVERED",
+      "eligibilityStatus": "UNCERTAIN",
+      "humanGate": {
+        "triggered": true,
+        "missingField": "monthlyIncome",
+        "question": "請問您的家庭平均月所得約是多少？",
+        "beforeState": {
+          "age": 20,
+          "registeredCity": "臺北市",
+          "ownsHome": false,
+          "receivesOtherHousingAid": false,
+          "monthlyIncomeProvided": false,
+          "centralRentApproved": true,
+          "newTaipeiResidenceStudyWork": true,
+          "actualCity": "新北市"
+        },
+        "userResponse": 28000,
+        "validatedUpdate": {
+          "field": "monthlyIncome",
+          "value": 28000,
+          "valid": true
+        },
+        "afterState": {
+          "age": 20,
+          "registeredCity": "臺北市",
+          "ownsHome": false,
+          "receivesOtherHousingAid": false,
+          "monthlyIncomeProvided": true,
+          "centralRentApproved": true,
+          "newTaipeiResidenceStudyWork": true,
+          "actualCity": "新北市"
+        },
+        "nextPlannerAction": "CALL_TOOL:evaluate_central_rules"
+      },
+      "fallbackUsed": false,
+      "provider": "HUMAN_GATE",
+      "latencyMs": 0,
+      "finalStatus": "RESUMING"
+    },
+    {
+      "timestamp": "2026-11-11T03:03:59.783Z",
+      "runId": "trace-b-missing-field-resume",
+      "step": 3,
+      "currentStateSummary": {
+        "status": "COMPLETED",
+        "knownFields": [
+          "ownsHome",
+          "receivesOtherHousingAid",
+          "city",
+          "monthlyIncome",
+          "age",
+          "centralRentApproved",
+          "newTaipeiResidenceStudyWork",
+          "registeredCity"
+        ],
+        "missingFields": [],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": [
+          "evaluate_central_rules",
+          "evaluate_actual_scenario",
+          "evaluate_what_if_scenario",
+          "get_policy_evidence",
+          "generate_decision_passport"
+        ]
+      },
+      "plannerProposal": {
+        "nextAction": "COMPLETE"
+      },
+      "plannerReasoningSummary": "A missing field was resolved by a human, and deterministic evaluation resumed successfully.",
+      "selectedTool": "generate_decision_passport",
+      "toolArgumentsSafeSummary": {
+        "caseId": "CASE-P0-001"
+      },
+      "validationResult": "VALID",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "Decision passport generated for CASE-P0-001",
+      "coverageStatus": "COVERED",
+      "eligibilityStatus": "PARTIAL_CHECK",
+      "humanGate": null,
+      "fallbackUsed": false,
+      "provider": "DETERMINISTIC",
+      "latencyMs": 0,
+      "finalStatus": "COMPLETED"
+    }
+  ]
+}

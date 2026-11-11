@@ -6,10 +6,11 @@ import { evaluateScenario } from "../scenario";
 import { evaluateRules, getOverallStatus } from "../rules";
 import { aggregateEligibilityStatus, toEligibilityStatus } from "../status";
 import { getPolicyCompleteness, PARTIAL_CHECK_NOTE } from "../coverage";
+import { detectMissingFields, getQuestionForMissingField, isSupportedMissingField } from "./missing-fields";
 import centralRulesJson from "../policies/central-rent-115.json";
 import taipeiRulesJson from "../policies/taipei-rent-115.json";
 import newTaipeiRulesJson from "../policies/new-taipei-rent-115.json";
-import type { AgentToolName, ToolExecutionResult } from "./types";
+import type { AgentToolName, SupportedMissingField, ToolExecutionResult } from "./types";
 
 const centralRules = centralRulesJson as PolicyRule[];
 const taipeiRules = taipeiRulesJson as PolicyRule[];
@@ -22,6 +23,9 @@ export const ALLOWED_TOOLS: AgentToolName[] = [
   "detect_policy_conflict",
   "generate_decision_passport",
   "get_policy_evidence",
+  "request_missing_field",
+  "request_human_confirmation",
+  "complete",
 ];
 
 export function listAllowedTools(): AgentToolName[] {
@@ -155,6 +159,68 @@ export function callTool(
         status: evidence.length > 0 ? "PASS" : "UNCERTAIN",
         summary: `${evidence.length} evidence records bound`,
         result: evidence,
+      };
+    }
+
+    case "request_missing_field": {
+      const profile = (argumentsObject?.profile ?? {}) as ApplicantProfile;
+      const scenario = (argumentsObject?.scenario ?? undefined) as AddressScenario | undefined;
+      const requestedField = argumentsObject?.field;
+      const detected = detectMissingFields(profile, scenario, [
+        "ownsHome",
+        "receivesOtherHousingAid",
+        "city",
+        "monthlyIncome",
+        "age",
+        "centralRentApproved",
+        "newTaipeiResidenceStudyWork",
+        "registeredCity",
+      ]);
+      const field: SupportedMissingField = isSupportedMissingField(requestedField)
+        ? requestedField
+        : detected[0] ?? "ownsHome";
+      const question = getQuestionForMissingField(field);
+      return {
+        toolName,
+        ok: true,
+        status: "UNCERTAIN",
+        summary: `Missing field requested: ${field}`,
+        result: {
+          missingField: field,
+          question,
+        },
+      };
+    }
+
+    case "request_human_confirmation": {
+      const requestedField = argumentsObject?.field;
+      const field: SupportedMissingField = isSupportedMissingField(requestedField) ? requestedField : "ownsHome";
+      const question =
+        typeof argumentsObject?.question === "string" && argumentsObject.question.trim()
+          ? argumentsObject.question.trim()
+          : getQuestionForMissingField(field);
+      return {
+        toolName,
+        ok: true,
+        status: "UNCERTAIN",
+        summary: `Human confirmation requested for ${field}`,
+        result: {
+          missingField: field,
+          question,
+        },
+      };
+    }
+
+    case "complete": {
+      return {
+        toolName,
+        ok: true,
+        // Completion marker never upgrades eligibility to PASS on its own.
+        status: "PARTIAL_CHECK",
+        summary: "Workflow completion requested",
+        result: {
+          completed: true,
+        },
       };
     }
 
