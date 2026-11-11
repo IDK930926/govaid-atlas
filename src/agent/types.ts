@@ -1,3 +1,5 @@
+import type { CoverageAssessment } from "../coverage";
+
 export type AgentStatus =
   | "IDLE"
   | "PLANNING"
@@ -6,7 +8,8 @@ export type AgentStatus =
   | "RESUMING"
   | "COMPLETED"
   | "FAILED"
-  | "HUMAN_REVIEW_REQUIRED";
+  | "HUMAN_REVIEW_REQUIRED"
+  | "NOT_COVERED";
 
 export type AgentToolName =
   | "evaluate_central_rules"
@@ -33,7 +36,7 @@ export type AgentDecision = {
 export type ToolExecutionResult = {
   toolName: string;
   ok: boolean;
-  status: "PASS" | "FAIL" | "UNCERTAIN" | "HUMAN_REVIEW_REQUIRED";
+  status: "PASS" | "FAIL" | "UNCERTAIN" | "PARTIAL_CHECK" | "NOT_COVERED" | "HUMAN_REVIEW_REQUIRED";
   summary: string;
   result?: unknown;
 };
@@ -61,5 +64,6 @@ export type AgentRun = {
   humanInputRequired?: string;
   providerStatus: "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN";
   errorCode?: string;
+  coverage?: CoverageAssessment;
   auditTrail: AgentAuditEvent[];
 };

@@ -42,6 +42,7 @@ import type {
   AddressScenario,
   ApplicantProfile,
   AuditEvent,
+  EligibilityStatus,
   PolicyRule,
   RuleEvaluation,
 } from "./types";
@@ -124,7 +125,7 @@ const sensitiveProfile: SensitiveProfile = {
 
 type Phase = "START" | "ANALYZE" | "DECIDE";
 type GovernanceTab = "SAFETY" | "AUDIT" | "RUNTIME" | "EVAL";
-type ResultStatus = "PASS" | "FAIL" | "UNCERTAIN";
+type ResultStatus = EligibilityStatus;
 
 function getCompletedToolResult<T>(run: AgentRun, toolName: string): T | null {
   const completed = [...run.auditTrail].reverse().find((event) => {
@@ -653,7 +654,8 @@ function workflowIndex(status: AgentStatus, running: boolean): number {
   switch (status) {
     case "IDLE": return 0;
     case "WAITING_FOR_HUMAN":
-    case "HUMAN_REVIEW_REQUIRED": return 2;
+    case "HUMAN_REVIEW_REQUIRED":
+    case "NOT_COVERED": return 2;
     case "COMPLETED": return 4;
     default: return 1;
   }
@@ -661,7 +663,7 @@ function workflowIndex(status: AgentStatus, running: boolean): number {
 
 function WorkflowProgress({status, running}: {status: AgentStatus; running: boolean}) {
   const current = workflowIndex(status, running);
-  const failed = status === "FAILED" && !running;
+  const failed = (status === "FAILED" || status === "NOT_COVERED") && !running;
   const allDone = status === "COMPLETED";
   return (
     <nav className="progress" aria-label="分析進度">
@@ -850,7 +852,7 @@ function buildJourney(run: AgentRun, running: boolean): JourneyStep[] {
     {key: "passport", zh: "決策護照", en: "Decision", state: toolCompleted(run, "generate_decision_passport") ? "DONE" : "PENDING"},
   ];
 
-  if (status === "FAILED") {
+  if (status === "FAILED" || status === "NOT_COVERED") {
     const blocked = steps.find((step) => step.state !== "DONE");
     if (blocked) {
       blocked.state = "BLOCKED";
@@ -972,6 +974,19 @@ function CurrentAction({
     );
   }
 
+  if (status === "NOT_COVERED") {
+    return (
+      <article className="action-card gate" aria-labelledby="action-title">
+        <p className="gate-eyebrow">涵蓋範圍邊界 <span lang="en">Coverage Boundary</span></p>
+        <h2 id="action-title" ref={headingRef} tabIndex={-1} className="gate-question">
+          {run.coverage?.message ?? "目前版本尚未完整涵蓋此類補助，因此無法作成完整資格判定。"}
+        </h2>
+        <p className="gate-why">系統不會在缺少政策規則時猜測或宣稱符合資格，亦不代表您無法申請。請以主管機關官方公告為準。</p>
+        <div className="gate-actions"><button className="secondary" type="button" onClick={onReset}>重新開始</button></div>
+      </article>
+    );
+  }
+
   if (status === "FAILED") {
     return (
       <article className="action-card is-failed" aria-labelledby="action-title">
@@ -1076,6 +1091,7 @@ const policyLabels: Record<string, {name: string; short: string; detail: string}
   CENTRAL_RENT_115: {name: "中央租屋補助", short: "中央方案", detail: "中央擴大租金補貼（115年度）"},
   NEW_TAIPEI_RENT_115: {name: "新北地方方案", short: "新北方案", detail: "新北市青年租金補貼（115年度）"},
   TAIPEI_RENT_115: {name: "臺北地方方案", short: "臺北方案", detail: "臺北幸福租－租金加碼補貼（115年度）"},
+  LOCAL_COVERAGE_BOUNDARY: {name: "地方方案涵蓋範圍", short: "地方方案", detail: "地方租屋補助涵蓋邊界檢查"},
 };
 
 const fieldLabels: Record<string, string> = {
@@ -1126,7 +1142,11 @@ function buildVerdicts(passport: DecisionPassport): ProgramVerdict[] {
         byPolicy.set(program.policyId, []);
         order.push(program.policyId);
       }
-      byPolicy.get(program.policyId)!.push({label: scenario.label, status: program.status, gap: describeGap(program.ruleResults)});
+      byPolicy.get(program.policyId)!.push({
+        label: scenario.label,
+        status: program.status,
+        gap: describeGap(program.ruleResults) ?? program.coverageNote ?? null,
+      });
     }
   }
 
@@ -1145,7 +1165,13 @@ function buildVerdicts(passport: DecisionPassport): ProgramVerdict[] {
   });
 }
 
-const statusGlyph: Record<ResultStatus, string> = {PASS: "✓", UNCERTAIN: "?", FAIL: "✕"};
+const statusGlyph: Record<ResultStatus, string> = {
+  PASS: "✓",
+  PARTIAL_CHECK: "◐",
+  UNCERTAIN: "?",
+  NOT_COVERED: "—",
+  FAIL: "✕",
+};
 
 // Status is carried by glyph + word, never by color alone.
 function ResultBadge({status, size = "md", showEn = false}: {status: ResultStatus; size?: "md" | "lg"; showEn?: boolean}) {
@@ -1177,8 +1203,8 @@ function ResultView({
   onOpenGovernance: () => void;
 }) {
   const verdicts = buildVerdicts(passport);
-  const certain = verdicts.filter((verdict) => verdict.status !== "UNCERTAIN");
-  const pending = verdicts.filter((verdict) => verdict.status === "UNCERTAIN");
+  const certain = verdicts.filter((verdict) => verdict.status === "PASS" || verdict.status === "FAIL");
+  const pending = verdicts.filter((verdict) => verdict.status !== "PASS" && verdict.status !== "FAIL");
   const resumeIndex = run.auditTrail.findIndex((event) => event.action === "AGENT_RESUMED");
   const toolsAfterResume = run.auditTrail
     .slice(Math.max(resumeIndex, 0))
@@ -1331,14 +1357,26 @@ function CompareCell({result, kind}: {result: ScenarioResult; kind: PolicyKind})
   if (!policy) {
     return <span role="cell" className="ct-cell muted">—</span>;
   }
-  const gap = policy.overallStatus === "PASS" ? null : describeGap(policy.evaluations);
+  const status = policy.eligibilityStatus;
+  const gap = status === "PASS"
+    ? null
+    : status === "PARTIAL_CHECK"
+      ? "僅完成已編碼條件預審；所得、年齡、家戶等條件待核對"
+      : status === "NOT_COVERED"
+        ? (policy.coverageNote ?? "目前版本尚未完整涵蓋")
+        : (describeGap(policy.evaluations) ?? policy.coverageNote ?? null);
+  const prefix = status === "FAIL"
+    ? "不符合："
+    : status === "NOT_COVERED"
+      ? "尚未涵蓋："
+      : "待確認：";
   return (
     <span role="cell" className="ct-cell">
       <span className="ct-policy">
         {kind === "local" && <span className="ct-policy-name">{policyLabels[policy.policyId]?.short ?? policy.policyId}</span>}
-        <ResultBadge status={policy.overallStatus}/>
+        <ResultBadge status={status}/>
       </span>
-      {gap && <small className="ct-gap">{policy.overallStatus === "UNCERTAIN" ? "待確認：" : "不符合："}{gap}</small>}
+      {gap && <small className="ct-gap">{prefix}{gap}</small>}
     </span>
   );
 }

@@ -4,6 +4,8 @@ import { bindEvidence } from "../evidence";
 import { detectConflicts, syntheticConflictClaims } from "../conflict";
 import { evaluateScenario } from "../scenario";
 import { evaluateRules, getOverallStatus } from "../rules";
+import { aggregateEligibilityStatus, toEligibilityStatus } from "../status";
+import { getPolicyCompleteness, PARTIAL_CHECK_NOTE } from "../coverage";
 import centralRulesJson from "../policies/central-rent-115.json";
 import taipeiRulesJson from "../policies/taipei-rent-115.json";
 import newTaipeiRulesJson from "../policies/new-taipei-rent-115.json";
@@ -51,14 +53,22 @@ export function callTool(
       const profile = (argumentsObject?.profile ?? {}) as ApplicantProfile;
       const evaluations = evaluateRules(centralRules, profile);
       const overallStatus = getOverallStatus(evaluations);
+      // Central rules encode only a subset of official conditions, so a rule-level
+      // PASS is reported as PARTIAL_CHECK, never as a complete PASS.
+      const eligibilityStatus = toEligibilityStatus(
+        overallStatus,
+        getPolicyCompleteness("CENTRAL_RENT_115")
+      );
       return {
         toolName,
         ok: true,
-        status: overallStatus,
-        summary: `Central rules evaluated: ${overallStatus}`,
+        status: eligibilityStatus,
+        summary: `Central rules evaluated: ${eligibilityStatus}`,
         result: {
           evaluations,
           overallStatus,
+          eligibilityStatus,
+          coverageNote: eligibilityStatus === "PARTIAL_CHECK" ? PARTIAL_CHECK_NOTE : undefined,
         },
       };
     }
@@ -74,10 +84,9 @@ export function callTool(
       return {
         toolName,
         ok: true,
-        status: result.policyResults.some((policy) => policy.overallStatus === "UNCERTAIN")
-          ? "UNCERTAIN"
-          : "PASS",
-        summary: `Actual scenario evaluated for ${scenario.city ?? "target city"}`,
+        // FAIL-first aggregation; never "some policy PASS => PASS".
+        status: result.overallStatus,
+        summary: `Actual scenario evaluated for ${scenario.city ?? "target city"}: ${result.overallStatus}`,
         result,
       };
     }
@@ -93,10 +102,8 @@ export function callTool(
       return {
         toolName,
         ok: true,
-        status: result.policyResults.some((policy) => policy.overallStatus === "UNCERTAIN")
-          ? "UNCERTAIN"
-          : "PASS",
-        summary: `What-if scenario evaluated for ${scenario.city ?? "target city"}`,
+        status: result.overallStatus,
+        summary: `What-if scenario evaluated for ${scenario.city ?? "target city"}: ${result.overallStatus}`,
         result,
       };
     }
@@ -131,7 +138,9 @@ export function callTool(
       return {
         toolName,
         ok: true,
-        status: "PASS",
+        // Report the passport's own aggregated verdict instead of a generic PASS,
+        // so "passport generated" is never mistaken for "eligible".
+        status: aggregateEligibilityStatus([passport.actual.overallStatus, passport.whatIf.overallStatus]),
         summary: `Decision passport generated for ${passport.caseId}`,
         result: passport,
       };

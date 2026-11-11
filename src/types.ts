@@ -34,6 +34,14 @@ export type RuleStatus =
   | "FAIL"
   | "UNCERTAIN";
 
+// User-facing eligibility claim. Wider than RuleStatus so the system can say
+// "only part of the eligibility was checked" (PARTIAL_CHECK) or "this request is
+// outside what the system currently covers" (NOT_COVERED) instead of PASS.
+export type EligibilityStatus =
+  | RuleStatus
+  | "PARTIAL_CHECK"
+  | "NOT_COVERED";
+
 export type PolicyRule = {
   ruleId: string;
   program: string;

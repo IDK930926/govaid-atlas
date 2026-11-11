@@ -1278,7 +1278,9 @@ a {
   border-top-color: var(--pass);
 }
 
-.verdict-uncertain {
+.verdict-uncertain,
+.verdict-partial_check,
+.verdict-not_covered {
   border-top-color: var(--gate);
 }
 
@@ -1312,11 +1314,15 @@ a {
 }
 
 .badge-pass { color: var(--pass); }
-.badge-uncertain { color: var(--warn); }
+.badge-uncertain,
+.badge-partial_check,
+.badge-not_covered { color: var(--warn); }
 .badge-fail { color: var(--fail); }
 
 .badge-md.badge-pass { background: var(--pass-soft); }
-.badge-md.badge-uncertain { background: var(--warn-soft); }
+.badge-md.badge-uncertain,
+.badge-md.badge-partial_check,
+.badge-md.badge-not_covered { background: var(--warn-soft); }
 .badge-md.badge-fail { background: var(--fail-soft); }
 
 .badge-glyph {
@@ -1332,7 +1338,9 @@ a {
 }
 
 .badge-pass .badge-glyph { background: var(--pass); }
-.badge-uncertain .badge-glyph { background: var(--gate); }
+.badge-uncertain .badge-glyph,
+.badge-partial_check .badge-glyph,
+.badge-not_covered .badge-glyph { background: var(--gate); }
 .badge-fail .badge-glyph { background: var(--fail); }
 
 .badge-en {
@@ -2508,7 +2516,9 @@ a {
   }
 
   .verdict-pass { border-left-color: var(--pass); }
-  .verdict-uncertain { border-left-color: var(--gate); }
+  .verdict-uncertain,
+  .verdict-partial_check,
+  .verdict-not_covered { border-left-color: var(--gate); }
   .verdict-fail { border-left-color: var(--fail); }
 
   .verdict-scope {

@@ -1,5 +1,6 @@
 import type { ApplicantProfile, AddressScenario } from "../types";
 import { callTool, listAllowedTools } from "./tools";
+import { assessQueryCoverage } from "../coverage";
 import { validateStructuredAgentDecision } from "./providers/types";
 import type { AgentDecision, AgentRun, AgentStatus, ToolExecutionResult } from "./types";
 import type { ProviderPlannerResult } from "./providers/types";
@@ -142,6 +143,20 @@ export function runAgenticGoldenCase(
       "AGENTIC-PLANNER",
       plannerResult.providerStatus === "AVAILABLE" && plannerResult.decision ? "LLM" : "SYSTEM"
     );
+  }
+
+  const coverage = assessQueryCoverage(goal);
+  if (coverage.status === "NOT_COVERED") {
+    // Coverage boundary: no rental tool may answer an out-of-scope request,
+    // and "not implemented" must never be phrased as "not eligible".
+    run.status = "NOT_COVERED";
+    run.coverage = coverage;
+    run.currentStep = coverage.message;
+    run.lastDecision = {
+      reasoningSummary: "The request is outside the policies currently covered; no eligibility determination is made.",
+      nextAction: "COMPLETE",
+    };
+    return appendAuditTrail(run, "AGENT_NOT_COVERED", { goal }, coverage, "COVERAGE-BOUNDARY", "SYSTEM");
   }
 
   const toolName = "evaluate_central_rules" as const;

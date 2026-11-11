@@ -319,7 +319,7 @@ console.log(
 
 for (const policy of actualResult.policyResults) {
   console.log(
-    `${policy.policyId}: ${policy.overallStatus}`
+    `${policy.policyId}: ${policy.eligibilityStatus} (rules: ${policy.overallStatus})`
   );
 
   console.table(policy.evaluations);
@@ -341,7 +341,7 @@ console.log(
 
 for (const policy of whatIfResult.policyResults) {
   console.log(
-    `${policy.policyId}: ${policy.overallStatus}`
+    `${policy.policyId}: ${policy.eligibilityStatus} (rules: ${policy.overallStatus})`
   );
 
   console.table(policy.evaluations);

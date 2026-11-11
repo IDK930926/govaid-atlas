@@ -276,7 +276,7 @@ test("A10 human resume re-evaluates rules and completes actual/what-if/evidence/
   const resumeIndex = actions.lastIndexOf("AGENT_RESUMED");
 
   assert.equal(resumed.status, "COMPLETED");
-  assert.equal(resumed.toolResult?.status, "PASS");
+  assert.equal(resumed.toolResult?.status, "PARTIAL_CHECK");
   assert.equal(resumed.lastToolCall, "generate_decision_passport");
   assert.deepEqual(actions.slice(resumeIndex, resumeIndex + 3), [
     "AGENT_RESUMED",

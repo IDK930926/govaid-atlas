@@ -1,4 +1,5 @@
 import type {AgentStatus} from "./agent/types";
+import type {EligibilityStatus} from "./types";
 
 export type BilingualCopy = {zh: string; en: string};
 
@@ -12,6 +13,7 @@ export const agentStatusCopy: Record<AgentStatus, BilingualCopy> = {
   COMPLETED: {zh: "已完成", en: "Completed"},
   FAILED: {zh: "執行失敗", en: "Failed"},
   HUMAN_REVIEW_REQUIRED: {zh: "需要人工審查", en: "Human review required"},
+  NOT_COVERED: {zh: "尚未涵蓋", en: "Not covered"},
 };
 
 // Main-surface wording for each agent status. Raw enums only appear in Audit / Debug.
@@ -24,13 +26,17 @@ export const statusDisplayCopy: Record<AgentStatus, string> = {
   COMPLETED: "分析完成",
   FAILED: "分析未完成",
   HUMAN_REVIEW_REQUIRED: "需要人工審查",
+  NOT_COVERED: "尚未涵蓋",
 };
 
-// Rule-engine outcome wording. Semantics stay PASS / FAIL / UNCERTAIN; only the label changes.
-export const resultCopy: Record<"PASS" | "FAIL" | "UNCERTAIN", BilingualCopy> = {
+// Rule-engine & eligibility outcome wording. PARTIAL_CHECK and NOT_COVERED
+// must never be translated as "通過".
+export const resultCopy: Record<EligibilityStatus, BilingualCopy> = {
   PASS: {zh: "通過", en: "PASS"},
   FAIL: {zh: "不符合", en: "FAIL"},
   UNCERTAIN: {zh: "待確認", en: "UNCERTAIN"},
+  PARTIAL_CHECK: {zh: "僅完成部分檢查", en: "PARTIAL_CHECK"},
+  NOT_COVERED: {zh: "尚未涵蓋", en: "NOT_COVERED"},
 };
 
 export const workflowSteps: {key: string; zh: string; en: string}[] = [
@@ -46,6 +52,8 @@ export const statusCopy: Record<string, BilingualCopy> = {
   PASS: {zh: "通過", en: "PASS"},
   FAIL: {zh: "不通過", en: "FAIL"},
   UNCERTAIN: {zh: "待確認", en: "UNCERTAIN"},
+  PARTIAL_CHECK: {zh: "僅完成部分檢查", en: "PARTIAL_CHECK"},
+  NOT_COVERED: {zh: "尚未涵蓋", en: "NOT_COVERED"},
   PENDING: {zh: "等待中", en: "PENDING"},
   ACTIVE: {zh: "執行中", en: "ACTIVE"},
   DONE: {zh: "完成", en: "DONE"},
@@ -92,6 +100,10 @@ export const currentStepCopy: Record<AgentStatus, {title: BilingualCopy; descrip
   HUMAN_REVIEW_REQUIRED: {
     title: agentStatusCopy.HUMAN_REVIEW_REQUIRED,
     description: {zh: "政策資料需要人工查核，Agent 已停止確定式判斷。", en: "Policy information needs human review; definitive judgment has paused."},
+  },
+  NOT_COVERED: {
+    title: {zh: "目前版本尚未涵蓋此類補助", en: "Not covered in current version"},
+    description: {zh: "系統尚未內建此項補助之完整規則，無法作成資格判定；請以主管機關官方公告為準。", en: "This policy is not yet encoded in the current version; please refer to official announcements."},
   },
 };
 
@@ -148,4 +160,5 @@ export const auditCopy: Record<string, BilingualCopy> = {
   AGENT_WAITING_FOR_HUMAN: {zh: "等待人工確認", en: "Waiting for human"},
   AGENT_RESUMED: {zh: "恢復代理執行", en: "Agent resumed"},
   AGENT_COMPLETED: {zh: "代理執行完成", en: "Agent completed"},
+  AGENT_NOT_COVERED: {zh: "超出目前涵蓋範圍", en: "Outside coverage boundary"},
 };

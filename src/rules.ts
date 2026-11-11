@@ -83,6 +83,11 @@ export function getOverallStatus(
       (item) => item.status
     );
 
+  // 沒有任何規則被評估 → 沒有證據，不得視為 PASS
+  if (statuses.length === 0) {
+    return "UNCERTAIN";
+  }
+
   if (statuses.includes("FAIL")) {
     return "FAIL";
   }
