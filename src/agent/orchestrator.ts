@@ -960,7 +960,12 @@ function executeBoundedSteps(
     // Handle COMPLETE action
     if (selectedDecision.nextAction === "COMPLETE" || selectedDecision.toolName === "complete") {
       currentRun.status = "COMPLETED";
-      currentRun.currentStep = state.includePassport ? "Completed after human input" : "Golden case flow completed";
+      currentRun.currentStep =
+        currentRun.providerStatus === "UNAVAILABLE"
+          ? "Deterministic safety workflow completed (agent provider unavailable)"
+          : state.includePassport
+            ? "Completed after human input"
+            : "Golden case flow completed";
       currentRun.lastDecision = {
         reasoningSummary: selectedDecision.reasoningSummary,
         nextAction: "COMPLETE",
@@ -998,7 +1003,7 @@ function executeBoundedSteps(
 
       return appendAuditTrail(
         currentRun,
-        "AGENT_COMPLETED",
+        currentRun.providerStatus === "UNAVAILABLE" ? "DETERMINISTIC_WORKFLOW_COMPLETED" : "AGENT_COMPLETED",
         { goal: currentRun.goal },
         { finalStatus: currentRun.status, eligibilityStatus: state.overallEligibilityStatus },
         "AGENTIC-ORCHESTRATOR"
@@ -1221,6 +1226,9 @@ export function runAgenticGoldenCase(
 
   if (plannerResult) {
     run.providerStatus = plannerResult.providerStatus;
+    for (const event of plannerResult.providerEvents ?? []) {
+      run = appendAuditTrail(run, event.action, event.detail, undefined, "AGENT-PROVIDER", "SYSTEM");
+    }
     run = appendAuditTrail(
       run,
       plannerResult.providerStatus === "AVAILABLE" && plannerResult.decision
@@ -1667,7 +1675,10 @@ export function resumeAgentRun(
   );
 
   nextRun.status = "COMPLETED";
-  nextRun.currentStep = "Completed after human input";
+  nextRun.currentStep =
+    nextRun.providerStatus === "UNAVAILABLE"
+      ? "Deterministic safety workflow completed after human input (agent provider unavailable)"
+      : "Completed after human input";
   nextRun.lastDecision = {
     reasoningSummary: "A missing field was resolved by a human, and deterministic evaluation resumed successfully.",
     nextAction: "COMPLETE",
@@ -1721,7 +1732,7 @@ export function resumeAgentRun(
 
   return appendAuditTrail(
     nextRun,
-    "AGENT_COMPLETED",
+    nextRun.providerStatus === "UNAVAILABLE" ? "DETERMINISTIC_WORKFLOW_COMPLETED" : "AGENT_COMPLETED",
     { goal: nextRun.goal },
     { status: nextRun.status, eligibilityStatus: passportResult.status },
     "AGENTIC-ORCHESTRATOR"

@@ -3,9 +3,17 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, relative, resolve, sep } from "node:path";
 import { URL } from "node:url";
 
-import { callPlanner, getProviderHealth, getOllamaModel, DEFAULT_PROVIDER_TIMEOUT_MS } from "./agent/client";
+import { callPlanner, getProviderHealth, DEFAULT_PROVIDER_TIMEOUT_MS } from "./agent/client";
 import { buildSafePlan } from "./agent/orchestrator";
 import { listAllowedTools } from "./agent/tools";
+
+// Secrets such as OPENAI_API_KEY stay server-side: load an optional, gitignored .env into this
+// process only. Values already present in the real environment take precedence.
+try {
+  process.loadEnvFile(resolve(__dirname, "../.env"));
+} catch {
+  // No .env file: rely on the process environment.
+}
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = "127.0.0.1";
@@ -230,9 +238,13 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       ok: health.providerStatus === "AVAILABLE",
       provider: health.provider,
       providerStatus: health.providerStatus,
-      model: health.model ?? getOllamaModel(),
+      model: health.model,
+      mode: health.mode ?? null,
+      fallbackActive: health.fallbackActive ?? false,
+      fallbackReason: health.fallbackReason ?? null,
       status: health.providerStatus === "AVAILABLE" ? "configured" : "provider_unavailable",
-      error: health.error ?? null,
+      // Safe error class only; raw provider messages never leave the server.
+      error: health.errorClass ?? (health.providerStatus === "AVAILABLE" ? null : "PROVIDER_UNAVAILABLE"),
       timestamp: new Date().toISOString(),
     });
     return;
@@ -316,11 +328,20 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     const defaultPlan = buildSafePlan(trimmedGoal);
     const timeoutMs = Number(process.env.AGENT_PROVIDER_TIMEOUT_MS ?? DEFAULT_PROVIDER_TIMEOUT_MS);
 
+    const plannerStarted = performance.now();
     const llmResult = await callPlanner({
       goal: trimmedGoal,
       availableTools: allowlistedTools,
       timeoutMs,
     });
+    const plannerLatencyMs = performance.now() - plannerStarted;
+    const llmCallSucceeded = llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision);
+
+    const safeErrorCode = llmCallSucceeded
+      ? null
+      : llmResult.error === "AGENT_PROVIDER_TIMEOUT"
+        ? "AGENT_PROVIDER_TIMEOUT"
+        : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE";
 
     const responseBody = {
       ok: true,
@@ -339,10 +360,30 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         },
       },
       metadata: {
+        mode: llmResult.mode ?? null,
         usage: llmResult.usage ?? null,
-        error: llmResult.error ?? null,
+        // Safe error class only; raw provider messages never leave the server.
+        error: safeErrorCode,
+        errorClass: llmCallSucceeded ? null : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE",
         llmCallAttempted: llmResult.callAttempted ?? false,
-        llmCallSucceeded: llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision),
+        llmCallSucceeded,
+        llmCalls: (llmResult.attempts ?? []).filter((attempt) => attempt.callAttempted).length,
+        plannerLatencyMs,
+        attempts: (llmResult.attempts ?? []).map((attempt) => ({
+          provider: attempt.provider,
+          model: attempt.model,
+          callAttempted: attempt.callAttempted,
+          outcome: attempt.outcome,
+          latencyMs: Math.round(attempt.latencyMs),
+          errorClass: attempt.errorClass ?? null,
+          inputTokens: attempt.usage?.inputTokens ?? null,
+          outputTokens: attempt.usage?.outputTokens ?? null,
+        })),
+        fallbackCount: llmResult.fallbackCount ?? 0,
+        fallbackReason: llmResult.fallbackReason ?? null,
+        providerEvents: llmResult.providerEvents ?? [],
+        estimatedCloudCostUsd: llmResult.estimatedCloudCostUsd ?? null,
+        pricingLabel: llmResult.pricingLabel ?? null,
       },
     };
 
