@@ -1,0 +1,33 @@
+# NAPAI 2026 Competition Submission Readiness Matrix
+
+## 1. Status Legend (Strict Allowed Values Only)
+
+- **`READY`**: Complete, verified in repository with concrete evidence, and ready for submission.
+- **`PARTIAL`**: Implemented or documented in repository, but requires external human sign-off, redeploy, or packaging step before final submission.
+- **`MISSING`**: Not yet present in this branch or not yet executed by human participants.
+- **`BLOCKED`**: Blocked by an external dependency or repository-ownership rule (e.g., no tag/push/deploy without owner action).
+- **`UNKNOWN`**: External deliverable outside repository scope whose current completion state is unknown from the codebase.
+
+---
+
+## 2. Submission Readiness Table
+
+| Item | Status | Evidence Path | Owner / Action Required | Blocker | Ready for Submission? |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Prototype** | `READY` | `src/App.tsx`, `src/server.ts`, `src/agent/orchestrator.ts`, `dist/` | None for code; builds and passes 46/46 automated tests (`npm test`, `npm run build`) | None | **YES** |
+| **Source code package** | `PARTIAL` | Working tree on branch `docs/napai-evaluation-submission` | Export clean `.zip` archive via `git archive` (excluding `.git/` history) before uploading to competition portal | Git commit metadata in `.git/` contains author identities | **AFTER CLEAN ARCHIVE EXPORT** |
+| **README** | `READY` | `README.md` | Aligned in Wave 3 with `PARTIAL_CHECK`, `NOT_COVERED`, bounded tool routing, dynamic missing fields, trace export, and API limits | None | **YES** |
+| **Architecture** | `READY` | `README.md` (§Architecture), `src/agent/orchestrator.ts`, `src/agent/tools.ts`, `src/status.ts`, `src/coverage.ts` | None; bounded Agent + deterministic policy engine architecture is implemented and tested | None | **YES** |
+| **Policy data** | `PARTIAL` | `src/policies/central-rent-115.json`, `src/policies/taipei-rent-115.json`, `src/policies/new-taipei-rent-115.json`, `src/evidence.ts` | P0 2-rule subset per program (`R1`, `R6`, `R7`) is implemented and returns `PARTIAL_CHECK`; full statutory rule expansion (income/property/lease) is future scope | P0 covers 3 rental programs (`R1`, `R6`, `R7`) only; other cities/childcare return `NOT_COVERED` | **YES (WITH SCOPE DISCLOSURE)** |
+| **Benchmark** | `PARTIAL` | `benchmark/cases.json`, `benchmark/results.csv`, `benchmark/results-wave2-agent.csv`, `docs/gold-standard-review-status.md`, `docs/gold-standard-independent-review-template.md`, `docs/benchmark-methodology.md` | Technical regression (`12/12` & `8/8` Wave 2 Agent) and `LLM_CONTEXT` (`10/10`) are complete; `B01`–`B10` Gold Standard awaits external domain reviewer sign-off (`PENDING_INDEPENDENT_REVIEW`) and `MANUAL` baseline rows are blank (`NOT_MEASURED`) | No independent external reviewer has signed `docs/gold-standard-independent-review-template.md` yet | **YES (AS TECHNICAL REGRESSION + PENDING INDEPENDENT REVIEW)** |
+| **Evaluation report** | `READY` | `docs/napai-evaluation-report.md`, `src/wave3-agent-eval.ts`, `src/agent/wave3-evaluation.test.ts` | None; reports real measured metrics, repeatability, latency, cost, reliability, adversarial safety, and `NOT_MEASURED` items truthfully | None | **YES** |
+| **Trace evidence** | `READY` | `artifacts/traces/trace-a-valid-proposal.json` .. `trace-f-provider-unavailable.json`, `docs/trace-evidence-index.md`, `src/agent/trace.ts` | None; 6 representative traces exported and verified free of secrets, prompts, chain-of-thought, and PII | None | **YES** |
+| **Field validation** | `MISSING` | `docs/field-validation-protocol.md`, `docs/field-validation-results-template.md`, `benchmark/manual-results.csv` | Conduct 5–8 real human crossover sessions using `docs/field-validation-protocol.md` and record real numbers in `docs/field-validation-results-template.md` | Zero real human participants have completed the study yet (`PENDING`) | **NO (PROTOCOL & TEMPLATE ONLY)** |
+| **Slides** | `UNKNOWN` | Not tracked in repository (`demo/govaid-atlas-competition-showcase.html` provides web presentation deck) | Team must verify external presentation slide deck (`.pptx` / `.pdf`) matches Wave 1–3 technical claims (`PARTIAL_CHECK`, `NOT_COVERED`, `PENDING_INDEPENDENT_REVIEW`) | External slide file is not stored in git repository | **VERIFY EXTERNALLY** |
+| **Demo video** | `PARTIAL` | Referenced in `docs/demo-runbook.md` line 23 & `docs/demo-reliability-wave3.md` line 141 (`feat/backup-demo-video` branch) | Record updated backup MP4 reflecting Wave 1/Wave 2 UI copy (`初步條件通過（部分檢核）`) if stage backup video is used | `demo-video/` is stored on local branch `feat/backup-demo-video`, not on current branch | **NEEDS UPDATED RECORDING OR BRANCH CHECK** |
+| **Third-party disclosure** | `READY` | `docs/third-party-resources.md` | Verify exact Qwen `qwen3.5:4b` weight license and OpenAI account tier before final paperwork submission | External license terms marked `UNKNOWN — VERIFY BEFORE SUBMISSION` | **YES** |
+| **Security self-assessment** | `READY` | `docs/security-self-assessment.md` | None; covers all 14 required security/governance topics and explicitly discloses synthetic RBAC limitation | None | **YES** |
+| **Demo requirements** | `READY` | `docs/demo-runbook.md`, `docs/demo-reliability-wave3.md` | Follow T-30 min runbook (Ollama warm-up `keep_alive: 60m`, `127.0.0.1:8787` health check, 85s fallback rule) | Requires local Ollama (`qwen3.5:4b`) or OpenAI key on presentation laptop for live LLM planning | **YES** |
+| **Anonymized package** | `PARTIAL` | `docs/anonymization-audit.md`, `docs/final-anonymity-audit.md` | Export repository via `git archive` (stripping `.git/` logs) and optionally redact `govaid.torchark.tw` in `demo/govaid-atlas-competition-showcase.html` if blind review prohibits custom domains | `.git/` commit log contains contributor names/emails/GitHub handles | **AFTER ARCHIVE EXPORT** |
+| **Final version/tag** | `BLOCKED` | Local commits `c05af4e` (Wave 1), `be8da70` (Wave 2), and Wave 3 commit on `docs/napai-evaluation-submission` | Repository owner must review branch `docs/napai-evaluation-submission`, merge if approved, and create official release/tag | Agent is strictly prohibited from creating git tags, merging, or pushing without explicit owner instruction | **BLOCKED BY REPO GOVERNANCE RULE** |
+| **Production URL** | `PARTIAL` | `https://govaid.torchark.tw/` (referenced in `docs/demo-reliability-wave3.md` §7) | Tunnel host owner must redeploy from the hardened Wave 2/3 branch if judges will access the public URL | Public tunnel currently serves an older pre-Wave-1 build (`docs/demo-reliability-wave3.md` line 119); agent is prohibited from deploying | **REQUIRES OWNER REDEPLOY** |
