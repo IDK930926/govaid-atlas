@@ -1,27 +1,37 @@
 import type { ApplicantProfile, AddressScenario, PolicyRule } from "../types";
-import { buildDecisionPassport } from "../passport";
+import { buildChildcareDecisionPassport, buildDecisionPassport } from "../passport";
 import { bindEvidence } from "../evidence";
 import { detectConflicts, syntheticConflictClaims } from "../conflict";
 import { evaluateScenario } from "../scenario";
-import { evaluateRules, getOverallStatus } from "../rules";
+import { evaluateChildcarePolicy, type ChildcareEvaluationResult } from "../childcare";
+import { evaluateRules, getOverallStatus, type RuleEvaluationOptions } from "../rules";
 import { aggregateEligibilityStatus, toEligibilityStatus } from "../status";
 import { getPolicyCompleteness, PARTIAL_CHECK_NOTE } from "../coverage";
-import { detectMissingFields, getQuestionForMissingField, isSupportedMissingField } from "./missing-fields";
+import {
+  detectMissingFields,
+  getQuestionForMissingField,
+  isSupportedMissingField,
+  SUPPORTED_MISSING_FIELDS,
+} from "./missing-fields";
 import centralRulesJson from "../policies/central-rent-115.json";
 import taipeiRulesJson from "../policies/taipei-rent-115.json";
 import newTaipeiRulesJson from "../policies/new-taipei-rent-115.json";
+import taoyuanRulesJson from "../policies/taoyuan-rent-115.json";
 import type { AgentToolName, SupportedMissingField, ToolExecutionResult } from "./types";
 
 const centralRules = centralRulesJson as PolicyRule[];
 const taipeiRules = taipeiRulesJson as PolicyRule[];
 const newTaipeiRules = newTaipeiRulesJson as PolicyRule[];
+const taoyuanRules = taoyuanRulesJson as PolicyRule[];
 
 export const ALLOWED_TOOLS: AgentToolName[] = [
   "evaluate_central_rules",
   "evaluate_actual_scenario",
   "evaluate_what_if_scenario",
+  "evaluate_childcare_rules",
   "detect_policy_conflict",
   "generate_decision_passport",
+  "generate_childcare_passport",
   "get_policy_evidence",
   "request_missing_field",
   "request_human_confirmation",
@@ -55,7 +65,8 @@ export function callTool(
   switch (toolName) {
     case "evaluate_central_rules": {
       const profile = (argumentsObject?.profile ?? {}) as ApplicantProfile;
-      const evaluations = evaluateRules(centralRules, profile);
+      const options = argumentsObject?.options as RuleEvaluationOptions | undefined;
+      const evaluations = evaluateRules(centralRules, profile, options);
       const overallStatus = getOverallStatus(evaluations);
       // Central rules encode only a subset of official conditions, so a rule-level
       // PASS is reported as PARTIAL_CHECK, never as a complete PASS.
@@ -80,11 +91,18 @@ export function callTool(
     case "evaluate_actual_scenario": {
       const profile = (argumentsObject?.profile ?? {}) as ApplicantProfile;
       const scenario = (argumentsObject?.scenario ?? {}) as AddressScenario;
-      const result = evaluateScenario(scenario, profile, {
-        central: centralRules,
-        taipei: taipeiRules,
-        newTaipei: newTaipeiRules,
-      });
+      const options = argumentsObject?.options as RuleEvaluationOptions | undefined;
+      const result = evaluateScenario(
+        scenario,
+        profile,
+        {
+          central: centralRules,
+          taipei: taipeiRules,
+          newTaipei: newTaipeiRules,
+          taoyuan: taoyuanRules,
+        },
+        options
+      );
       return {
         toolName,
         ok: true,
@@ -98,16 +116,38 @@ export function callTool(
     case "evaluate_what_if_scenario": {
       const profile = (argumentsObject?.profile ?? {}) as ApplicantProfile;
       const scenario = (argumentsObject?.scenario ?? {}) as AddressScenario;
-      const result = evaluateScenario(scenario, profile, {
-        central: centralRules,
-        taipei: taipeiRules,
-        newTaipei: newTaipeiRules,
-      });
+      const options = argumentsObject?.options as RuleEvaluationOptions | undefined;
+      const result = evaluateScenario(
+        scenario,
+        profile,
+        {
+          central: centralRules,
+          taipei: taipeiRules,
+          newTaipei: newTaipeiRules,
+          taoyuan: taoyuanRules,
+        },
+        options
+      );
       return {
         toolName,
         ok: true,
         status: result.overallStatus,
         summary: `What-if scenario evaluated for ${scenario.city ?? "target city"}: ${result.overallStatus}`,
+        result,
+      };
+    }
+
+    case "evaluate_childcare_rules": {
+      const profile = (argumentsObject?.profile ?? {}) as ApplicantProfile;
+      const options = argumentsObject?.options as RuleEvaluationOptions | undefined;
+      const result = evaluateChildcarePolicy(profile, options);
+      return {
+        toolName,
+        ok: true,
+        status: result.eligibilityStatus,
+        summary: `Childcare rules evaluated: ${result.eligibilityStatus}${
+          result.estimatedMonthlyBenefitNtd ? ` (${result.estimatedMonthlyBenefitNtd} NTD/month)` : ""
+        }`,
         result,
       };
     }
@@ -133,11 +173,13 @@ export function callTool(
     }
 
     case "generate_decision_passport": {
+      const options = argumentsObject?.options as RuleEvaluationOptions | undefined;
       const passport = buildDecisionPassport(
         String(argumentsObject?.caseId ?? "CASE-P0-001"),
         (argumentsObject?.profile ?? {}) as ApplicantProfile,
         (argumentsObject?.actual ?? {}) as ReturnType<typeof evaluateScenario>,
-        (argumentsObject?.whatIf ?? {}) as ReturnType<typeof evaluateScenario>
+        (argumentsObject?.whatIf ?? {}) as ReturnType<typeof evaluateScenario>,
+        options
       );
       return {
         toolName,
@@ -146,6 +188,26 @@ export function callTool(
         // so "passport generated" is never mistaken for "eligible".
         status: aggregateEligibilityStatus([passport.actual.overallStatus, passport.whatIf.overallStatus]),
         summary: `Decision passport generated for ${passport.caseId}`,
+        result: passport,
+      };
+    }
+
+    case "generate_childcare_passport": {
+      const profile = (argumentsObject?.profile ?? {}) as ApplicantProfile;
+      const options = argumentsObject?.options as RuleEvaluationOptions | undefined;
+      const childcareResult =
+        (argumentsObject?.childcareResult as ChildcareEvaluationResult | undefined) ??
+        evaluateChildcarePolicy(profile, options);
+      const passport = buildChildcareDecisionPassport(
+        String(argumentsObject?.caseId ?? "CASE-CHILDCARE-001"),
+        profile,
+        childcareResult
+      );
+      return {
+        toolName,
+        ok: true,
+        status: passport.actual.overallStatus,
+        summary: `Childcare decision passport generated for ${passport.caseId}: ${passport.actual.overallStatus}`,
         result: passport,
       };
     }
@@ -166,16 +228,7 @@ export function callTool(
       const profile = (argumentsObject?.profile ?? {}) as ApplicantProfile;
       const scenario = (argumentsObject?.scenario ?? undefined) as AddressScenario | undefined;
       const requestedField = argumentsObject?.field;
-      const detected = detectMissingFields(profile, scenario, [
-        "ownsHome",
-        "receivesOtherHousingAid",
-        "city",
-        "monthlyIncome",
-        "age",
-        "centralRentApproved",
-        "newTaipeiResidenceStudyWork",
-        "registeredCity",
-      ]);
+      const detected = detectMissingFields(profile, scenario, [...SUPPORTED_MISSING_FIELDS]);
       const field: SupportedMissingField = isSupportedMissingField(requestedField)
         ? requestedField
         : detected[0] ?? "ownsHome";

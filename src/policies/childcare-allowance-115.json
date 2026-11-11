@@ -1,0 +1,57 @@
+[
+  {
+    "ruleId": "CHILDCARE-115-AGE-001",
+    "program": "育有未滿2歲兒童育兒津貼",
+    "field": "childAgeMonths",
+    "operator": "lt",
+    "expected": 24,
+    "required": true,
+    "sourceId": "R8",
+    "validFrom": "2026-01-01",
+    "validTo": "2026-12-31"
+  },
+  {
+    "ruleId": "CHILDCARE-115-REG-001",
+    "program": "育有未滿2歲兒童育兒津貼",
+    "field": "childHasBirthOrInitialHouseholdRegistration",
+    "operator": "equals",
+    "expected": true,
+    "required": true,
+    "sourceId": "R8",
+    "validFrom": "2026-01-01",
+    "validTo": "2026-12-31"
+  },
+  {
+    "ruleId": "CHILDCARE-115-PLACEMENT-001",
+    "program": "育有未滿2歲兒童育兒津貼",
+    "field": "isGovernmentPlaced",
+    "operator": "equals",
+    "expected": false,
+    "required": true,
+    "sourceId": "R8",
+    "validFrom": "2026-01-01",
+    "validTo": "2026-12-31"
+  },
+  {
+    "ruleId": "CHILDCARE-115-CARE-001",
+    "program": "育有未滿2歲兒童育兒津貼",
+    "field": "receivesPublicOrQuasiPublicChildcare",
+    "operator": "equals",
+    "expected": false,
+    "required": true,
+    "sourceId": "R8",
+    "validFrom": "2026-01-01",
+    "validTo": "2026-12-31"
+  },
+  {
+    "ruleId": "CHILDCARE-115-ORDER-001",
+    "program": "育有未滿2歲兒童育兒津貼",
+    "field": "birthOrder",
+    "operator": "gte",
+    "expected": 1,
+    "required": true,
+    "sourceId": "R8",
+    "validFrom": "2026-01-01",
+    "validTo": "2026-12-31"
+  }
+]

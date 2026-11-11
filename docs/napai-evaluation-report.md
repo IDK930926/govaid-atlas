@@ -3,7 +3,7 @@
 ## 0. Governance & Result Classification Notice
 
 To maintain strict scientific and audit integrity, this report explicitly separates:
-1. **`TECHNICAL_REGRESSION_RESULT` (VERIFIED):** Automated verification of the Wave 1 correctness/coverage boundaries (`c05af4e`), Wave 2 bounded Agent tool routing/state/trace/API hardening (`be8da70`), and Wave 3 end-to-end & adversarial safety suite (`src/wave3-agent-eval.ts`, `benchmark/results-wave2-agent.csv`).
+1. **`TECHNICAL_REGRESSION_RESULT` (VERIFIED):** Automated verification of the Wave 1 correctness/coverage boundaries (`c05af4e`), Wave 2 bounded Agent tool routing/state/trace/API hardening (`be8da70`), Wave 3 end-to-end & adversarial safety suite (`0b59532`), OpenAI primary + Ollama auto-fallback provider integration (`94a9a97`), and Wave 4 product completion (`src/agent/wave4-product.test.ts` — under-2 childcare allowance workflow, Taoyuan central rental intake & navigation, `ApplicationGuide` navigation, and policy validity enforcement; **71/71 automated tests PASS**).
 2. **`POLICY_CORRECTNESS_RESULT` (`PENDING_INDEPENDENT_REVIEW`):** Comparative evaluation on `benchmark/cases.json` (`B01`–`B10`), where Gold Answers were originally derived from the repository's 2-rule subset (`src/policies/*.json`) and await external domain sign-off (`docs/gold-standard-review-status.md`).
 3. **`FIELD_VALIDATION_RESULT` (`NOT_MEASURED` / `PENDING`):** External human usability testing has not yet been conducted; only the study protocol (`docs/field-validation-protocol.md`) and blank result template (`docs/field-validation-results-template.md`) are included.
 

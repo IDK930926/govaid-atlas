@@ -15,7 +15,7 @@ This document maps each of the six official **NAPAI 2026 judging categories** (t
 - **Current Evidence:**
   - **Deterministic Rule Engine & Status Priority (`FAIL > NOT_COVERED > UNCERTAIN > PARTIAL_CHECK > PASS`):** Prevents false-positive eligibility approvals when only a partial subset of rules is encoded (`PARTIAL_CHECK`) or when a city/benefit domain is out of scope (`NOT_COVERED`).
   - **Automated Regression & End-to-End Evaluation:**
-    - `46 / 46` automated tests passing across 5 test suites (`npm test`), plus zero TypeScript errors (`npx tsc --noEmit`) and clean production build (`vite build`).
+    - `71 / 71` automated tests passing across 7 test suites (`npm test`), including Wave 4 product completion (`CHILD-01`..`CHILD-05`, `TAO-01`..`TAO-02`, `NAV-01`..`NAV-02`, policy validity/expiration, and domain isolation), plus zero TypeScript errors (`npx tsc --noEmit`) and clean production build (`vite build`).
     - `8 / 8` (**100%**) technical task completion across core Agent categories `CAT-A`..`CAT-H` (`benchmark/results-wave2-agent.csv`), with `40 / 40` (**100%**) repeatability across 5 repeated runs per category (`src/wave3-agent-eval.ts`).
     - `12 / 12` (**100%**) pass rate on the deterministic regression suite (`src/benchmark.ts`).
   - **Live LLM Stability & Fallback Proofs:**
@@ -96,15 +96,17 @@ This document maps each of the six official **NAPAI 2026 judging categories** (t
 ### Category 5 — 創新與擴散價值 (Innovation & Scalability / Diffusion Value) — **10%**
 
 - **Current Evidence:**
+  - **Multi-Domain Expansion (`HOUSING` + `CHILDCARE` in Wave 4):** Demonstrates that the bounded Agent + deterministic policy engine architecture scales cleanly across both municipal housing subsidies (`CENTRAL_RENT_115`, `TAIPEI_RENT_115`, `NEW_TAIPEI_RENT_115`, `TAOYUAN_CENTRAL_RENT_115`) and national family welfare (`CHILDCARE_ALLOWANCE_UNDER_2_115` with birth-order benefit tiers NT$5,000 / 6,000 / 7,000) with strict cross-domain tool isolation.
   - **Actual vs. What-If Relocation Comparison (`src/scenario.ts`):** Allows renters to compare how moving across municipal boundaries (e.g., New Taipei Yonghe vs. Taipei Wenshan) affects combined central + local subsidy eligibility before signing a lease.
-  - **Decision Passport (`src/passport.ts`):** Translates rule evaluations and official citations (`R1`, `R6`, `R7`) into an actionable citizen checklist with explicit risk/uncertainty callouts (`初步條件通過（部分檢核）`, `尚未涵蓋`).
-  - **Pluggable Policy & Provider Architecture:** JSON-declarative policy rules (`src/policies/*.json`) + pluggable local/cloud LLM providers (`ollama` / `openai`) enable expansion to additional municipalities (`桃園市`, `臺中市`, etc.) and welfare domains without changing the core orchestrator.
+  - **Actionable Application Navigation & Decision Passport (`src/navigation.ts`, `src/passport.ts`):** Translates rule evaluations and official citations (`R1`, `R6`, `R7`, `R8`, `R9`) into a concrete citizen application guide with required documents, online portal URLs (`https://twbaby.sfaa.gov.tw/`, `https://has.nlma.gov.tw/subsidyOnline/`), administering agencies, validity/expiration checks (`validFrom`/`validTo`), and next steps.
+  - **Pluggable Policy & Provider Architecture:** JSON-declarative policy rules (`src/policies/*.json`) + `AGENT_PROVIDER=auto` (OpenAI `gpt-5.4-mini` primary with automatic Ollama fallback) enable safe expansion without hallucination risk.
 - **Missing Evidence:**
-  - Live expansion to a 4th municipality or full childcare rule pack (currently bounded by `NOT_COVERED` safety gate).
+  - Additional municipalities beyond Taipei, New Taipei, and Taoyuan (`臺中市`, `高雄市`, etc.) or additional childcare programs (`托育補助`) remain bounded by `NOT_COVERED`.
 - **Relevant Files / Traces / Tests:**
-  - `src/scenario.ts`, `src/passport.ts`, `src/conflict.ts`, `src/policies/*.json`
+  - `src/childcare.ts`, `src/navigation.ts`, `src/scenario.ts`, `src/passport.ts`, `src/conflict.ts`, `src/policies/*.json`
+  - `src/agent/wave4-product.test.ts`, `docs/wave4-policy-evidence.md`
   - `demo/govaid-atlas-competition-showcase.html`
-- **Current Confidence:** **`MEDIUM-HIGH`**
+- **Current Confidence:** **`HIGH`**
 - **Next Action:** Emphasize how `NOT_COVERED` + JSON rule packs allow safe, incremental municipal onboarding without hallucination risk.
 
 ---

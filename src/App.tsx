@@ -94,6 +94,57 @@ const whatIfScenario: AddressScenario = {
   monthlyRent: 15500,
 };
 
+const taoyuanActualScenario: AddressScenario = {
+  type: "ACTUAL",
+  address: "桃園市桃園區中正路合成測試地址",
+  city: "桃園市",
+  district: "桃園區",
+  monthlyRent: 12000,
+};
+
+const initialChildcareApplicant: ApplicantProfile = {
+  ...initialApplicant,
+  maritalStatus: "married",
+  childrenCount: 1,
+  childAgeMonths: 10,
+  childHasBirthOrInitialHouseholdRegistration: true,
+  isGovernmentPlaced: false,
+  receivesPublicOrQuasiPublicChildcare: null,
+  birthOrder: 1,
+  childRegisteredCity: "臺北市",
+};
+
+const DEMO_PRESETS: Array<{
+  id: string;
+  label: string;
+  goal: string;
+  applicant: ApplicantProfile;
+}> = [
+  {
+    id: "housing-dual-city",
+    label: "租屋補助（雙北搬遷比較）",
+    goal: "我目前住在新北市永和區，每月租金 13,500 元。如果搬到臺北市文山區、租金 15,500 元，我有哪些租屋補助可以考慮？還缺什麼資料？",
+    applicant: initialApplicant,
+  },
+  {
+    id: "housing-taoyuan",
+    label: "租屋補助（桃園市申辦導航）",
+    goal: "我目前租屋在桃園市桃園區，每月租金 12,000 元，想查詢可申請的租屋補助與桃園市政府住宅發展處申辦方式。",
+    applicant: {
+      ...initialApplicant,
+      registeredCity: "桃園市",
+      monthlyIncome: 38000,
+      ownsHome: null,
+    },
+  },
+  {
+    id: "childcare-under2",
+    label: "育兒津貼（未滿2歲育兒津貼）",
+    goal: "我家寶寶目前 10 個月大，是家中第 1 胎，已完成出生戶籍登記，想確認未滿2歲育兒津貼資格、每月金額與線上申辦方式。",
+    applicant: initialChildcareApplicant,
+  },
+];
+
 const agentGoal = "我目前住在新北市永和區，每月租金 13,500 元。如果搬到臺北市文山區、租金 15,500 元，我有哪些租屋補助可以考慮？還缺什麼資料？";
 
 const OWNS_HOME_QUESTION = "本人是否持有住宅？";
@@ -310,13 +361,13 @@ function App() {
         return metrics;
       }
       const toolName = (event.input as {toolName?: unknown}).toolName;
-      if (toolName === "evaluate_central_rules") {
+      if (toolName === "evaluate_central_rules" || toolName === "evaluate_childcare_rules") {
         return recordRuntimeCall(metrics, "rulesEngineCalls");
       }
       if (toolName === "evaluate_actual_scenario" || toolName === "evaluate_what_if_scenario") {
         return recordRuntimeCall(metrics, "scenarioEvaluations");
       }
-      if (toolName === "generate_decision_passport") {
+      if (toolName === "generate_decision_passport" || toolName === "generate_childcare_passport") {
         return recordRuntimeCall(metrics, "passportGenerations");
       }
       if (toolName === "detect_policy_conflict") {
@@ -332,7 +383,15 @@ function App() {
       return;
     }
 
-    const freshApplicant = {...initialApplicant};
+    const matchingPreset = DEMO_PRESETS.find((p) => p.goal === goal);
+    const freshApplicant = matchingPreset
+      ? { ...matchingPreset.applicant }
+      : goal.includes("育兒") || goal.includes("幼兒") || goal.includes("嬰兒")
+        ? { ...initialChildcareApplicant }
+        : goal.includes("桃園")
+          ? { ...initialApplicant, registeredCity: "桃園市", monthlyIncome: 38000 }
+          : { ...initialApplicant };
+    const selectedActualScenario = goal.includes("桃園") ? taoyuanActualScenario : actualScenario;
     inferenceStartedAt.current = performance.now();
     setElapsedSeconds(0);
     setAgentRunning(true);
@@ -394,11 +453,21 @@ function App() {
       };
     }
 
-    const run = runAgenticGoldenCase(goal, freshApplicant, actualScenario, whatIfScenario, plannerResult);
+    const run = runAgenticGoldenCase(goal, freshApplicant, selectedActualScenario, whatIfScenario, plannerResult, {
+      includePassport: true,
+    });
     setAgentRun(run);
     recordAgentToolMetrics(run);
     const centralResult = getCompletedToolResult<{evaluations?: RuleEvaluation[]}>(run, "evaluate_central_rules");
     setCentralEvaluation(centralResult?.evaluations ?? []);
+    const actual = getCompletedToolResult<ScenarioResult>(run, "evaluate_actual_scenario");
+    const whatIf = getCompletedToolResult<ScenarioResult>(run, "evaluate_what_if_scenario");
+    const completedPassport =
+      getCompletedToolResult<DecisionPassport>(run, "generate_decision_passport") ??
+      getCompletedToolResult<DecisionPassport>(run, "generate_childcare_passport");
+    if (actual) setActualResult(actual);
+    if (whatIf) setWhatIfResult(whatIf);
+    if (completedPassport) setPassport(completedPassport);
     // Planner latency is only meaningful when the model actually returned a plan; a fast
     // failure followed by the rule-based fallback must read N/A, not "0.0 s".
     setLastInferenceSeconds(plannerResult.decision
@@ -412,12 +481,13 @@ function App() {
       return;
     }
     const targetField = agentRun.missingField ?? "ownsHome";
+    const selectedActualScenario = userGoal.includes("桃園") ? taoyuanActualScenario : actualScenario;
     const existingAuditCount = agentRun.auditTrail.length;
     audit("USER", "FIELD_CONFIRMED", {field: targetField, value: answer});
     const resumed =
-      targetField === "ownsHome" && typeof answer === "boolean"
-        ? resumeAgentRun(agentRun, {...applicant, ownsHome: answer}, actualScenario, whatIfScenario)
-        : resumeAgentWithFieldResponse(agentRun, targetField, answer, actualScenario, whatIfScenario);
+      targetField === "ownsHome" && typeof answer === "boolean" && agentRun.domain !== "CHILDCARE"
+        ? resumeAgentRun(agentRun, {...applicant, ownsHome: answer}, selectedActualScenario, whatIfScenario)
+        : resumeAgentWithFieldResponse(agentRun, targetField, answer, selectedActualScenario, whatIfScenario);
     if (resumed.state?.applicant) {
       setApplicant(resumed.state.applicant);
     } else if (targetField === "ownsHome" && typeof answer === "boolean") {
@@ -430,10 +500,14 @@ function App() {
     setCentralEvaluation(centralResult?.evaluations ?? []);
     const actual = getCompletedToolResult<ScenarioResult>(resumed, "evaluate_actual_scenario");
     const whatIf = getCompletedToolResult<ScenarioResult>(resumed, "evaluate_what_if_scenario");
-    const completedPassport = getCompletedToolResult<DecisionPassport>(resumed, "generate_decision_passport");
+    const completedPassport =
+      getCompletedToolResult<DecisionPassport>(resumed, "generate_decision_passport") ??
+      getCompletedToolResult<DecisionPassport>(resumed, "generate_childcare_passport");
     if (actual && whatIf && completedPassport) {
       setActualResult(actual);
       setWhatIfResult(whatIf);
+      setPassport(completedPassport);
+    } else if (completedPassport) {
       setPassport(completedPassport);
     }
   }
@@ -474,7 +548,7 @@ function App() {
   const status = agentRun.status;
   const phase: Phase = status === "IDLE" && !agentRunning
     ? "START"
-    : status === "COMPLETED" && passport && actualResult && whatIfResult
+    : status === "COMPLETED" && passport
       ? "DECIDE"
       : "ANALYZE";
 
@@ -587,7 +661,7 @@ function App() {
           </section>
         )}
 
-        {phase === "DECIDE" && passport && actualResult && whatIfResult && (
+        {phase === "DECIDE" && passport && (
           <ResultView
             run={agentRun}
             passport={passport}
@@ -747,6 +821,21 @@ function StartView({
             <h2 id="goal-title"><label htmlFor="agent-goal">你想確認什麼補助？</label></h2>
             <span className="en-companion" lang="en">What would you like to check?</span>
           </div>
+
+          <div className="segmented" role="group" aria-label="快速切換示範領域與情境">
+            {DEMO_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className={userGoal === preset.goal ? "is-active" : ""}
+                disabled={running}
+                onClick={() => onGoalChange(preset.goal)}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
           <textarea
             id="agent-goal"
             rows={3}
@@ -917,7 +1006,7 @@ function CurrentAction({
   elapsedSeconds: number;
   providerInfo: ProviderInfo;
   headingRef: React.Ref<HTMLHeadingElement>;
-  onAnswer: (ownsHome: boolean) => void;
+  onAnswer: (answer: boolean | number | string) => void;
   onReset: () => void;
 }) {
   const status = run.status;
@@ -942,14 +1031,26 @@ function CurrentAction({
         </p>
         <dl className="action-facts">
           <div><dt>模型</dt><dd><code>{providerInfo.model}</code></dd></div>
-          <div><dt>下一個工具</dt><dd><code>evaluate_central_rules</code></dd></div>
+          <div><dt>下一個工具</dt><dd><code>{run.domain === "CHILDCARE" ? "evaluate_childcare_rules" : "evaluate_central_rules"}</code></dd></div>
         </dl>
       </article>
     );
   }
 
   if (status === "WAITING_FOR_HUMAN") {
-    const isOwnsHome = run.humanInputRequired === OWNS_HOME_QUESTION;
+    const isOwnsHome = run.humanInputRequired === OWNS_HOME_QUESTION || run.missingField === "ownsHome";
+    const field = run.missingField;
+    const isBooleanGate =
+      isOwnsHome ||
+      field === "receivesOtherHousingAid" ||
+      field === "centralRentApproved" ||
+      field === "newTaipeiResidenceStudyWork" ||
+      field === "childHasBirthOrInitialHouseholdRegistration" ||
+      field === "receivesPublicOrQuasiPublicChildcare" ||
+      field === "isGovernmentPlaced";
+    const isBirthOrderGate = field === "birthOrder";
+    const isChildAgeGate = field === "childAgeMonths";
+
     return (
       <article className="action-card gate" aria-labelledby="action-title" aria-describedby="gate-why">
         <p className="gate-eyebrow">需要你的確認 <span lang="en">Human Gate</span></p>
@@ -961,12 +1062,33 @@ function CurrentAction({
             <button className="gate-button" type="button" onClick={() => onAnswer(false)}>沒有自有住宅</button>
             <button className="gate-button" type="button" onClick={() => onAnswer(true)}>有自有住宅</button>
           </div>
+        ) : field === "receivesPublicOrQuasiPublicChildcare" ? (
+          <div className="gate-actions" role="group" aria-label="回答：是否送托公托或準公共托育">
+            <button className="gate-button" type="button" onClick={() => onAnswer(false)}>未送托公托／準公共托育（自行照顧或一般托育）</button>
+            <button className="gate-button" type="button" onClick={() => onAnswer(true)}>正在接受公托或準公共托育服務</button>
+          </div>
+        ) : isBooleanGate ? (
+          <div className="gate-actions" role="group" aria-label="回答：是否符合條件">
+            <button className="gate-button" type="button" onClick={() => onAnswer(true)}>是／已完成</button>
+            <button className="gate-button" type="button" onClick={() => onAnswer(false)}>否／未完成</button>
+          </div>
+        ) : isBirthOrderGate ? (
+          <div className="gate-actions" role="group" aria-label="回答：兒童出生胎次">
+            <button className="gate-button" type="button" onClick={() => onAnswer(1)}>第 1 名子女（5,000元/月）</button>
+            <button className="gate-button" type="button" onClick={() => onAnswer(2)}>第 2 名子女（6,000元/月）</button>
+            <button className="gate-button" type="button" onClick={() => onAnswer(3)}>第 3 名以上（7,000元/月）</button>
+          </div>
+        ) : isChildAgeGate ? (
+          <div className="gate-actions" role="group" aria-label="回答：兒童月齡">
+            <button className="gate-button" type="button" onClick={() => onAnswer(10)}>10 個月（未滿2歲）</button>
+            <button className="gate-button" type="button" onClick={() => onAnswer(26)}>26 個月（已滿2歲）</button>
+          </div>
         ) : (
           <div className="gate-actions">
             <button className="secondary" type="button" onClick={onReset}>重新開始</button>
           </div>
         )}
-        <p className="gate-foot">Agent 已暫停 · 中央條件目前為「待確認」 · 回答後會重新執行規則檢查</p>
+        <p className="gate-foot">Agent 已暫停 · 必要條件目前為「待確認」 · 回答後會重新執行規則檢查</p>
       </article>
     );
   }
@@ -1099,6 +1221,8 @@ const policyLabels: Record<string, {name: string; short: string; detail: string}
   CENTRAL_RENT_115: {name: "中央租屋補助", short: "中央方案", detail: "中央擴大租金補貼（115年度）"},
   NEW_TAIPEI_RENT_115: {name: "新北地方方案", short: "新北方案", detail: "新北市青年租金補貼（115年度）"},
   TAIPEI_RENT_115: {name: "臺北地方方案", short: "臺北方案", detail: "臺北幸福租－租金加碼補貼（115年度）"},
+  TAOYUAN_CENTRAL_RENT_115: {name: "桃園市受理方案", short: "桃園受理", detail: "300億元中央擴大租金補貼（桃園市政府住宅發展處協辦受理）"},
+  CHILDCARE_ALLOWANCE_UNDER_2_115: {name: "未滿2歲育兒津貼", short: "育兒津貼", detail: "衛生福利部育有未滿2歲兒童育兒津貼（115年度）"},
   LOCAL_COVERAGE_BOUNDARY: {name: "地方方案涵蓋範圍", short: "地方方案", detail: "地方租屋補助涵蓋邊界檢查"},
 };
 
@@ -1112,6 +1236,11 @@ const fieldLabels: Record<string, string> = {
   receivesOtherHousingAid: "是否領有其他住宅補貼",
   centralRentApproved: "中央租金補貼是否已核准",
   newTaipeiResidenceStudyWork: "新北市設籍、就學或就業條件",
+  childAgeMonths: "兒童年齡（月齡）",
+  childHasBirthOrInitialHouseholdRegistration: "出生登記或初設戶籍登記",
+  receivesPublicOrQuasiPublicChildcare: "是否接受公共化或準公共托育服務",
+  isGovernmentPlaced: "是否經政府公費安置收容",
+  birthOrder: "兒童出生排序（胎次）",
 };
 
 function policyName(policyId: string): string {
@@ -1204,8 +1333,8 @@ function ResultView({
 }: {
   run: AgentRun;
   passport: DecisionPassport;
-  actual: ScenarioResult;
-  whatIf: ScenarioResult;
+  actual: ScenarioResult | null;
+  whatIf: ScenarioResult | null;
   ownsHome: boolean | null;
   headingRef: React.Ref<HTMLHeadingElement>;
   onOpenGovernance: () => void;
@@ -1222,6 +1351,7 @@ function ResultView({
     .filter((item, index, array) => array.findIndex((candidate) => candidate.sourceId === item.sourceId) === index)
     .sort((left, right) => left.sourceId.localeCompare(right.sourceId, "en", {numeric: true}));
   const generatedAt = new Date(passport.generatedAt).toLocaleString("zh-TW", {hour12: false});
+  const guides = passport.applicationGuides ?? [];
 
   return (
     <div className="result phase-enter">
@@ -1231,8 +1361,11 @@ function ResultView({
           <p className="eyebrow">分析完成 <span lang="en">Decision Result</span></p>
           <h1 id="result-title" ref={headingRef} tabIndex={-1}>你的補助決策摘要</h1>
           <p className="trace">
-            {resumeIndex >= 0 && ownsHome !== null && <>已依你的確認（{ownsHome ? "有" : "沒有"}自有住宅）繼續分析 · </>}
+            {resumeIndex >= 0 && ownsHome !== null && passport.domain !== "CHILDCARE" && <>已依你的確認（{ownsHome ? "有" : "沒有"}自有住宅）繼續分析 · </>}
             執行 {toolsAfterResume} 個政策工具
+            {passport.childcare?.estimatedMonthlyBenefitNtd && (
+              <> · 預估每月津貼 <strong>NT${passport.childcare.estimatedMonthlyBenefitNtd.toLocaleString()}</strong></>
+            )}
           </p>
         </header>
 
@@ -1255,7 +1388,9 @@ function ResultView({
                   <li key={verdict.policyId + verdict.scope}>
                     <strong>{policyName(verdict.policyId)}</strong>
                     {verdict.status === "PASS"
-                      ? `：${verdict.scope === "兩個地址皆適用" ? "兩個地址" : verdict.scope}在目前資料下皆通過條件檢查`
+                      ? `：${verdict.scope === "兩個地址皆適用" ? "依目前條件" : verdict.scope}在目前資料下通過條件檢查${
+                          passport.childcare?.benefitTierLabel ? `（${passport.childcare.benefitTierLabel}）` : ""
+                        }`
                       : `：不符合（${verdict.gap ?? "條件不符"}）`}
                   </li>
                 ))}
@@ -1278,14 +1413,16 @@ function ResultView({
         </div>
       </section>
 
-      {/* 2 — Actual vs What-if */}
-      <section className="compare" aria-labelledby="compare-title">
-        <div className="section-head">
-          <h2 id="compare-title">目前住址 vs 搬遷假設</h2>
-          <span className="en-companion" lang="en">Actual vs What-if</span>
-        </div>
-        <CompareTable actual={actual} whatIf={whatIf}/>
-      </section>
+      {/* 2 — Actual vs What-if (Housing only) */}
+      {actual && whatIf && passport.domain !== "CHILDCARE" && (
+        <section className="compare" aria-labelledby="compare-title">
+          <div className="section-head">
+            <h2 id="compare-title">目前住址 vs 搬遷假設</h2>
+            <span className="en-companion" lang="en">Actual vs What-if</span>
+          </div>
+          <CompareTable actual={actual} whatIf={whatIf}/>
+        </section>
+      )}
 
       {/* 3 — Decision Passport (the take-away document) */}
       <article className="passport-doc" aria-labelledby="passport-title">
@@ -1313,13 +1450,70 @@ function ResultView({
           <ol className="steps">{passport.nextSteps.map((item) => <li key={item}>{item}</li>)}</ol>
         </section>
 
+        {guides.length > 0 && (
+          <section className="doc-section" aria-labelledby="ps-navigation">
+            <h3 id="ps-navigation"><span className="doc-num" aria-hidden="true">03</span>申辦導航（應備文件、受理機關與申請連結）</h3>
+            <div className="panel-stack">
+              {guides.map((guide) => (
+                <div className="gov-card" key={guide.policyId}>
+                  <div className="card-head">
+                    <h4>{guide.programTitle}</h4>
+                    <span className="en-companion">
+                      {guide.applicationStatus === "OPEN"
+                        ? "受理中（OPEN）"
+                        : guide.applicationStatus === "ROLLING"
+                          ? "全年常態受理（ROLLING）"
+                          : "已截止（CLOSED）"}
+                    </span>
+                  </div>
+                  <dl className="kv">
+                    <div><dt>主管／受理機關</dt><dd>{guide.administeringAgency}</dd></div>
+                    <div><dt>受理期間</dt><dd>{guide.applicationPeriod}</dd></div>
+                    <div><dt>政策有效期間</dt><dd>{guide.validFrom} 至 {guide.validTo}</dd></div>
+                    {guide.benefitAmountFormula && (
+                      <div><dt>補助金額基準</dt><dd>{guide.benefitAmountFormula}</dd></div>
+                    )}
+                    <div><dt>臨櫃／郵寄資訊</dt><dd>{guide.officeInformation}</dd></div>
+                    <div><dt>諮詢電話</dt><dd>{guide.contactInformation}</dd></div>
+                    {guide.onlineApplicationUrl && (
+                      <div>
+                        <dt>官方線上申辦</dt>
+                        <dd>
+                          <a href={guide.onlineApplicationUrl} target="_blank" rel="noreferrer">
+                            {guide.onlineApplicationUrl} ↗
+                          </a>
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                  <p><strong>應備文件清單：</strong></p>
+                  <ul className="checklist">
+                    {guide.requiredDocuments.map((doc) => (
+                      <li key={doc.documentId}>
+                        {doc.title}
+                        {!doc.required && doc.conditionNote ? `（選備：${doc.conditionNote}）` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                  <p><strong>申請方式：</strong></p>
+                  <ul className="steps">
+                    {guide.applicationMethods.map((method) => (
+                      <li key={method}>{method}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="doc-section" aria-labelledby="ps-risks">
-          <h3 id="ps-risks"><span className="doc-num" aria-hidden="true">03</span>風險提醒</h3>
+          <h3 id="ps-risks"><span className="doc-num" aria-hidden="true">04</span>風險提醒與排除條件</h3>
           <ul className="risks">{passport.risks.map((item) => <li key={item}>{item}</li>)}</ul>
         </section>
 
         <section className="doc-section" aria-labelledby="evidence-title">
-          <h3 id="evidence-title"><span className="doc-num" aria-hidden="true">04</span>官方依據</h3>
+          <h3 id="evidence-title"><span className="doc-num" aria-hidden="true">05</span>官方依據</h3>
           <ul className="evidence-list">
             {evidence.map((item) => (
               <li key={item.sourceId}>

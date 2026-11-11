@@ -1,11 +1,13 @@
-import type { ApplicantProfile, AddressScenario, EligibilityStatus, RuleEvaluation } from "../types";
+import type { ApplicantProfile, AddressScenario, BenefitDomain, EligibilityStatus, RuleEvaluation } from "../types";
 import type { ScenarioResult } from "../scenario";
 import type { DecisionPassport } from "../passport";
+import type { ChildcareEvaluationResult } from "../childcare";
 import { aggregateEligibilityStatus } from "../status";
-import { assessCityCoverage, assessQueryCoverage } from "../coverage";
+import { assessCityCoverage, assessQueryCoverage, detectBenefitDomain, isLocalOnlyHousingQuery } from "../coverage";
 import { callTool, isAllowedToolName, listAllowedTools } from "./tools";
 import {
   applyValidatedFieldUpdate,
+  CHILDCARE_MISSING_FIELDS,
   detectMissingFields,
   getQuestionForMissingField,
   isFieldMissing,
@@ -22,19 +24,35 @@ import type {
   AgentRun,
   AgentStatus,
   AgentToolName,
-  AgentTraceEvent,
   SupportedMissingField,
   ToolExecutionResult,
 } from "./types";
 import type { ProviderPlannerResult } from "./providers/types";
+import type { RuleEvaluationOptions } from "../rules";
 
 export const MAX_AGENT_STEPS = 8;
+
+export type RuleEvaluationOptionsWithScope = RuleEvaluationOptions & {
+  localOnly?: boolean;
+};
 
 const VALID_ACTIONS: readonly AgentDecisionAction[] = [
   "CALL_TOOL",
   "ASK_HUMAN",
   "COMPLETE",
   "HUMAN_REVIEW_REQUIRED",
+] as const;
+
+const HOUSING_DOMAIN_TOOLS: readonly AgentToolName[] = [
+  "evaluate_central_rules",
+  "evaluate_actual_scenario",
+  "evaluate_what_if_scenario",
+  "generate_decision_passport",
+] as const;
+
+const CHILDCARE_DOMAIN_TOOLS: readonly AgentToolName[] = [
+  "evaluate_childcare_rules",
+  "generate_childcare_passport",
 ] as const;
 
 export type ProposalValidationResult = {
@@ -54,11 +72,14 @@ export type AgentLoopOptions = {
   maxSteps?: number;
   forceLoop?: boolean;
   includePassport?: boolean;
+  domain?: BenefitDomain;
+  ruleOptions?: RuleEvaluationOptionsWithScope;
   requiredFields?: SupportedMissingField[];
   plannerProposals?: Array<ProviderPlannerResult | Record<string, unknown> | null | undefined>;
 };
 
 type InternalExecutionState = {
+  domain: BenefitDomain;
   goal: string;
   applicant: ApplicantProfile;
   actualScenario: AddressScenario;
@@ -67,11 +88,14 @@ type InternalExecutionState = {
   completedTools: AgentToolName[];
   executedAtSignature: Set<string>;
   includePassport: boolean;
+  ruleOptions?: RuleEvaluationOptionsWithScope;
   conflictStatus?: "CLEAR" | "CONFLICT";
   centralEvaluations?: RuleEvaluation[];
   centralStatus?: EligibilityStatus;
   actualScenarioResult?: ScenarioResult;
   whatIfScenarioResult?: ScenarioResult;
+  childcareResult?: ChildcareEvaluationResult;
+  childcareStatus?: EligibilityStatus;
   passportResult?: DecisionPassport;
   overallEligibilityStatus?: EligibilityStatus | "HUMAN_REVIEW_REQUIRED";
 };
@@ -90,7 +114,16 @@ function computeStateSignature(
   });
 }
 
-export function buildSafePlan(goal: string): string[] {
+export function buildSafePlan(goal: string, domain: BenefitDomain = detectBenefitDomain(goal)): string[] {
+  if (domain === "CHILDCARE") {
+    return [
+      "Check under-2 childcare allowance rules",
+      "Resolve missing childcare applicant fields",
+      "Check official childcare policy evidence",
+      "Generate Childcare Decision Passport",
+    ].map((step, index) => `${index + 1}. ${step} — ${goal}`);
+  }
+
   return [
     "Check central rental rules",
     "Resolve missing applicant fields",
@@ -103,13 +136,15 @@ export function buildSafePlan(goal: string): string[] {
 
 export function createAgentRun(goal: string, maxSteps = MAX_AGENT_STEPS): AgentRun {
   const id = `agent-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+  const domain = detectBenefitDomain(goal);
   return {
     id,
     runId: id,
+    domain,
     status: "IDLE",
     goal,
     currentStep: "Awaiting goal input",
-    plan: buildSafePlan(goal),
+    plan: buildSafePlan(goal, domain),
     stepsTaken: 0,
     maximumSteps: maxSteps,
     providerStatus: "UNKNOWN",
@@ -118,7 +153,7 @@ export function createAgentRun(goal: string, maxSteps = MAX_AGENT_STEPS): AgentR
         timestamp: new Date().toISOString(),
         actor: "SYSTEM",
         action: "AGENT_RUN_STARTED",
-        input: { goal },
+        input: { goal, domain },
       },
     ],
     trace: [],
@@ -201,6 +236,7 @@ function hasUnsafeOverrideAttempt(
 export function validatePlannerProposal(
   rawProposal: unknown,
   state: {
+    domain?: BenefitDomain;
     applicant: ApplicantProfile;
     actualScenario: AddressScenario;
     whatIfScenario: AddressScenario;
@@ -208,6 +244,7 @@ export function validatePlannerProposal(
     completedTools: AgentToolName[];
     executedAtSignature: Set<string>;
     centralStatus?: EligibilityStatus;
+    childcareStatus?: EligibilityStatus;
     overallEligibilityStatus?: EligibilityStatus | "HUMAN_REVIEW_REQUIRED";
   }
 ): ProposalValidationResult {
@@ -249,6 +286,8 @@ export function validatePlannerProposal(
     };
   }
 
+  const domain: BenefitDomain = state.domain ?? "HOUSING";
+
   if (nextAction === "CALL_TOOL") {
     if (typeof candidate.toolName !== "string" || !candidate.toolName.trim()) {
       return {
@@ -265,6 +304,30 @@ export function validatePlannerProposal(
         validationStage: "ALLOWLIST_VALIDATION",
         proposalRejected: true,
         rejectionReason: `TOOL_NOT_IN_ALLOWLIST: ${candidate.toolName}`,
+      };
+    }
+
+    if (
+      domain === "CHILDCARE" &&
+      (HOUSING_DOMAIN_TOOLS as readonly string[]).includes(candidate.toolName)
+    ) {
+      return {
+        valid: false,
+        validationStage: "STATE_TRANSITION_VALIDATION",
+        proposalRejected: true,
+        rejectionReason: `DOMAIN_MISMATCH_HOUSING_TOOL_ON_CHILDCARE_RUN: ${candidate.toolName}`,
+      };
+    }
+
+    if (
+      domain === "HOUSING" &&
+      (CHILDCARE_DOMAIN_TOOLS as readonly string[]).includes(candidate.toolName)
+    ) {
+      return {
+        valid: false,
+        validationStage: "STATE_TRANSITION_VALIDATION",
+        proposalRejected: true,
+        rejectionReason: `DOMAIN_MISMATCH_CHILDCARE_TOOL_ON_HOUSING_RUN: ${candidate.toolName}`,
       };
     }
   }
@@ -314,56 +377,92 @@ export function validatePlannerProposal(
     };
   }
 
-  if (nextAction === "COMPLETE" || toolName === "complete") {
+  if (domain === "CHILDCARE") {
+    if (nextAction === "COMPLETE" || toolName === "complete") {
+      if (!state.completedTools.includes("evaluate_childcare_rules")) {
+        return {
+          valid: false,
+          validationStage: "STATE_TRANSITION_VALIDATION",
+          proposalRejected: true,
+          rejectionReason: "PREMATURE_COMPLETE_BEFORE_CHILDCARE_EVALUATION",
+        };
+      }
+      if (state.childcareStatus !== "FAIL" && (missingFields.length > 0 || state.childcareStatus === "UNCERTAIN")) {
+        return {
+          valid: false,
+          validationStage: "STATE_TRANSITION_VALIDATION",
+          proposalRejected: true,
+          rejectionReason: "CANNOT_COMPLETE_WITH_UNRESOLVED_CHILDCARE_FIELDS",
+        };
+      }
+    }
+
     if (
-      !state.completedTools.includes("evaluate_central_rules") &&
-      !state.completedTools.includes("evaluate_actual_scenario")
+      toolName &&
+      ["get_policy_evidence", "generate_childcare_passport"].includes(toolName) &&
+      state.completedTools.includes("evaluate_childcare_rules") &&
+      state.childcareStatus !== "FAIL" &&
+      (missingFields.length > 0 || state.childcareStatus === "UNCERTAIN")
     ) {
       return {
         valid: false,
         validationStage: "STATE_TRANSITION_VALIDATION",
         proposalRejected: true,
-        rejectionReason: "PREMATURE_COMPLETE_BEFORE_EVALUATION",
+        rejectionReason: `UNRESOLVED_MISSING_FIELD_BLOCKS_${toolName}`,
       };
     }
+  } else {
+    if (nextAction === "COMPLETE" || toolName === "complete") {
+      if (
+        !state.completedTools.includes("evaluate_central_rules") &&
+        !state.completedTools.includes("evaluate_actual_scenario")
+      ) {
+        return {
+          valid: false,
+          validationStage: "STATE_TRANSITION_VALIDATION",
+          proposalRejected: true,
+          rejectionReason: "PREMATURE_COMPLETE_BEFORE_EVALUATION",
+        };
+      }
 
-    if (missingFields.length > 0 || state.centralStatus === "UNCERTAIN") {
+      if (missingFields.length > 0 || state.centralStatus === "UNCERTAIN") {
+        return {
+          valid: false,
+          validationStage: "STATE_TRANSITION_VALIDATION",
+          proposalRejected: true,
+          rejectionReason: "CANNOT_COMPLETE_WITH_UNRESOLVED_REQUIRED_FIELDS",
+        };
+      }
+    }
+
+    if (
+      toolName &&
+      ["evaluate_actual_scenario", "evaluate_what_if_scenario", "get_policy_evidence", "generate_decision_passport"].includes(
+        toolName
+      ) &&
+      state.completedTools.includes("evaluate_central_rules") &&
+      (missingFields.length > 0 || state.centralStatus === "UNCERTAIN")
+    ) {
       return {
         valid: false,
         validationStage: "STATE_TRANSITION_VALIDATION",
         proposalRejected: true,
-        rejectionReason: "CANNOT_COMPLETE_WITH_UNRESOLVED_REQUIRED_FIELDS",
+        rejectionReason: `UNRESOLVED_MISSING_FIELD_BLOCKS_${toolName}`,
       };
     }
-  }
 
-  if (
-    toolName &&
-    ["evaluate_actual_scenario", "evaluate_what_if_scenario", "get_policy_evidence", "generate_decision_passport"].includes(
-      toolName
-    ) &&
-    state.completedTools.includes("evaluate_central_rules") &&
-    (missingFields.length > 0 || state.centralStatus === "UNCERTAIN")
-  ) {
-    return {
-      valid: false,
-      validationStage: "STATE_TRANSITION_VALIDATION",
-      proposalRejected: true,
-      rejectionReason: `UNRESOLVED_MISSING_FIELD_BLOCKS_${toolName}`,
-    };
-  }
-
-  if (
-    toolName === "generate_decision_passport" &&
-    (!state.completedTools.includes("evaluate_actual_scenario") ||
-      !state.completedTools.includes("evaluate_what_if_scenario"))
-  ) {
-    return {
-      valid: false,
-      validationStage: "STATE_TRANSITION_VALIDATION",
-      proposalRejected: true,
-      rejectionReason: "PASSPORT_REQUIRES_SCENARIO_EVALUATIONS",
-    };
+    if (
+      toolName === "generate_decision_passport" &&
+      (!state.completedTools.includes("evaluate_actual_scenario") ||
+        !state.completedTools.includes("evaluate_what_if_scenario"))
+    ) {
+      return {
+        valid: false,
+        validationStage: "STATE_TRANSITION_VALIDATION",
+        proposalRejected: true,
+        rejectionReason: "PASSPORT_REQUIRES_SCENARIO_EVALUATIONS",
+      };
+    }
   }
 
   const requestedMissingField = isSupportedMissingField(candidate.missingField)
@@ -395,8 +494,28 @@ export function validatePlannerProposal(
   };
 }
 
+function hasImmediateChildcareExclusion(applicant: ApplicantProfile): boolean {
+  if (typeof applicant.childAgeMonths === "number" && (applicant.childAgeMonths >= 24 || applicant.childAgeMonths < 0)) {
+    return true;
+  }
+  if (applicant.childHasBirthOrInitialHouseholdRegistration === false) {
+    return true;
+  }
+  if (applicant.isGovernmentPlaced === true) {
+    return true;
+  }
+  if (applicant.receivesPublicOrQuasiPublicChildcare === true) {
+    return true;
+  }
+  if (typeof applicant.birthOrder === "number" && applicant.birthOrder < 1) {
+    return true;
+  }
+  return false;
+}
+
 export function decideNextStep(context: {
   goal: string;
+  domain?: BenefitDomain;
   applicant: ApplicantProfile;
   actualScenario?: AddressScenario;
   requiredFields?: SupportedMissingField[];
@@ -413,9 +532,61 @@ export function decideNextStep(context: {
     };
   }
 
+  const domain = context.domain ?? detectBenefitDomain(context.goal);
+  const completed = context.completedTools ?? [];
+
+  if (domain === "CHILDCARE") {
+    const requiredFields =
+      context.requiredFields ??
+      (hasImmediateChildcareExclusion(context.applicant) ? [] : [...CHILDCARE_MISSING_FIELDS]);
+    const missingFields = detectMissingFields(context.applicant, context.actualScenario, requiredFields);
+
+    if (!completed.includes("evaluate_childcare_rules") && !context.lastToolResult) {
+      return {
+        reasoningSummary: "Run deterministic under-2 childcare allowance rules.",
+        nextAction: "CALL_TOOL",
+        toolName: "evaluate_childcare_rules",
+      };
+    }
+
+    if (
+      context.lastToolResult?.status !== "FAIL" &&
+      (missingFields.length > 0 || context.lastToolResult?.status === "UNCERTAIN")
+    ) {
+      const field = missingFields[0] ?? "childAgeMonths";
+      return {
+        reasoningSummary: `Childcare eligibility requires missing field (${field}) before a determination can be made.`,
+        nextAction: "ASK_HUMAN",
+        missingField: field,
+        humanQuestion: getQuestionForMissingField(field),
+      };
+    }
+
+    if (context.completedTools) {
+      if (!completed.includes("get_policy_evidence")) {
+        return {
+          reasoningSummary: "Bind official childcare policy evidence.",
+          nextAction: "CALL_TOOL",
+          toolName: "get_policy_evidence",
+        };
+      }
+      if (!completed.includes("generate_childcare_passport")) {
+        return {
+          reasoningSummary: "Generate Childcare Decision Passport.",
+          nextAction: "CALL_TOOL",
+          toolName: "generate_childcare_passport",
+        };
+      }
+    }
+
+    return {
+      reasoningSummary: "Childcare deterministic evaluation is complete.",
+      nextAction: "COMPLETE",
+    };
+  }
+
   const requiredFields = context.requiredFields ?? ["ownsHome", "receivesOtherHousingAid"];
   const missingFields = detectMissingFields(context.applicant, context.actualScenario, requiredFields);
-  const completed = context.completedTools ?? [];
 
   if (!completed.includes("evaluate_central_rules") && !context.lastToolResult) {
     if (missingFields.length > 0 && missingFields[0] !== "ownsHome" && missingFields[0] !== "receivesOtherHousingAid") {
@@ -504,6 +675,51 @@ export function decideNextStep(context: {
 }
 
 function selectDeterministicToolDecision(state: InternalExecutionState): AgentDecision {
+  if (state.domain === "CHILDCARE") {
+    if (!state.completedTools.includes("evaluate_childcare_rules")) {
+      return {
+        reasoningSummary: "Evaluate under-2 childcare allowance rules deterministically.",
+        nextAction: "CALL_TOOL",
+        toolName: "evaluate_childcare_rules",
+      };
+    }
+
+    const missingAfterChildcare = detectMissingFields(state.applicant, state.actualScenario, state.requiredFields);
+    if (
+      state.childcareStatus !== "FAIL" &&
+      (missingAfterChildcare.length > 0 || state.childcareStatus === "UNCERTAIN")
+    ) {
+      const field = missingAfterChildcare[0] ?? "childAgeMonths";
+      return {
+        reasoningSummary: `Deterministic childcare evaluation requires missing field: ${field}.`,
+        nextAction: "ASK_HUMAN",
+        missingField: field,
+        humanQuestion: getQuestionForMissingField(field),
+      };
+    }
+
+    if (!state.completedTools.includes("get_policy_evidence")) {
+      return {
+        reasoningSummary: "Bind official childcare policy evidence.",
+        nextAction: "CALL_TOOL",
+        toolName: "get_policy_evidence",
+      };
+    }
+
+    if (!state.completedTools.includes("generate_childcare_passport")) {
+      return {
+        reasoningSummary: "Generate Childcare Decision Passport.",
+        nextAction: "CALL_TOOL",
+        toolName: "generate_childcare_passport",
+      };
+    }
+
+    return {
+      reasoningSummary: "All required childcare deterministic steps completed.",
+      nextAction: "COMPLETE",
+    };
+  }
+
   if (!state.completedTools.includes("evaluate_central_rules")) {
     const extraMissing = detectMissingFields(state.applicant, state.actualScenario, state.requiredFields).find(
       (field) => field !== "ownsHome" && field !== "receivesOtherHousingAid"
@@ -575,8 +791,19 @@ function selectDeterministicToolDecision(state: InternalExecutionState): AgentDe
 function deriveRequiredFields(
   applicant: ApplicantProfile,
   actualScenario: AddressScenario,
-  explicitRequired?: SupportedMissingField[]
+  explicitRequired?: SupportedMissingField[],
+  domain: BenefitDomain = "HOUSING"
 ): SupportedMissingField[] {
+  if (domain === "CHILDCARE") {
+    if (explicitRequired) {
+      return [...explicitRequired];
+    }
+    if (hasImmediateChildcareExclusion(applicant)) {
+      return [];
+    }
+    return [...CHILDCARE_MISSING_FIELDS];
+  }
+
   const base: SupportedMissingField[] = explicitRequired
     ? [...explicitRequired]
     : ["ownsHome", "receivesOtherHousingAid"];
@@ -604,29 +831,42 @@ function buildToolArguments(
   switch (toolName) {
     case "evaluate_central_rules":
       return {
-        args: { profile: state.applicant },
+        args: { profile: state.applicant, options: state.ruleOptions },
         safeSummary: { profileFieldsProvided: Object.keys(state.applicant) },
         auditVersion: "CENTRAL-RENT-115",
       };
     case "evaluate_actual_scenario":
       return {
-        args: { profile: state.applicant, scenario: state.actualScenario },
+        args: { profile: state.applicant, scenario: state.actualScenario, options: state.ruleOptions },
         safeSummary: { city: state.actualScenario.city ?? null, type: "ACTUAL" },
         auditVersion: "ACTUAL-SCENARIO",
       };
     case "evaluate_what_if_scenario":
       return {
-        args: { profile: state.applicant, scenario: state.whatIfScenario },
+        args: { profile: state.applicant, scenario: state.whatIfScenario, options: state.ruleOptions },
         safeSummary: { city: state.whatIfScenario.city ?? null, type: "WHAT_IF" },
         auditVersion: "WHAT-IF-SCENARIO",
       };
+    case "evaluate_childcare_rules":
+      return {
+        args: { profile: state.applicant, options: state.ruleOptions },
+        safeSummary: {
+          domain: "CHILDCARE",
+          childAgeMonths: state.applicant.childAgeMonths ?? null,
+          birthOrder: state.applicant.birthOrder ?? null,
+        },
+        auditVersion: "CHILDCARE-ALLOWANCE-115",
+      };
     case "get_policy_evidence": {
-      const evaluations = state.includePassport
-        ? [
-            ...(state.actualScenarioResult?.policyResults ?? []).flatMap((policy) => policy.evaluations ?? []),
-            ...(state.whatIfScenarioResult?.policyResults ?? []).flatMap((policy) => policy.evaluations ?? []),
-          ]
-        : [...(state.centralEvaluations ?? [])];
+      const evaluations =
+        state.domain === "CHILDCARE"
+          ? [...(state.childcareResult?.evaluations ?? [])]
+          : state.includePassport
+            ? [
+                ...(state.actualScenarioResult?.policyResults ?? []).flatMap((policy) => policy.evaluations ?? []),
+                ...(state.whatIfScenarioResult?.policyResults ?? []).flatMap((policy) => policy.evaluations ?? []),
+              ]
+            : [...(state.centralEvaluations ?? [])];
       return {
         args: { evaluations },
         safeSummary: { evaluationCount: evaluations.length },
@@ -640,6 +880,7 @@ function buildToolArguments(
           profile: state.applicant,
           actual: state.actualScenarioResult,
           whatIf: state.whatIfScenarioResult,
+          options: state.ruleOptions,
         },
         safeSummary: {
           caseId: "CASE-P0-001",
@@ -647,6 +888,20 @@ function buildToolArguments(
           whatIfCity: state.whatIfScenario.city ?? null,
         },
         auditVersion: "DECISION-PASSPORT",
+      };
+    case "generate_childcare_passport":
+      return {
+        args: {
+          caseId: "CASE-CHILDCARE-001",
+          profile: state.applicant,
+          childcareResult: state.childcareResult,
+          options: state.ruleOptions,
+        },
+        safeSummary: {
+          caseId: "CASE-CHILDCARE-001",
+          domain: "CHILDCARE",
+        },
+        auditVersion: "CHILDCARE-PASSPORT",
       };
     case "detect_policy_conflict": {
       const proposedClaims = (proposedDecision?.toolArguments as { claims?: unknown } | undefined)?.claims;
@@ -658,10 +913,12 @@ function buildToolArguments(
     }
     case "request_missing_field":
     case "request_human_confirmation": {
+      const defaultField: SupportedMissingField =
+        state.domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome";
       const field =
         proposedDecision?.missingField ??
         detectMissingFields(state.applicant, state.actualScenario, state.requiredFields)[0] ??
-        "ownsHome";
+        defaultField;
       return {
         args: {
           field,
@@ -712,7 +969,11 @@ function updateStateFromToolResult(
       statuses.push(state.actualScenarioResult.overallStatus);
     }
     state.overallEligibilityStatus = aggregateEligibilityStatus(statuses);
-  } else if (toolName === "generate_decision_passport") {
+  } else if (toolName === "evaluate_childcare_rules") {
+    state.childcareResult = toolResult.result as ChildcareEvaluationResult;
+    state.childcareStatus = (state.childcareResult?.eligibilityStatus ?? toolResult.status) as EligibilityStatus;
+    state.overallEligibilityStatus = state.childcareStatus;
+  } else if (toolName === "generate_decision_passport" || toolName === "generate_childcare_passport") {
     state.passportResult = toolResult.result as DecisionPassport;
     state.overallEligibilityStatus = toolResult.status as EligibilityStatus;
   } else if (toolName === "detect_policy_conflict") {
@@ -726,7 +987,9 @@ function updateStateFromToolResult(
 }
 
 function syncRunStateSnapshot(run: AgentRun, state: InternalExecutionState): void {
+  run.domain = state.domain;
   run.state = {
+    domain: state.domain,
     applicant: { ...state.applicant },
     actualScenario: { ...state.actualScenario },
     whatIfScenario: { ...state.whatIfScenario },
@@ -735,8 +998,18 @@ function syncRunStateSnapshot(run: AgentRun, state: InternalExecutionState): voi
     centralStatus: state.centralStatus,
     actualStatus: state.actualScenarioResult?.overallStatus,
     whatIfStatus: state.whatIfScenarioResult?.overallStatus,
+    childcareStatus: state.childcareStatus,
     overallEligibilityStatus: state.overallEligibilityStatus,
   };
+}
+
+function resolveTraceCoverageStatus(state: InternalExecutionState): "COVERED" | "NOT_COVERED" | "MISSING" {
+  if (state.domain === "CHILDCARE") {
+    return "COVERED";
+  }
+  return assessCityCoverage(state.actualScenario.city, {
+    localOnly: state.ruleOptions?.localOnly,
+  }).status;
 }
 
 function executeBoundedSteps(
@@ -872,7 +1145,7 @@ function executeBoundedSteps(
         proposalRejected: validation.proposalRejected,
         rejectionReason: validation.rejectionReason,
         toolResultSummary: "HUMAN_REVIEW_REQUIRED",
-        coverageStatus: assessCityCoverage(state.actualScenario.city).status,
+        coverageStatus: resolveTraceCoverageStatus(state),
         eligibilityStatus: "HUMAN_REVIEW_REQUIRED",
         humanGate: {
           triggered: true,
@@ -895,10 +1168,12 @@ function executeBoundedSteps(
 
     // Handle ASK_HUMAN action
     if (selectedDecision.nextAction === "ASK_HUMAN") {
+      const defaultField: SupportedMissingField =
+        state.domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome";
       const missingField =
         selectedDecision.missingField ??
         detectMissingFields(state.applicant, state.actualScenario, state.requiredFields)[0] ??
-        "ownsHome";
+        defaultField;
       const question = getQuestionForMissingField(missingField);
       currentRun.stepsTaken += 1;
       currentRun.status = "WAITING_FOR_HUMAN";
@@ -933,7 +1208,7 @@ function executeBoundedSteps(
         proposalRejected: validation.proposalRejected,
         rejectionReason: validation.rejectionReason,
         toolResultSummary: `Missing field requested: ${missingField}`,
-        coverageStatus: assessCityCoverage(state.actualScenario.city).status,
+        coverageStatus: resolveTraceCoverageStatus(state),
         eligibilityStatus: "UNCERTAIN",
         humanGate: {
           triggered: true,
@@ -952,7 +1227,7 @@ function executeBoundedSteps(
         "AGENT_WAITING_FOR_HUMAN",
         { missingField },
         currentRun.toolResult ?? { missingField, question },
-        "CENTRAL-RENT-115",
+        state.domain === "CHILDCARE" ? "CHILDCARE-ALLOWANCE-115" : "CENTRAL-RENT-115",
         "AGENT"
       );
     }
@@ -992,7 +1267,7 @@ function executeBoundedSteps(
         proposalRejected: validation.proposalRejected,
         rejectionReason: validation.rejectionReason,
         toolResultSummary: `Workflow completed with eligibilityStatus=${String(state.overallEligibilityStatus ?? "PARTIAL_CHECK")}`,
-        coverageStatus: assessCityCoverage(state.actualScenario.city).status,
+        coverageStatus: resolveTraceCoverageStatus(state),
         eligibilityStatus: state.overallEligibilityStatus ?? "PARTIAL_CHECK",
         humanGate: null,
         fallbackUsed,
@@ -1019,14 +1294,23 @@ function executeBoundedSteps(
     currentRun.lastDecision = selectedDecision;
 
     const toolResult = callTool(toolName, args);
-    if (toolName === "evaluate_central_rules" || !currentRun.toolResult) {
+    if (
+      toolName === "evaluate_central_rules" ||
+      toolName === "evaluate_childcare_rules" ||
+      !currentRun.toolResult
+    ) {
       currentRun.toolResult = toolResult;
     }
     if (toolName === "request_missing_field" || toolName === "request_human_confirmation") {
       currentRun.toolResult = toolResult;
     }
 
-    if (toolName === "evaluate_central_rules" || toolName === "request_missing_field" || toolName === "request_human_confirmation") {
+    if (
+      toolName === "evaluate_central_rules" ||
+      toolName === "evaluate_childcare_rules" ||
+      toolName === "request_missing_field" ||
+      toolName === "request_human_confirmation"
+    ) {
       currentRun.stepsTaken += 1;
     }
 
@@ -1062,7 +1346,7 @@ function executeBoundedSteps(
         proposalRejected: validation.proposalRejected,
         rejectionReason: validation.rejectionReason,
         toolResultSummary: toolResult.summary,
-        coverageStatus: assessCityCoverage(state.actualScenario.city).status,
+        coverageStatus: resolveTraceCoverageStatus(state),
         eligibilityStatus: "HUMAN_REVIEW_REQUIRED",
         humanGate: {
           triggered: true,
@@ -1084,18 +1368,27 @@ function executeBoundedSteps(
       );
     }
 
+    const requiresChildcareHumanGate =
+      toolName === "evaluate_childcare_rules" &&
+      toolResult.status !== "FAIL" &&
+      (toolResult.status === "UNCERTAIN" ||
+        detectMissingFields(state.applicant, state.actualScenario, state.requiredFields).length > 0);
+
     if (
       toolName === "request_missing_field" ||
       toolName === "request_human_confirmation" ||
+      requiresChildcareHumanGate ||
       (toolName === "evaluate_central_rules" &&
         (toolResult.status === "UNCERTAIN" ||
           detectMissingFields(state.applicant, state.actualScenario, state.requiredFields).length > 0))
     ) {
+      const defaultField: SupportedMissingField =
+        state.domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome";
       const resultMissingField = (toolResult.result as { missingField?: SupportedMissingField } | undefined)?.missingField;
       const missingField =
         resultMissingField ??
         detectMissingFields(state.applicant, state.actualScenario, state.requiredFields)[0] ??
-        "ownsHome";
+        defaultField;
       const question = getQuestionForMissingField(missingField);
 
       currentRun.status = "WAITING_FOR_HUMAN";
@@ -1104,6 +1397,7 @@ function executeBoundedSteps(
       currentRun.humanInputRequired = question;
       currentRun.lastDecision = decideNextStep({
         goal: state.goal,
+        domain: state.domain,
         applicant: state.applicant,
         actualScenario: state.actualScenario,
         requiredFields: state.requiredFields,
@@ -1131,7 +1425,7 @@ function executeBoundedSteps(
         proposalRejected: validation.proposalRejected,
         rejectionReason: validation.rejectionReason,
         toolResultSummary: toolResult.summary,
-        coverageStatus: assessCityCoverage(state.actualScenario.city).status,
+        coverageStatus: resolveTraceCoverageStatus(state),
         eligibilityStatus: "UNCERTAIN",
         humanGate: {
           triggered: true,
@@ -1150,7 +1444,7 @@ function executeBoundedSteps(
         "AGENT_WAITING_FOR_HUMAN",
         { missingField },
         toolResult,
-        "CENTRAL-RENT-115",
+        state.domain === "CHILDCARE" ? "CHILDCARE-ALLOWANCE-115" : "CENTRAL-RENT-115",
         "AGENT"
       );
     }
@@ -1176,7 +1470,7 @@ function executeBoundedSteps(
       proposalRejected: validation.proposalRejected,
       rejectionReason: validation.rejectionReason,
       toolResultSummary: toolResult.summary,
-      coverageStatus: assessCityCoverage(state.actualScenario.city).status,
+      coverageStatus: resolveTraceCoverageStatus(state),
       eligibilityStatus: state.overallEligibilityStatus ?? toolResult.status,
       humanGate: null,
       fallbackUsed,
@@ -1209,14 +1503,20 @@ export function runAgenticGoldenCase(
 ): AgentRun {
   const maxSteps = options?.maxSteps ?? MAX_AGENT_STEPS;
   let run = createAgentRun(goal, maxSteps);
-  run = appendAuditTrail(run, "AGENT_PLAN_CREATED", { goal, plan: run.plan }, run.plan, "AGENTIC-PLAN");
+  const coverage = assessQueryCoverage(goal);
+  const domain: BenefitDomain =
+    options?.domain ?? (coverage.domain === "CHILDCARE" ? "CHILDCARE" : "HOUSING");
+  run.domain = domain;
+  run.plan = buildSafePlan(goal, domain);
+  run = appendAuditTrail(run, "AGENT_PLAN_CREATED", { goal, domain, plan: run.plan }, run.plan, "AGENTIC-PLAN");
   run.status = "PLANNING";
   run.currentStep = "Planning goal and allowed tools";
 
-  const requiredFields = deriveRequiredFields(applicant, actualScenario, options?.requiredFields);
+  const requiredFields = deriveRequiredFields(applicant, actualScenario, options?.requiredFields, domain);
 
   const fallbackDecision = decideNextStep({
     goal,
+    domain,
     applicant,
     actualScenario,
     requiredFields,
@@ -1243,9 +1543,8 @@ export function runAgenticGoldenCase(
     );
   }
 
-  const coverage = assessQueryCoverage(goal);
   if (coverage.status === "NOT_COVERED") {
-    // Coverage boundary: no rental tool may answer an out-of-scope request,
+    // Coverage boundary: no rental or childcare tool may answer an out-of-scope request,
     // and "not implemented" must never be phrased as "not eligible".
     run.status = "NOT_COVERED";
     run.coverage = coverage;
@@ -1295,7 +1594,10 @@ export function runAgenticGoldenCase(
     return appendAuditTrail(run, "AGENT_NOT_COVERED", { goal }, coverage, "COVERAGE-BOUNDARY", "SYSTEM");
   }
 
+  run.coverage = coverage;
+
   const state: InternalExecutionState = {
+    domain,
     goal,
     applicant: { ...applicant },
     actualScenario: { ...actualScenario },
@@ -1304,6 +1606,10 @@ export function runAgenticGoldenCase(
     completedTools: [],
     executedAtSignature: new Set<string>(),
     includePassport: options?.includePassport ?? false,
+    ruleOptions: {
+      ...options?.ruleOptions,
+      ...(isLocalOnlyHousingQuery(goal) ? { localOnly: true } : {}),
+    },
   };
 
   const proposals: Array<ProviderPlannerResult | Record<string, unknown> | null | undefined> =
@@ -1320,6 +1626,8 @@ export function resumeAgentWithFieldResponse(
   whatIfScenarioOverride?: AddressScenario,
   options?: AgentLoopOptions
 ): AgentRun {
+  const domain: BenefitDomain =
+    options?.domain ?? run.domain ?? run.state?.domain ?? detectBenefitDomain(run.goal);
   const previousApplicant = run.state?.applicant ?? {};
   const previousActual = actualScenarioOverride ?? run.state?.actualScenario ?? {
     type: "ACTUAL",
@@ -1335,7 +1643,9 @@ export function resumeAgentWithFieldResponse(
     district: "文山區",
     monthlyRent: 15500,
   };
-  const requiredFields = run.state?.requiredFields ?? deriveRequiredFields(previousApplicant, previousActual, options?.requiredFields);
+  const requiredFields =
+    run.state?.requiredFields ??
+    deriveRequiredFields(previousApplicant, previousActual, options?.requiredFields, domain);
   const beforeState = summarizeSafeSnapshot(previousApplicant, previousActual);
   const question = run.humanInputRequired ?? getQuestionForMissingField(field);
 
@@ -1343,6 +1653,7 @@ export function resumeAgentWithFieldResponse(
   if (!validation.valid || validation.value === undefined) {
     const failedGateRun: AgentRun = {
       ...run,
+      domain,
       status: "WAITING_FOR_HUMAN",
       currentStep: `Invalid input for ${field}: ${validation.error}`,
       missingField: field,
@@ -1370,7 +1681,7 @@ export function resumeAgentWithFieldResponse(
           proposalRejected: true,
           rejectionReason: validation.error ?? "INVALID_USER_INPUT",
           toolResultSummary: `User input rejected for ${field}`,
-          coverageStatus: assessCityCoverage(previousActual.city).status,
+          coverageStatus: domain === "CHILDCARE" ? "COVERED" : assessCityCoverage(previousActual.city).status,
           eligibilityStatus: "UNCERTAIN",
           humanGate: {
             triggered: true,
@@ -1406,11 +1717,21 @@ export function resumeAgentWithFieldResponse(
 
   const updated = applyValidatedFieldUpdate(previousApplicant, previousActual, field, validation.value);
   const afterState = summarizeSafeSnapshot(updated.applicant, updated.actualScenario);
-  const remainingMissing = detectMissingFields(updated.applicant, updated.actualScenario, requiredFields);
-  const nextPlannerAction = remainingMissing.length > 0 ? "ASK_HUMAN" : "CALL_TOOL:evaluate_central_rules";
+  const nextRequiredFields = deriveRequiredFields(
+    updated.applicant,
+    updated.actualScenario,
+    options?.requiredFields ?? run.state?.requiredFields,
+    domain
+  );
+  const remainingMissing = detectMissingFields(updated.applicant, updated.actualScenario, nextRequiredFields);
+  const evaluationToolName =
+    domain === "CHILDCARE" ? "evaluate_childcare_rules" : "evaluate_central_rules";
+  const nextPlannerAction =
+    remainingMissing.length > 0 ? "ASK_HUMAN" : `CALL_TOOL:${evaluationToolName}`;
 
   let resumedRun: AgentRun = {
     ...run,
+    domain,
     errorCode: undefined,
     trace: [
       ...run.trace,
@@ -1424,17 +1745,17 @@ export function resumeAgentWithFieldResponse(
           updated.actualScenario,
           previousWhatIf,
           run.state?.completedTools ?? [],
-          requiredFields
+          nextRequiredFields
         ),
-        plannerProposal: { nextAction: "CALL_TOOL", toolName: "evaluate_central_rules" },
+        plannerProposal: { nextAction: "CALL_TOOL", toolName: evaluationToolName },
         plannerReasoningSummary: `Validated user update for ${field}; resuming deterministic evaluation.`,
-        selectedTool: "evaluate_central_rules",
+        selectedTool: evaluationToolName,
         toolArgumentsSafeSummary: { updatedField: field },
         validationResult: "VALID",
         proposalRejected: false,
         rejectionReason: null,
         toolResultSummary: `State updated for ${field}`,
-        coverageStatus: assessCityCoverage(updated.actualScenario.city).status,
+        coverageStatus: domain === "CHILDCARE" ? "COVERED" : assessCityCoverage(updated.actualScenario.city).status,
         eligibilityStatus: "UNCERTAIN",
         humanGate: {
           triggered: true,
@@ -1460,7 +1781,8 @@ export function resumeAgentWithFieldResponse(
 
   resumedRun = resumeAgentRun(resumedRun, updated.applicant, updated.actualScenario, previousWhatIf, {
     ...options,
-    requiredFields,
+    domain,
+    requiredFields: nextRequiredFields,
   });
 
   return resumedRun;
@@ -1473,9 +1795,13 @@ export function resumeAgentRun(
   whatIfScenario: AddressScenario,
   options?: AgentLoopOptions
 ): AgentRun {
+  const domain: BenefitDomain =
+    options?.domain ?? run.domain ?? run.state?.domain ?? detectBenefitDomain(run.goal);
   const beforeState = summarizeSafeSnapshot(run.state?.applicant ?? {}, run.state?.actualScenario ?? actualScenario);
   const afterState = summarizeSafeSnapshot(applicant, actualScenario);
-  const resolvedField = run.missingField ?? "ownsHome";
+  const defaultField: SupportedMissingField =
+    domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome";
+  const resolvedField = run.missingField ?? defaultField;
   const resolvedValue =
     resolvedField === "city"
       ? actualScenario.city
@@ -1483,6 +1809,7 @@ export function resumeAgentRun(
 
   let nextRun: AgentRun = {
     ...run,
+    domain,
     runId: run.runId ?? run.id,
     trace: [...(run.trace ?? [])],
     status: "RESUMING" as AgentStatus,
@@ -1501,6 +1828,15 @@ export function resumeAgentRun(
     "AGENT"
   );
 
+  const requiredFields = deriveRequiredFields(
+    applicant,
+    actualScenario,
+    options?.requiredFields ?? run.state?.requiredFields,
+    domain
+  );
+  const evaluationToolName =
+    domain === "CHILDCARE" ? "evaluate_childcare_rules" : "evaluate_central_rules";
+
   // Record human gate resolution in trace if not already recorded by resumeAgentWithFieldResponse
   const hasResumeGateTrace = nextRun.trace.some(
     (entry) => entry.finalStatus === "RESUMING" && entry.humanGate?.validatedUpdate?.field === resolvedField
@@ -1510,16 +1846,23 @@ export function resumeAgentRun(
       timestamp: new Date().toISOString(),
       runId: nextRun.runId,
       step: nextRun.stepsTaken,
-      currentStateSummary: summarizeSafeState("RESUMING", applicant, actualScenario, whatIfScenario, [], ["ownsHome", "receivesOtherHousingAid"]),
-      plannerProposal: { nextAction: "CALL_TOOL", toolName: "evaluate_central_rules" },
+      currentStateSummary: summarizeSafeState(
+        "RESUMING",
+        applicant,
+        actualScenario,
+        whatIfScenario,
+        [],
+        requiredFields
+      ),
+      plannerProposal: { nextAction: "CALL_TOOL", toolName: evaluationToolName },
       plannerReasoningSummary: `Human confirmed ${resolvedField}; re-evaluating deterministic rules.`,
-      selectedTool: "evaluate_central_rules",
+      selectedTool: evaluationToolName,
       toolArgumentsSafeSummary: { updatedField: resolvedField },
       validationResult: "VALID",
       proposalRejected: false,
       rejectionReason: null,
       toolResultSummary: `Human gate resolved for ${resolvedField}`,
-      coverageStatus: assessCityCoverage(actualScenario.city).status,
+      coverageStatus: domain === "CHILDCARE" ? "COVERED" : assessCityCoverage(actualScenario.city).status,
       eligibilityStatus: "UNCERTAIN",
       humanGate: {
         triggered: true,
@@ -1536,7 +1879,7 @@ export function resumeAgentRun(
           valid: resolvedValue !== null && resolvedValue !== undefined,
         },
         afterState,
-        nextPlannerAction: "CALL_TOOL:evaluate_central_rules",
+        nextPlannerAction: `CALL_TOOL:${evaluationToolName}`,
       },
       fallbackUsed: false,
       provider: "HUMAN_GATE",
@@ -1545,8 +1888,170 @@ export function resumeAgentRun(
     });
   }
 
-  const requiredFields = deriveRequiredFields(applicant, actualScenario, options?.requiredFields ?? run.state?.requiredFields);
-  const centralResult = callTool("evaluate_central_rules", { profile: applicant });
+  if (domain === "CHILDCARE") {
+    const childcareResult = callTool("evaluate_childcare_rules", {
+      profile: applicant,
+      options: options?.ruleOptions,
+    });
+    nextRun.toolResult = childcareResult;
+    nextRun.lastToolCall = "evaluate_childcare_rules";
+    nextRun = appendAuditTrail(
+      nextRun,
+      "AGENT_TOOL_REQUESTED",
+      { toolName: "evaluate_childcare_rules" },
+      undefined,
+      "CHILDCARE-ALLOWANCE-115",
+      "AGENT"
+    );
+    nextRun = appendAuditTrail(
+      nextRun,
+      "AGENT_TOOL_COMPLETED",
+      { toolName: "evaluate_childcare_rules" },
+      childcareResult,
+      "CHILDCARE-ALLOWANCE-115",
+      "AGENT"
+    );
+
+    const remainingMissing = detectMissingFields(applicant, actualScenario, requiredFields);
+    if (
+      childcareResult.status !== "FAIL" &&
+      (childcareResult.status === "UNCERTAIN" || remainingMissing.length > 0)
+    ) {
+      const nextMissing = remainingMissing[0] ?? "childAgeMonths";
+      const question = getQuestionForMissingField(nextMissing);
+      nextRun.status = "WAITING_FOR_HUMAN";
+      nextRun.currentStep = "Childcare rules still have missing required fields";
+      nextRun.missingField = nextMissing;
+      nextRun.humanInputRequired = question;
+      nextRun.state = {
+        domain: "CHILDCARE",
+        applicant: { ...applicant },
+        actualScenario: { ...actualScenario },
+        whatIfScenario: { ...whatIfScenario },
+        requiredFields,
+        completedTools: ["evaluate_childcare_rules"],
+        childcareStatus: childcareResult.status as EligibilityStatus,
+        overallEligibilityStatus: "UNCERTAIN",
+      };
+      return appendAuditTrail(
+        nextRun,
+        "AGENT_WAITING_FOR_HUMAN",
+        { missingField: nextMissing },
+        childcareResult,
+        "CHILDCARE-ALLOWANCE-115",
+        "AGENT"
+      );
+    }
+
+    const childcareEval = childcareResult.result as ChildcareEvaluationResult;
+    const evidenceResult = callTool("get_policy_evidence", {
+      evaluations: childcareEval.evaluations,
+    });
+    nextRun.lastToolCall = "get_policy_evidence";
+    nextRun = appendAuditTrail(
+      nextRun,
+      "AGENT_TOOL_REQUESTED",
+      { toolName: "get_policy_evidence" },
+      undefined,
+      "EVIDENCE-BINDING",
+      "AGENT"
+    );
+    nextRun = appendAuditTrail(
+      nextRun,
+      "AGENT_TOOL_COMPLETED",
+      { toolName: "get_policy_evidence" },
+      evidenceResult,
+      "EVIDENCE-BINDING",
+      "AGENT"
+    );
+
+    const passportResult = callTool("generate_childcare_passport", {
+      caseId: "CASE-CHILDCARE-001",
+      profile: applicant,
+      childcareResult: childcareEval,
+      options: options?.ruleOptions,
+    });
+    nextRun.lastToolCall = "generate_childcare_passport";
+    nextRun = appendAuditTrail(
+      nextRun,
+      "AGENT_TOOL_REQUESTED",
+      { toolName: "generate_childcare_passport" },
+      undefined,
+      "CHILDCARE-PASSPORT",
+      "AGENT"
+    );
+    nextRun = appendAuditTrail(
+      nextRun,
+      "AGENT_TOOL_COMPLETED",
+      { toolName: "generate_childcare_passport" },
+      passportResult,
+      "CHILDCARE-PASSPORT",
+      "AGENT"
+    );
+
+    nextRun.status = "COMPLETED";
+    nextRun.currentStep = "Completed childcare evaluation after human input";
+    nextRun.lastDecision = {
+      reasoningSummary: "Missing childcare field was resolved by a human, and deterministic evaluation completed.",
+      nextAction: "COMPLETE",
+    };
+    nextRun.state = {
+      domain: "CHILDCARE",
+      applicant: { ...applicant },
+      actualScenario: { ...actualScenario },
+      whatIfScenario: { ...whatIfScenario },
+      requiredFields,
+      completedTools: [
+        "evaluate_childcare_rules",
+        "get_policy_evidence",
+        "generate_childcare_passport",
+      ],
+      childcareStatus: childcareResult.status as EligibilityStatus,
+      overallEligibilityStatus: passportResult.status as EligibilityStatus,
+    };
+
+    nextRun.trace.push({
+      timestamp: new Date().toISOString(),
+      runId: nextRun.runId,
+      step: nextRun.stepsTaken + 1,
+      currentStateSummary: summarizeSafeState(
+        "COMPLETED",
+        applicant,
+        actualScenario,
+        whatIfScenario,
+        nextRun.state.completedTools,
+        requiredFields
+      ),
+      plannerProposal: { nextAction: "COMPLETE" },
+      plannerReasoningSummary: nextRun.lastDecision.reasoningSummary,
+      selectedTool: "generate_childcare_passport",
+      toolArgumentsSafeSummary: { caseId: "CASE-CHILDCARE-001" },
+      validationResult: "VALID",
+      proposalRejected: false,
+      rejectionReason: null,
+      toolResultSummary: passportResult.summary,
+      coverageStatus: "COVERED",
+      eligibilityStatus: passportResult.status as EligibilityStatus,
+      humanGate: null,
+      fallbackUsed: false,
+      provider: "DETERMINISTIC",
+      latencyMs: 0,
+      finalStatus: "COMPLETED",
+    });
+
+    return appendAuditTrail(
+      nextRun,
+      "AGENT_COMPLETED",
+      { goal: nextRun.goal },
+      { status: nextRun.status, eligibilityStatus: passportResult.status },
+      "AGENTIC-ORCHESTRATOR"
+    );
+  }
+
+  const centralResult = callTool("evaluate_central_rules", {
+    profile: applicant,
+    options: options?.ruleOptions,
+  });
   nextRun.toolResult = centralResult;
   nextRun.lastToolCall = "evaluate_central_rules";
   nextRun = appendAuditTrail(
@@ -1574,6 +2079,16 @@ export function resumeAgentRun(
     nextRun.currentStep = "Central rules or required fields are still uncertain";
     nextRun.missingField = nextMissing;
     nextRun.humanInputRequired = question;
+    nextRun.state = {
+      domain: "HOUSING",
+      applicant: { ...applicant },
+      actualScenario: { ...actualScenario },
+      whatIfScenario: { ...whatIfScenario },
+      requiredFields,
+      completedTools: ["evaluate_central_rules"],
+      centralStatus: centralResult.status as EligibilityStatus,
+      overallEligibilityStatus: "UNCERTAIN",
+    };
     return appendAuditTrail(
       nextRun,
       "AGENT_WAITING_FOR_HUMAN",
@@ -1587,6 +2102,7 @@ export function resumeAgentRun(
   const actualResult = callTool("evaluate_actual_scenario", {
     profile: applicant,
     scenario: actualScenario,
+    options: options?.ruleOptions,
   });
   nextRun.lastToolCall = "evaluate_actual_scenario";
   nextRun = appendAuditTrail(
@@ -1608,6 +2124,7 @@ export function resumeAgentRun(
   const whatIfResult = callTool("evaluate_what_if_scenario", {
     profile: applicant,
     scenario: whatIfScenario,
+    options: options?.ruleOptions,
   });
   nextRun.lastToolCall = "evaluate_what_if_scenario";
   nextRun = appendAuditTrail(
@@ -1656,6 +2173,7 @@ export function resumeAgentRun(
     profile: applicant,
     actual: actualResult.result,
     whatIf: whatIfResult.result,
+    options: options?.ruleOptions,
   });
   nextRun.lastToolCall = "generate_decision_passport";
   nextRun = appendAuditTrail(
@@ -1684,6 +2202,7 @@ export function resumeAgentRun(
     nextAction: "COMPLETE",
   };
   nextRun.state = {
+    domain: "HOUSING",
     applicant: { ...applicant },
     actualScenario: { ...actualScenario },
     whatIfScenario: { ...whatIfScenario },
@@ -1748,7 +2267,8 @@ export function runBoundedAgentLoop(
 ): AgentRun {
   const maxSteps = options?.maxSteps ?? MAX_AGENT_STEPS;
   let run = createAgentRun(goal, maxSteps);
-  const requiredFields = deriveRequiredFields(applicant, actualScenario, options?.requiredFields);
+  const domain = options?.domain ?? detectBenefitDomain(goal);
+  const requiredFields = deriveRequiredFields(applicant, actualScenario, options?.requiredFields, domain);
   const completedTools: AgentToolName[] = [];
 
   for (let step = 0; step < maxSteps; step += 1) {
@@ -1756,6 +2276,7 @@ export function runBoundedAgentLoop(
     const stepStartedAt = performance.now();
     const decision = decideNextStep({
       goal,
+      domain,
       applicant,
       actualScenario,
       requiredFields,
@@ -1766,7 +2287,9 @@ export function runBoundedAgentLoop(
     run.currentStep = `${step + 1}/${maxSteps}: ${decision.reasoningSummary}`;
 
     if (decision.nextAction === "ASK_HUMAN" && !options?.forceLoop) {
-      const missingField = decision.missingField ?? detectMissingFields(applicant, actualScenario, requiredFields)[0] ?? "ownsHome";
+      const defaultField: SupportedMissingField =
+        domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome";
+      const missingField = decision.missingField ?? detectMissingFields(applicant, actualScenario, requiredFields)[0] ?? defaultField;
       const question = decision.humanQuestion ?? getQuestionForMissingField(missingField);
       run.status = "WAITING_FOR_HUMAN";
       run.missingField = missingField;
@@ -1784,7 +2307,7 @@ export function runBoundedAgentLoop(
         proposalRejected: false,
         rejectionReason: null,
         toolResultSummary: `Missing field: ${missingField}`,
-        coverageStatus: assessCityCoverage(actualScenario.city).status,
+        coverageStatus: domain === "CHILDCARE" ? "COVERED" : assessCityCoverage(actualScenario.city).status,
         eligibilityStatus: "UNCERTAIN",
         humanGate: {
           triggered: true,
@@ -1811,21 +2334,39 @@ export function runBoundedAgentLoop(
       return appendAuditTrail(run, "AGENT_COMPLETED", { step }, decision, "AGENTIC-ORCHESTRATOR");
     }
 
-    const toolResult = callTool("evaluate_central_rules", { profile: applicant });
+    const evalTool: AgentToolName =
+      domain === "CHILDCARE" ? "evaluate_childcare_rules" : "evaluate_central_rules";
+    const toolResult = callTool(evalTool, { profile: applicant, options: options?.ruleOptions });
     run.toolResult = toolResult;
-    run.lastToolCall = "evaluate_central_rules";
-    if (!completedTools.includes("evaluate_central_rules")) {
-      completedTools.push("evaluate_central_rules");
+    run.lastToolCall = evalTool;
+    if (!completedTools.includes(evalTool)) {
+      completedTools.push(evalTool);
     }
-    run = appendAuditTrail(run, "AGENT_TOOL_REQUESTED", { step, toolName: "evaluate_central_rules" }, toolResult, "CENTRAL-RENT-115", "AGENT");
+    run = appendAuditTrail(
+      run,
+      "AGENT_TOOL_REQUESTED",
+      { step, toolName: evalTool },
+      toolResult,
+      domain === "CHILDCARE" ? "CHILDCARE-ALLOWANCE-115" : "CENTRAL-RENT-115",
+      "AGENT"
+    );
 
     const missingAfter = detectMissingFields(applicant, actualScenario, requiredFields);
     if ((toolResult.status === "UNCERTAIN" || missingAfter.length > 0) && !options?.forceLoop) {
-      const missingField = missingAfter[0] ?? "ownsHome";
+      const defaultField: SupportedMissingField =
+        domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome";
+      const missingField = missingAfter[0] ?? defaultField;
       run.status = "WAITING_FOR_HUMAN";
       run.missingField = missingField;
       run.humanInputRequired = getQuestionForMissingField(missingField);
-      return appendAuditTrail(run, "AGENT_WAITING_FOR_HUMAN", { step, missingField }, toolResult, "CENTRAL-RENT-115", "AGENT");
+      return appendAuditTrail(
+        run,
+        "AGENT_WAITING_FOR_HUMAN",
+        { step, missingField },
+        toolResult,
+        domain === "CHILDCARE" ? "CHILDCARE-ALLOWANCE-115" : "CENTRAL-RENT-115",
+        "AGENT"
+      );
     }
   }
 
@@ -1845,7 +2386,7 @@ export function runBoundedAgentLoop(
     proposalRejected: true,
     rejectionReason: "MAX_AGENT_STEPS_EXCEEDED",
     toolResultSummary: "MAX_AGENT_STEPS_EXCEEDED",
-    coverageStatus: assessCityCoverage(actualScenario.city).status,
+    coverageStatus: domain === "CHILDCARE" ? "COVERED" : assessCityCoverage(actualScenario.city).status,
     eligibilityStatus: run.toolResult?.status ?? "UNCERTAIN",
     humanGate: null,
     fallbackUsed: true,
