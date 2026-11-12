@@ -127,27 +127,46 @@ async function readBody(
     );
   }
 
-  if (!request.readable) {
-    return {};
-  }
-
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-
-  for await (const chunk of request) {
-    const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
-    totalBytes += buf.byteLength;
-    if (totalBytes > maxBytes) {
+  const parsedBody = (request as IncomingMessage & { body?: unknown }).body;
+  let raw: string;
+  if (parsedBody !== undefined) {
+    raw = Buffer.isBuffer(parsedBody)
+      ? parsedBody.toString("utf8")
+      : parsedBody instanceof Uint8Array
+        ? Buffer.from(parsedBody).toString("utf8")
+        : typeof parsedBody === "string"
+          ? parsedBody
+          : JSON.stringify(parsedBody) ?? "";
+    if (Buffer.byteLength(raw) > maxBytes) {
       throw new ApiHttpError(
         413,
         "PAYLOAD_TOO_LARGE",
         `Request body exceeds maximum size of ${maxBytes} bytes.`
       );
     }
-    chunks.push(buf);
+  } else {
+    if (!request.readable) {
+      return {};
+    }
+
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+    for await (const chunk of request) {
+      const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk));
+      totalBytes += buf.byteLength;
+      if (totalBytes > maxBytes) {
+        throw new ApiHttpError(
+          413,
+          "PAYLOAD_TOO_LARGE",
+          `Request body exceeds maximum size of ${maxBytes} bytes.`
+        );
+      }
+      chunks.push(buf);
+    }
+    raw = Buffer.concat(chunks).toString("utf8");
   }
 
-  const raw = Buffer.concat(chunks).toString("utf8").trim();
+  raw = raw.trim();
   if (!raw) {
     return {};
   }

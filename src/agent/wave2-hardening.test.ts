@@ -25,6 +25,7 @@ import {
   resetRateLimiter,
   setRateLimitMaxRequests,
 } from "../server";
+import vercelApiHandler from "../../api/[...path]";
 import type { AddressScenario, ApplicantProfile } from "../types";
 
 const baseProfile: ApplicantProfile = {
@@ -64,18 +65,26 @@ const taoyuanScenario: AddressScenario = {
 };
 
 const originalFetch = globalThis.fetch;
+const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
 
 test.afterEach(() => {
   globalThis.fetch = originalFetch;
   resetRateLimiter();
   delete process.env.AGENT_PROVIDER;
   delete process.env.AGENT_PROVIDER_TIMEOUT_MS;
+  if (originalOpenAiApiKey === undefined) {
+    delete process.env.OPENAI_API_KEY;
+  } else {
+    process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+  }
 });
 
 function invokeServer(options: {
   method: string;
   url: string;
   body?: string;
+  parsedBody?: unknown;
+  serverless?: boolean;
   headers?: Record<string, string>;
   remoteAddress?: string;
 }): Promise<{ statusCode: number; headers: Record<string, string>; json: Record<string, unknown> }> {
@@ -86,6 +95,7 @@ function invokeServer(options: {
       url: options.url,
       headers: options.headers ?? { "content-type": "application/json" },
       socket: { remoteAddress: options.remoteAddress ?? "127.0.0.1" },
+      ...(options.parsedBody !== undefined ? { body: options.parsedBody } : {}),
     }) as unknown as IncomingMessage;
 
     let statusCode = 200;
@@ -123,7 +133,8 @@ function invokeServer(options: {
       },
     } as unknown as ServerResponse;
 
-    handleRequest(req, res).catch(rejectPromise);
+    const handler = options.serverless ? vercelApiHandler : handleRequest;
+    handler(req, res).catch(rejectPromise);
   });
 }
 
@@ -467,6 +478,36 @@ test("API Hardening — rate limit returns HTTP 429 with structured error", asyn
   assert.equal(r3.json.ok, false);
   assert.equal(r3.json.errorCode, "RATE_LIMIT_EXCEEDED");
   assert.ok(r3.headers["Retry-After"]);
+});
+
+test("Vercel API — OpenAI health uses server environment configuration", async () => {
+  process.env.AGENT_PROVIDER = "openai";
+  process.env.OPENAI_API_KEY = "test-key-not-for-commit";
+  globalThis.fetch = (async () => new Response("{}", { status: 200 })) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "GET",
+    url: "/api/health",
+    serverless: true,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json.provider, "OPENAI");
+  assert.equal(response.json.providerStatus, "AVAILABLE");
+  assert.equal(JSON.stringify(response.json).includes("test-key-not-for-commit"), false);
+});
+
+test("Vercel API — pre-parsed JSON request bodies reach the shared backend", async () => {
+  process.env.AGENT_PROVIDER = "ollama";
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ models: [] }), { status: 500 })) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "POST",
+    url: "/api/agent/plan",
+    parsedBody: { goal: "Check rent subsidy" },
+    serverless: true,
+  });
+  assert.equal(response.statusCode, 200);
 });
 
 test("API Hardening — oversized payload (> 16 KB), oversized goal (> 800 chars), and malformed JSON are rejected", async () => {

@@ -154,9 +154,9 @@ function App() {
   const [lastInferenceSeconds, setLastInferenceSeconds] = useState<number | null>(null);
   const inferenceStartedAt = useRef<number | null>(null);
   const [providerInfo, setProviderInfo] = useState<ProviderInfo>({
-    provider: "OLLAMA",
+    provider: "UNAVAILABLE",
     providerStatus: "UNKNOWN",
-    model: "qwen3.5:4b",
+    model: "N/A",
   });
   const [providerError, setProviderError] = useState<string | null>(null);
   const [centralEvaluation, setCentralEvaluation] = useState<RuleEvaluation[]>([]);
@@ -515,7 +515,11 @@ function App() {
     }
   }, [focusKey, phase, status]);
 
-  const providerKind = providerInfo.provider === "OPENAI" ? "CLOUD AGENT" : "LOCAL AGENT";
+  const providerKind = providerInfo.provider === "OPENAI"
+    ? "CLOUD AGENT"
+    : providerInfo.provider === "OLLAMA"
+      ? "LOCAL AGENT"
+      : "AGENT";
   const providerReady = providerInfo.providerStatus === "AVAILABLE";
 
   return (
