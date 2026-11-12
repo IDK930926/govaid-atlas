@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import test from "node:test";
@@ -11,6 +12,7 @@ import {
   runAgenticGoldenCase,
 } from "./orchestrator";
 import { buildJourney } from "../App";
+import { exportAgentTrace } from "./trace";
 import type { AddressScenario, ApplicantProfile } from "../types";
 
 const originalFetch = globalThis.fetch;
@@ -335,4 +337,152 @@ test("JOURNEY-CHILD-03 — Childcare deterministic FAIL ends cleanly and does NO
   // The journey ends with a BLOCKED marker and subsequent steps remain PENDING
   const blockedStep = steps.find((s) => s.state === "BLOCKED");
   assert.ok(blockedStep, "At least one step must be marked BLOCKED on deterministic failure");
+});
+
+// ===========================================================================
+// STEP 3 (Gate C) — Wave 4 Trace Evidence Generation & Sanitization
+// ===========================================================================
+
+test("TRACE-EVIDENCE — Generate and sanitize Wave 4 / Gate A/B traces (TRACE-G through TRACE-L)", async () => {
+  // TRACE-G: Childcare supported case
+  const runG = runAgenticGoldenCase(
+    "我的小孩一歲，想申請育兒津貼",
+    {
+      childAgeMonths: 10,
+      childHasBirthOrInitialHouseholdRegistration: true,
+      isGovernmentPlaced: false,
+      receivesPublicOrQuasiPublicChildcare: false,
+      birthOrder: 1,
+    },
+    dummyScenario,
+    dummyWhatIf,
+    undefined,
+    { includePassport: true }
+  );
+  runG.runId = "trace-g-childcare-supported";
+  const pathG = await exportAgentTrace(runG);
+  assert.ok(pathG.endsWith("trace-g-childcare-supported.json"));
+
+  // TRACE-H: Taoyuan PARTIAL_CHECK / navigation case
+  const runH = runAgenticGoldenCase(
+    "我目前租屋在桃園市桃園區，想查詢可申請的租屋補助與申辦方式",
+    {
+      age: 26,
+      maritalStatus: "single",
+      childrenCount: 0,
+      registeredCity: "桃園市",
+      ownsHome: false,
+      receivesOtherHousingAid: false,
+      monthlyIncome: 38000,
+    },
+    {
+      type: "ACTUAL",
+      address: "桃園市桃園區縣府路1號",
+      city: "桃園市",
+      district: "桃園區",
+      monthlyRent: 12000,
+    },
+    dummyWhatIf,
+    undefined,
+    { includePassport: true }
+  );
+  runH.runId = "trace-h-taoyuan-navigation";
+  const pathH = await exportAgentTrace(runH);
+  assert.ok(pathH.endsWith("trace-h-taoyuan-navigation.json"));
+
+  // TRACE-I: Arbitrary custom housing case
+  const runI = runAgenticGoldenCase(
+    "我想申請臺北市租屋補助",
+    {
+      age: 28,
+      maritalStatus: "single",
+      ownsHome: false,
+      receivesOtherHousingAid: false,
+      monthlyIncome: 45000,
+      registeredCity: "臺北市",
+    },
+    {
+      type: "ACTUAL",
+      address: "臺北市信義區信義路五段",
+      city: "臺北市",
+      district: "信義區",
+      monthlyRent: 20000,
+    },
+    dummyWhatIf,
+    undefined,
+    { includePassport: true }
+  );
+  runI.runId = "trace-i-custom-housing";
+  const pathI = await exportAgentTrace(runI);
+  assert.ok(pathI.endsWith("trace-i-custom-housing.json"));
+
+  // TRACE-J: Arbitrary childcare case
+  const runJ = runAgenticGoldenCase(
+    "申請二胎育兒津貼",
+    {
+      childAgeMonths: 18,
+      childHasBirthOrInitialHouseholdRegistration: true,
+      isGovernmentPlaced: false,
+      receivesPublicOrQuasiPublicChildcare: false,
+      birthOrder: 2,
+      childRegisteredCity: "新北市",
+    },
+    dummyScenario,
+    dummyWhatIf,
+    undefined,
+    { includePassport: true }
+  );
+  runJ.runId = "trace-j-custom-childcare";
+  const pathJ = await exportAgentTrace(runJ);
+  assert.ok(pathJ.endsWith("trace-j-custom-childcare.json"));
+
+  // TRACE-K: NOT_COVERED with official referral
+  const runK = runAgenticGoldenCase(
+    "請問 1 歲幼兒的托育補助怎麼申請？",
+    { age: 30 },
+    dummyScenario,
+    dummyWhatIf
+  );
+  runK.runId = "trace-k-not-covered-referral";
+  const pathK = await exportAgentTrace(runK);
+  assert.ok(pathK.endsWith("trace-k-not-covered-referral.json"));
+
+  // TRACE-L: Provider-unavailable childcare fallback
+  const runL = runAgenticGoldenCase(
+    "我的小孩一歲，想申請育兒津貼",
+    {
+      childAgeMonths: 12,
+      childHasBirthOrInitialHouseholdRegistration: true,
+      isGovernmentPlaced: false,
+      receivesPublicOrQuasiPublicChildcare: false,
+      birthOrder: 1,
+    },
+    dummyScenario,
+    dummyWhatIf,
+    {
+      provider: "UNAVAILABLE",
+      providerStatus: "UNAVAILABLE",
+      model: "offline-fallback",
+      error: "AGENT_PROVIDER_UNAVAILABLE",
+      decision: {
+        reasoningSummary: "Live provider unavailable; fallback to deterministic childcare plan.",
+        nextAction: "CALL_TOOL",
+        toolName: "evaluate_childcare_rules",
+      },
+    },
+    { includePassport: true }
+  );
+  runL.runId = "trace-l-provider-offline-childcare";
+  const pathL = await exportAgentTrace(runL);
+  assert.ok(pathL.endsWith("trace-l-provider-offline-childcare.json"));
+
+  // Verify all new traces are completely sanitized
+  const tracePaths = [pathG, pathH, pathI, pathJ, pathK, pathL];
+  for (const tPath of tracePaths) {
+    const raw = await readFile(tPath, "utf8");
+    assert.ok(!raw.includes("sk-"), `${tPath} must not contain API key pattern`);
+    assert.ok(!raw.includes("Bearer "), `${tPath} must not contain Bearer tokens`);
+    assert.ok(!raw.includes("systemPrompt"), `${tPath} must not contain systemPrompt`);
+    assert.ok(!raw.includes("chainOfThought"), `${tPath} must not contain raw CoT`);
+  }
 });
