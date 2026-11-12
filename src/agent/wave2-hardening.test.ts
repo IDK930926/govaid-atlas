@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { readFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -23,9 +25,17 @@ import {
   MAX_REQUEST_BODY_BYTES,
   handleRequest,
   resetRateLimiter,
+  server,
   setRateLimitMaxRequests,
 } from "../server";
+import vercelApiHandler from "../vercel-handler";
 import type { AddressScenario, ApplicantProfile } from "../types";
+
+const bundledVercelApiHandler = (
+  createRequire(__filename)("../../api/[...path].js") as {
+    default: typeof vercelApiHandler;
+  }
+).default;
 
 const baseProfile: ApplicantProfile = {
   age: 20,
@@ -64,18 +74,27 @@ const taoyuanScenario: AddressScenario = {
 };
 
 const originalFetch = globalThis.fetch;
+const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
 
 test.afterEach(() => {
   globalThis.fetch = originalFetch;
   resetRateLimiter();
   delete process.env.AGENT_PROVIDER;
   delete process.env.AGENT_PROVIDER_TIMEOUT_MS;
+  if (originalOpenAiApiKey === undefined) {
+    delete process.env.OPENAI_API_KEY;
+  } else {
+    process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+  }
 });
 
 function invokeServer(options: {
   method: string;
   url: string;
   body?: string;
+  parsedBody?: unknown;
+  serverless?: boolean;
+  bundled?: boolean;
   headers?: Record<string, string>;
   remoteAddress?: string;
 }): Promise<{ statusCode: number; headers: Record<string, string>; json: Record<string, unknown> }> {
@@ -86,6 +105,7 @@ function invokeServer(options: {
       url: options.url,
       headers: options.headers ?? { "content-type": "application/json" },
       socket: { remoteAddress: options.remoteAddress ?? "127.0.0.1" },
+      ...(options.parsedBody !== undefined ? { body: options.parsedBody } : {}),
     }) as unknown as IncomingMessage;
 
     let statusCode = 200;
@@ -123,7 +143,12 @@ function invokeServer(options: {
       },
     } as unknown as ServerResponse;
 
-    handleRequest(req, res).catch(rejectPromise);
+    const handler = options.bundled
+      ? bundledVercelApiHandler
+      : options.serverless
+        ? vercelApiHandler
+        : handleRequest;
+    handler(req, res).catch(rejectPromise);
   });
 }
 
@@ -476,6 +501,73 @@ test("API Hardening — rate limit returns HTTP 429 with structured error", asyn
   assert.equal(r3.json.ok, false);
   assert.equal(r3.json.errorCode, "RATE_LIMIT_EXCEEDED");
   assert.ok(r3.headers["Retry-After"]);
+});
+
+test("API server — importing the backend does not start the local listener", () => {
+  assert.equal(server.listening, false);
+});
+
+test("Vercel API — OpenAI health uses server environment configuration", async () => {
+  process.env.AGENT_PROVIDER = "openai";
+  process.env.OPENAI_API_KEY = "test-key-not-for-commit";
+  globalThis.fetch = (async () => new Response("{}", { status: 200 })) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "GET",
+    url: "/api/health",
+    bundled: true,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json.provider, "OPENAI");
+  assert.equal(response.json.providerStatus, "AVAILABLE");
+  assert.equal(JSON.stringify(response.json).includes("test-key-not-for-commit"), false);
+});
+
+test("Vercel API — backend initialization failures return a JSON 500", () => {
+  const script = `
+    process.loadEnvFile = () => { throw new Error("simulated initialization failure"); };
+    const handler = require("./api/[...path].js").default;
+    const response = {
+      headersSent: false,
+      writeHead(statusCode, headers) {
+        this.statusCode = statusCode;
+        this.headers = headers;
+        this.headersSent = true;
+      },
+      end(body) {
+        console.log(JSON.stringify({ statusCode: this.statusCode, body: JSON.parse(body) }));
+      },
+      destroy() {}
+    };
+    handler({ method: "GET", url: "/api/health", headers: {} }, response)
+      .catch((error) => { console.error(error); process.exitCode = 1; });
+  `;
+  const result = spawnSync(process.execPath, ["-e", script], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const output = JSON.parse(result.stdout.trim()) as {
+    statusCode: number;
+    body: { ok: boolean; errorCode: string };
+  };
+  assert.equal(output.statusCode, 500);
+  assert.equal(output.body.ok, false);
+  assert.equal(output.body.errorCode, "BACKEND_INITIALIZATION_FAILED");
+});
+
+test("Vercel API — pre-parsed JSON request bodies reach the shared backend", async () => {
+  process.env.AGENT_PROVIDER = "ollama";
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ models: [] }), { status: 500 })) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "POST",
+    url: "/api/agent/plan",
+    parsedBody: { goal: "Check rent subsidy" },
+    bundled: true,
+  });
+  assert.equal(response.statusCode, 200);
 });
 
 test("API Hardening — oversized payload (> 16 KB), oversized goal (> 800 chars), and malformed JSON are rejected", async () => {

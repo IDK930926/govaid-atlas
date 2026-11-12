@@ -109,7 +109,19 @@ OPENAI_MODEL=
 
 （若未啟動本機 Ollama 或未設定 `OPENAI_API_KEY`，系統仍會透過 safe deterministic fallback 完整執行規則預審流程。）
 
-### 2. Install, Test, Typecheck & Build
+### 2. Vercel Deployment
+
+Vercel deploys the Vite frontend from `dist` and serves `/api/*` through the
+Node 22 CommonJS bundle in `api/[...path].js`. `npm run build` bundles the API
+handler and backend dependencies with esbuild; policy JSON is included in that
+bundle. The source handler dynamically initializes `src/server.ts` inside its
+error boundary. Production requests do not use the local port `8787`.
+Set `AGENT_PROVIDER=openai` and `OPENAI_API_KEY` in the Vercel project's
+Environment Variables, then redeploy. Optionally set `OPENAI_MODEL` there as well.
+The API key is read only by the serverless backend and must not use a `VITE_`
+prefix or be added to client-side code.
+
+### 3. Install, Test, Typecheck & Build
 
 ```sh
 npm install
