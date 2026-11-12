@@ -11,8 +11,10 @@ import { listAllowedTools } from "./agent/tools";
 // process only. Values already present in the real environment take precedence.
 try {
   process.loadEnvFile(resolve(__dirname, "../.env"));
-} catch {
-  // No .env file: rely on the process environment.
+} catch (error) {
+  if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+    throw error;
+  }
 }
 
 const PORT = Number(process.env.PORT ?? 8787);

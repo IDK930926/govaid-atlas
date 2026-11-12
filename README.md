@@ -106,8 +106,10 @@ OPENAI_MODEL=
 ### 2. Vercel Deployment
 
 Vercel deploys the Vite frontend from `dist` and serves `/api/*` through the
-Serverless Function in `api/[...path].ts`. It calls the shared backend logic in
-`src/server.ts` directly; production requests do not use the local port `8787`.
+Node 22 CommonJS bundle in `api/[...path].js`. `npm run build` bundles the API
+handler and backend dependencies with esbuild; policy JSON is included in that
+bundle. The source handler dynamically initializes `src/server.ts` inside its
+error boundary. Production requests do not use the local port `8787`.
 Set `AGENT_PROVIDER=openai` and `OPENAI_API_KEY` in the Vercel project's
 Environment Variables, then redeploy. Optionally set `OPENAI_MODEL` there as well.
 The API key is read only by the serverless backend and must not use a `VITE_`
