@@ -73,12 +73,28 @@ const UNSUPPORTED_CHILDCARE_KEYWORDS = [
 // Housing programs that are NOT covered by our verified rental subsidy workflows.
 const UNSUPPORTED_HOUSING_KEYWORDS = [
   "桃園市地方加碼",
+  "桃園地方加碼",
+  "桃園市地方租屋補助",
+  "桃園地方租屋補助",
   "原住民族租金補貼",
   "原住民租金補貼",
   "包租代管",
   "購屋貸款",
   "青年購屋",
   "修繕住宅",
+];
+
+// General public assistance programs outside the scope of housing & childcare.
+const UNSUPPORTED_GENERAL_KEYWORDS = [
+  "老人",
+  "長照",
+  "身心障礙",
+  "急難救助",
+  "失業",
+  "年金",
+  "勞保",
+  "健保",
+  "重陽",
 ];
 
 export function isLocalOnlyHousingQuery(goal: string): boolean {
@@ -193,6 +209,42 @@ export function assessQueryCoverage(goal: string): CoverageAssessment {
           label: "桃園市政府住宅發展處官方網站",
           agency: "桃園市政府住宅發展處",
           url: "https://ohd.tycg.gov.tw/",
+        },
+      ],
+    };
+  }
+
+  // Check if query explicitly targets an unsupported city for housing / rental subsidy
+  const normalizedText = text.replace(/台/g, "臺");
+  const matchedCity = TAIWAN_CITIES.find((c) => normalizedText.includes(c));
+  if (matchedCity && !(ALL_COVERED_HOUSING_CITIES as readonly string[]).includes(matchedCity)) {
+    return {
+      status: "NOT_COVERED",
+      domain: "RENTAL_SUBSIDY",
+      reason: "UNSUPPORTED_CITY_HOUSING_POLICY_NOT_IMPLEMENTED",
+      message: `目前版本僅涵蓋雙北及桃園市（受理導航）之租金補貼，尚未完整涵蓋${matchedCity}地方租屋補助，因此無法作成該縣市補助之資格判定。請以主管機關官方公告為準。`,
+      officialReferrals: [
+        {
+          label: "內政部國土管理署－300億元中央擴大租金補貼線上申請系統",
+          agency: "內政部國土管理署",
+          url: "https://has.nlma.gov.tw/subsidyOnline/",
+        },
+      ],
+    };
+  }
+
+  if (UNSUPPORTED_GENERAL_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
+    return {
+      status: "NOT_COVERED",
+      domain: "RENTAL_SUBSIDY",
+      reason: "UNSUPPORTED_DOMAIN_NOT_IMPLEMENTED",
+      message:
+        "目前版本僅涵蓋特定租屋補貼與未滿2歲育兒津貼，尚未涵蓋此類政策項目，因此無法作成該項補助之資格判定。請以主管機關官方公告為準。",
+      officialReferrals: [
+        {
+          label: "衛生福利部 1957 福利諮詢專線",
+          agency: "衛生福利部",
+          url: "https://1957.mohw.gov.tw/",
         },
       ],
     };

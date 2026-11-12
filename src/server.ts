@@ -6,6 +6,8 @@ import { URL } from "node:url";
 import { callPlanner, getProviderHealth, DEFAULT_PROVIDER_TIMEOUT_MS } from "./agent/client";
 import { buildSafePlan } from "./agent/orchestrator";
 import { listAllowedTools } from "./agent/tools";
+import type { AgentDecision } from "./agent/types";
+import { assessQueryCoverage, detectBenefitDomain } from "./coverage";
 
 // Secrets such as OPENAI_API_KEY stay server-side: load an optional, gitignored .env into this
 // process only. Values already present in the real environment take precedence.
@@ -325,7 +327,9 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     }
 
     const allowlistedTools = listAllowedTools();
-    const defaultPlan = buildSafePlan(trimmedGoal);
+    const domain = detectBenefitDomain(trimmedGoal);
+    const coverage = assessQueryCoverage(trimmedGoal);
+    const defaultPlan = buildSafePlan(trimmedGoal, domain);
     const timeoutMs = Number(process.env.AGENT_PROVIDER_TIMEOUT_MS ?? DEFAULT_PROVIDER_TIMEOUT_MS);
 
     const plannerStarted = performance.now();
@@ -343,6 +347,31 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         ? "AGENT_PROVIDER_TIMEOUT"
         : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE";
 
+    const fallbackDecision: AgentDecision =
+      coverage.status === "NOT_COVERED"
+        ? {
+            reasoningSummary:
+              coverage.message ?? "Request is outside covered policies; safe fallback stops without tool execution.",
+            nextAction: "COMPLETE",
+          }
+        : domain === "CHILDCARE"
+          ? {
+              reasoningSummary: "Live provider unavailable; fallback to deterministic childcare plan.",
+              nextAction: "CALL_TOOL",
+              toolName: "evaluate_childcare_rules",
+              toolArguments: {
+                profile: (body.profile as Record<string, unknown> | undefined) ?? {},
+              },
+            }
+          : {
+              reasoningSummary: "Live provider unavailable; fallback to deterministic plan and tool allowlist.",
+              nextAction: "CALL_TOOL",
+              toolName: "evaluate_central_rules",
+              toolArguments: {
+                profile: (body.profile as Record<string, unknown> | undefined) ?? {},
+              },
+            };
+
     const responseBody = {
       ok: true,
       provider: llmResult.provider,
@@ -351,14 +380,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       goal: trimmedGoal,
       plan: defaultPlan,
       allowedTools: allowlistedTools,
-      decision: llmResult.decision ?? {
-        reasoningSummary: "Live provider unavailable; fallback to deterministic plan and tool allowlist.",
-        nextAction: "CALL_TOOL",
-        toolName: "evaluate_central_rules",
-        toolArguments: {
-          profile: (body.profile as Record<string, unknown> | undefined) ?? {},
-        },
-      },
+      decision: llmResult.decision ?? fallbackDecision,
       metadata: {
         mode: llmResult.mode ?? null,
         usage: llmResult.usage ?? null,

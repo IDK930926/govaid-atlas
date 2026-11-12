@@ -82,6 +82,7 @@ import {
   type CasePreset,
   EMPTY_CASE_EDITS,
 } from "./case-input";
+import { detectBenefitDomain } from "./coverage";
 
 const centralRules = centralRulesJson as PolicyRule[];
 
@@ -1017,9 +1018,9 @@ function shortPlace(scenario: {city?: string; district?: string}): string {
 // Stage 2 — ANALYZE
 // ---------------------------------------------------------------------------
 
-type StepState = "PENDING" | "ACTIVE" | "DONE" | "BLOCKED";
+export type StepState = "PENDING" | "ACTIVE" | "DONE" | "BLOCKED";
 
-type JourneyStep = {
+export type JourneyStep = {
   key: string;
   zh: string;
   en: string;
@@ -1035,11 +1036,94 @@ function toolCompleted(run: AgentRun, toolName: string): boolean {
 }
 
 // Presentation-only view of the agent run; it reads status and audit events and never changes them.
-function buildJourney(run: AgentRun, running: boolean): JourneyStep[] {
+export function buildJourney(run: AgentRun, running: boolean): JourneyStep[] {
+  const domain = run.domain ?? run.state?.domain ?? detectBenefitDomain(run.goal);
   const status = run.status;
   const planned = run.auditTrail.some((event) => event.action === "AGENT_PLAN_CREATED");
   const resumed = run.auditTrail.some((event) => event.action === "AGENT_RESUMED");
   const waiting = status === "WAITING_FOR_HUMAN" || status === "HUMAN_REVIEW_REQUIRED";
+
+  if (domain === "CHILDCARE") {
+    const childcareStatus =
+      run.state?.childcareStatus ??
+      (run.toolResult?.status as EligibilityStatus) ??
+      run.state?.overallEligibilityStatus;
+    const isFail = childcareStatus === "FAIL" || run.state?.overallEligibilityStatus === "FAIL";
+    const isPass = childcareStatus === "PASS" || run.state?.overallEligibilityStatus === "PASS";
+    const isCompleted = status === "COMPLETED";
+    const rulesEvaluated = toolCompleted(run, "evaluate_childcare_rules");
+    const passportGenerated = toolCompleted(run, "generate_childcare_passport");
+
+    const steps: JourneyStep[] = [
+      {
+        key: "understand",
+        zh: "需求辨識",
+        en: "Understand",
+        state: running && status === "IDLE" ? "ACTIVE" : status !== "IDLE" ? "DONE" : "PENDING",
+      },
+      {
+        key: "collect",
+        zh: "蒐集必要條件",
+        en: "Collect",
+        state: planned || rulesEvaluated || isCompleted ? "DONE" : status === "PLANNING" ? "ACTIVE" : "PENDING",
+      },
+      {
+        key: "rules",
+        zh: "檢查未滿2歲育兒津貼資格",
+        en: "Check rules",
+        state: rulesEvaluated
+          ? "DONE"
+          : status === "RUNNING_TOOL" && run.lastToolCall === "evaluate_childcare_rules"
+            ? "ACTIVE"
+            : "PENDING",
+      },
+      {
+        key: "human",
+        zh: "補充缺漏資料 / Human Gate",
+        en: "Human Gate",
+        state: waiting
+          ? "ACTIVE"
+          : resumed || (!isFail && isCompleted)
+            ? "DONE"
+            : "PENDING",
+      },
+      {
+        key: "amount",
+        zh: "計算補助金額",
+        en: "Benefit amount",
+        state: isPass && (rulesEvaluated || isCompleted)
+          ? "DONE"
+          : !isFail && status === "RUNNING_TOOL" && run.lastToolCall === "evaluate_childcare_rules"
+            ? "ACTIVE"
+            : "PENDING",
+      },
+      {
+        key: "passport",
+        zh: "產生育兒 Decision Passport",
+        en: "Decision",
+        state: isPass && (passportGenerated || isCompleted)
+          ? "DONE"
+          : !isFail && status === "RUNNING_TOOL" && run.lastToolCall === "generate_childcare_passport"
+            ? "ACTIVE"
+            : "PENDING",
+      },
+      {
+        key: "navigation",
+        zh: "申辦導航完成",
+        en: "Navigation",
+        state: isPass && isCompleted ? "DONE" : "PENDING",
+      },
+    ];
+
+    if (status === "FAILED" || status === "NOT_COVERED" || isFail) {
+      const blocked = steps.find((step) => step.state !== "DONE");
+      if (blocked) {
+        blocked.state = "BLOCKED";
+      }
+    }
+
+    return steps;
+  }
 
   const steps: JourneyStep[] = [
     {key: "understand", zh: "理解需求", en: "Understand", state: running ? "ACTIVE" : status !== "IDLE" ? "DONE" : "PENDING"},
@@ -1330,14 +1414,48 @@ function CurrentAction({
   }
 
   if (status === "NOT_COVERED") {
+    const referrals = run.coverage?.officialReferrals ?? [];
     return (
-      <article className="action-card gate" aria-labelledby="action-title">
+      <article className="action-card gate not-covered-card" aria-labelledby="action-title">
         <p className="gate-eyebrow">涵蓋範圍邊界 <span lang="en">Coverage Boundary</span></p>
         <h2 id="action-title" ref={headingRef} tabIndex={-1} className="gate-question">
           {run.coverage?.message ?? "目前版本尚未完整涵蓋此類補助，因此無法作成完整資格判定。"}
         </h2>
         <p className="gate-why">系統不會在缺少政策規則時猜測或宣稱符合資格，亦不代表您無法申請。請以主管機關官方公告為準。</p>
-        <div className="gate-actions"><button className="secondary" type="button" onClick={onReset}>重新開始</button></div>
+
+        {referrals.length > 0 && (
+          <div className="coverage-referrals" style={{marginTop: "1.25rem"}}>
+            <h3 className="referral-heading" style={{fontSize: "1rem", fontWeight: 600, marginBottom: "0.6rem", display: "flex", alignItems: "center", gap: "0.5rem"}}>
+              <span>官方申辦與查閱管道</span>
+              <span className="en-companion" lang="en" style={{fontSize: "0.8rem", opacity: 0.75, fontWeight: 400}}>Official Referrals</span>
+            </h3>
+            <ul className="referral-list" style={{listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.6rem"}}>
+              {referrals.map((ref, idx) => (
+                <li key={idx} className="referral-item" style={{padding: "0.75rem 1rem", background: "rgba(255, 255, 255, 0.04)", borderRadius: "8px", border: "1px solid rgba(255, 255, 255, 0.12)"}}>
+                  <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem"}}>
+                    <div style={{display: "flex", flexDirection: "column", gap: "0.2rem"}}>
+                      <span className="referral-label" style={{fontWeight: 600}}>{ref.label}</span>
+                      {ref.agency && <span className="referral-agency" style={{fontSize: "0.82rem", opacity: 0.8}}>主管機關：{ref.agency}</span>}
+                    </div>
+                    {ref.url && (
+                      <a
+                        href={ref.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="referral-link"
+                        style={{display: "inline-flex", alignItems: "center", gap: "0.3rem", padding: "0.4rem 0.8rem", background: "#2563eb", color: "#ffffff", borderRadius: "4px", textDecoration: "none", fontSize: "0.85rem", fontWeight: 500}}
+                      >
+                        前往官方網站 ↗
+                      </a>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="gate-actions" style={{marginTop: "1.25rem"}}><button className="secondary" type="button" onClick={onReset}>重新開始</button></div>
       </article>
     );
   }
