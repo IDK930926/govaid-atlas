@@ -136,37 +136,65 @@ test("CASE C — explicit rule FAIL (ownsHome = true) makes scenario overall FAI
 });
 
 // ---------------------------------------------------------------------------
-// CASE D — Taoyuan is outside current coverage
+// CASE D — Taoyuan supported central rental navigation vs uncovered local-only / uncovered city
 // ---------------------------------------------------------------------------
-test("CASE D — 桃園市 is NOT_COVERED and never falls back to a PASS", () => {
-  const actual = callTool("evaluate_actual_scenario", { profile: supportedProfile, scenario: taoyuanScenario });
-  assert.equal(actual.status, "NOT_COVERED");
-  assert.notEqual(userFacingLabel(actual.status), "通過");
-  const text = JSON.stringify(actual);
+test("CASE D — 桃園市 central rental workflow is PARTIAL_CHECK while local-only / uncovered city is NOT_COVERED and never PASS", () => {
+  const actualSupported = callTool("evaluate_actual_scenario", { profile: supportedProfile, scenario: taoyuanScenario });
+  assert.equal(actualSupported.status, "PARTIAL_CHECK");
+  assert.notEqual(userFacingLabel(actualSupported.status), "通過");
+
+  const actualLocalOnly = callTool("evaluate_actual_scenario", {
+    profile: supportedProfile,
+    scenario: taoyuanScenario,
+    options: { localOnly: true },
+  });
+  assert.equal(actualLocalOnly.status, "NOT_COVERED");
+  assert.notEqual(userFacingLabel(actualLocalOnly.status), "通過");
+  const text = JSON.stringify(actualLocalOnly);
   assert.match(text, /尚未完整涵蓋桃園市/);
   assert.ok(!text.includes("不存在"), "must not claim the subsidy does not exist");
 });
 
 // ---------------------------------------------------------------------------
-// CASE E — childcare queries are outside current coverage
+// CASE E — childcare queries never claim rental eligibility; unsupported childcare is NOT_COVERED
 // ---------------------------------------------------------------------------
-test("CASE E — childcare query is NOT_COVERED and no rental eligibility is claimed", () => {
-  const run = runAgenticGoldenCase(
+test("CASE E — childcare query routes to CHILDCARE domain without rental tools, and unsupported childcare is NOT_COVERED", () => {
+  const supportedChildcareRun = runAgenticGoldenCase(
     "我有一個 1 歲小孩，想知道可以申請哪些育兒津貼？",
     supportedProfile,
     newTaipeiScenario,
     taipeiScenario,
   );
-  assert.equal(run.status, "NOT_COVERED");
+  assert.equal(supportedChildcareRun.domain, "CHILDCARE");
+  assert.equal(supportedChildcareRun.status, "WAITING_FOR_HUMAN");
   assert.equal(
-    run.auditTrail.some((event) => event.action === "AGENT_TOOL_COMPLETED"),
+    supportedChildcareRun.auditTrail.some(
+      (event) =>
+        event.action === "AGENT_TOOL_COMPLETED" &&
+        ["evaluate_central_rules", "evaluate_actual_scenario", "evaluate_what_if_scenario"].includes(
+          String((event.input as { toolName?: string } | undefined)?.toolName ?? "")
+        )
+    ),
     false,
-    "no rental tool may run for an out-of-coverage query",
+    "no rental tool may run on a childcare query",
   );
-  assert.equal(run.coverage?.status, "NOT_COVERED");
-  assert.equal(run.coverage?.domain, "CHILDCARE");
-  assert.ok(Array.isArray(run.coverage?.officialReferrals), "official referral structure must exist");
-  assert.ok(!(run.coverage?.message ?? "").includes("不符合"), "not covered must not be phrased as ineligible");
+
+  const unsupportedChildcareRun = runAgenticGoldenCase(
+    "請問 1 歲幼兒的托育補助怎麼申請？",
+    supportedProfile,
+    newTaipeiScenario,
+    taipeiScenario,
+  );
+  assert.equal(unsupportedChildcareRun.status, "NOT_COVERED");
+  assert.equal(
+    unsupportedChildcareRun.auditTrail.some((event) => event.action === "AGENT_TOOL_COMPLETED"),
+    false,
+    "no tool may run for an out-of-coverage childcare query",
+  );
+  assert.equal(unsupportedChildcareRun.coverage?.status, "NOT_COVERED");
+  assert.equal(unsupportedChildcareRun.coverage?.domain, "CHILDCARE");
+  assert.ok(Array.isArray(unsupportedChildcareRun.coverage?.officialReferrals), "official referral structure must exist");
+  assert.ok(!(unsupportedChildcareRun.coverage?.message ?? "").includes("不符合"), "not covered must not be phrased as ineligible");
 });
 
 // ---------------------------------------------------------------------------
@@ -201,8 +229,11 @@ test("G02 — aggregateEligibilityStatus priority FAIL > NOT_COVERED > UNCERTAIN
 
 test("G03 — coverage module flags childcare and uncovered cities", () => {
   assert.equal(coverageModule.assessQueryCoverage("想申請托育補助").status, "NOT_COVERED");
+  assert.equal(coverageModule.assessQueryCoverage("我想申請未滿2歲育兒津貼").status, "COVERED");
   assert.equal(coverageModule.assessQueryCoverage("我想比較租屋補助").status, "COVERED");
-  assert.equal(coverageModule.assessCityCoverage("桃園市").status, "NOT_COVERED");
+  assert.equal(coverageModule.assessCityCoverage("桃園市").status, "COVERED");
+  assert.equal(coverageModule.assessCityCoverage("桃園市", { localOnly: true }).status, "NOT_COVERED");
+  assert.equal(coverageModule.assessCityCoverage("臺中市").status, "NOT_COVERED");
   assert.equal(coverageModule.assessCityCoverage("台北市").status, "COVERED");
   assert.equal(coverageModule.assessCityCoverage(undefined).status, "MISSING");
 });

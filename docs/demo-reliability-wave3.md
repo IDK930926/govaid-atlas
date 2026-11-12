@@ -1,9 +1,30 @@
-# Final Demo Lock — Reliability & Release Checks (Wave 3)
+# Final Demo Lock — Reliability & Release Checks
+
+> [!NOTE]
+> **Status Notice:** This document contains both the **Current Recommended Final Demo Configuration** (Wave 4 / Gate C) and the preserved **Historical Wave 3 Measurements** (local CPU-only Ollama). Historical measurements are preserved without alteration to maintain audit integrity.
+
+---
+
+## 0. Current Recommended Final Demo Configuration (Wave 4 / Gate C)
+
+| Tier | Role | Provider / Model | Measured Real Provider Latency | Fallback Condition | Verification Doc |
+|---|---|---|---|---|---|
+| **Tier 1 (Primary)** | Live Stage Primary | **OpenAI Cloud (`gpt-5.4-mini`)** via `AGENT_PROVIDER=auto` / `openai` (`/v1/responses`) | **5.1 s median** (Click → Human Gate ~5.3 s, Resume ≤ 0.35 s) | Latency > 15 s timeout, 429 rate limit, or network disconnection | `docs/openai-live-validation.md` (5/5 PASS) |
+| **Tier 2 (Fallback)** | Local Hardware Standby | **Local Ollama (`qwen3.5:4b`)** (`http://127.0.0.1:11434`) | **61.0–63.8 s steady-state** (94.7 s cold, 70.8 s warmed first run) on 100% CPU | Ollama service offline or execution crash | Section 1 below (5/5 PASS) |
+| **Tier 3 (Safe Net)** | Zero-Failure Fallback | **Deterministic Safe Engine** (`src/agent/orchestrator.ts`) | **< 0.2 s** (instant deterministic rule routing, zero external dependencies) | Active automatically whenever Tiers 1 & 2 fail validation or are unavailable | Section 3 below (PASS) |
+
+### Important Latency Clarifications:
+- **Real Provider Latency vs. Test Harness Latency:** Do not conflate automated regression test execution time (which uses scripted in-memory mock responses and takes ~20–50 ms per test in `npm test`) with live provider planning latency (5.1 s for live OpenAI HTTP API calls, 61–95 s for CPU-bound local Ollama generation).
+- **Stage Recommendation:** Stage presentations have a strictly enforced 3-minute limit. Running on CPU Ollama alone leaves only ~1 minute for explaining the product after waiting ~70 s. Therefore, **OpenAI Cloud primary** (`AGENT_PROVIDER=auto`) is the required primary live path, with local Ollama pre-warmed solely as an offline backup.
+
+---
+
+## [HISTORICAL WAVE 3 MEASUREMENTS — CPU OLLAMA ONLY]
 
 Date: 2026-11-10 · Branch: `feat/demo-ux-redesign-v2` · Model: `qwen3.5:4b` via local Ollama
 (`ollama ps`: 100% CPU, context 4096). All numbers below were measured in this session; none are estimated.
 
-## 1. Golden Path reliability — 5 consecutive real runs
+### 1. Golden Path reliability — 5 consecutive real runs
 
 Method: production build served by `npm start` at `http://127.0.0.1:8787`, driven in Chrome at
 1366×768. Each run loads a fresh page (runtime counters reset), clicks 開始分析, waits for the

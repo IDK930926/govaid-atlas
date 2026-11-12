@@ -6,6 +6,23 @@ export type CaseStatus =
   | "HUMAN_CONFIRMATION"
   | "CHECKLIST_READY";
 
+export type BenefitDomain = "HOUSING" | "CHILDCARE";
+
+export type ChildcareProfile = {
+  /** Child's age in months (0..23 for under-2 allowance; >= 24 is over age boundary). */
+  childAgeMonths?: number | null;
+  /** Whether the child has completed birth registration or initial household registration in R.O.C. */
+  childHasBirthOrInitialHouseholdRegistration?: boolean | null;
+  /** Whether the child is currently receiving public or quasi-public childcare services. */
+  receivesPublicOrQuasiPublicChildcare?: boolean | null;
+  /** Whether the child is placed in government-funded residential care. */
+  isGovernmentPlaced?: boolean | null;
+  /** Birth order among the parents' children (1 = 1st child, 2 = 2nd child, 3+ = 3rd or above). */
+  birthOrder?: number | null;
+  /** Optional city where the child's household registration is located. */
+  childRegisteredCity?: string;
+};
+
 export type ApplicantProfile = {
   age?: number;
   maritalStatus?: "single" | "married";
@@ -19,6 +36,14 @@ export type ApplicantProfile = {
   // 地方方案需要的條件
   centralRentApproved?: boolean | null;
   newTaipeiResidenceStudyWork?: boolean | null;
+
+  // 育兒津貼領域欄位（僅於 CHILDCARE 流程使用，不混入租屋規則）
+  childAgeMonths?: number | null;
+  childHasBirthOrInitialHouseholdRegistration?: boolean | null;
+  receivesPublicOrQuasiPublicChildcare?: boolean | null;
+  isGovernmentPlaced?: boolean | null;
+  birthOrder?: number | null;
+  childRegisteredCity?: string;
 };
 
 export type AddressScenario = {
@@ -46,7 +71,7 @@ export type PolicyRule = {
   ruleId: string;
   program: string;
   field: keyof ApplicantProfile;
-  operator: "equals" | "lte" | "gte";
+  operator: "equals" | "lte" | "gte" | "lt";
   expected: string | number | boolean;
   required: boolean;
   sourceId: string;
@@ -67,6 +92,55 @@ export type EvidenceRecord = {
   policyName: string;
   url: string;
   lastVerifiedAt: string;
+};
+
+export type ApplicationAvailabilityStatus =
+  | "OPEN"
+  | "CLOSED"
+  | "ROLLING"
+  | "UNKNOWN";
+
+export type PolicyValidityStatus =
+  | "ACTIVE"
+  | "EXPIRED"
+  | "NOT_YET_EFFECTIVE"
+  | "HISTORICAL_MODE"
+  | "UNKNOWN";
+
+export type RequiredDocumentItem = {
+  documentId: string;
+  title: string;
+  required: boolean;
+  conditionNote?: string;
+  sourceId: string;
+  verificationStatus: "VERIFIED" | "VERIFY_WITH_AGENCY";
+};
+
+export type ApplicationGuide = {
+  policyId: string;
+  programTitle: string;
+  domain: BenefitDomain;
+  jurisdiction: string;
+  administeringAgency: string;
+  applicationStatus: ApplicationAvailabilityStatus;
+  applicationPeriod: string;
+  deadlineDate?: string | null;
+  validityStatus: PolicyValidityStatus;
+  validFrom: string;
+  validTo: string;
+  estimatedMonthlyBenefitNtd?: number | null;
+  benefitAmountFormula?: string;
+  requiredDocuments: RequiredDocumentItem[];
+  applicationMethods: string[];
+  onlineApplicationUrl: string | null;
+  formUrl: string | null;
+  officeInformation: string;
+  contactInformation: string;
+  officialSources: EvidenceRecord[];
+  exclusions: string[];
+  nextSteps: string[];
+  warnings: string[];
+  disclaimer: string;
 };
 
 export type AuditEvent = {

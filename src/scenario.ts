@@ -1,3 +1,4 @@
+import taoyuanRulesJson from "./policies/taoyuan-rent-115.json";
 import type {
   AddressScenario,
   ApplicantProfile,
@@ -10,6 +11,7 @@ import type {
 import {
   evaluateRules,
   getOverallStatus,
+  type RuleEvaluationOptions,
 } from "./rules";
 
 import {
@@ -23,6 +25,8 @@ import {
   PARTIAL_CHECK_NOTE,
   type CityCoverage,
 } from "./coverage";
+
+const defaultTaoyuanRules = taoyuanRulesJson as PolicyRule[];
 
 // Pseudo policy id used to make the coverage boundary explicit in results.
 export const LOCAL_COVERAGE_BOUNDARY_ID = "LOCAL_COVERAGE_BOUNDARY";
@@ -45,19 +49,21 @@ export type ScenarioResult = {
   coverage: CityCoverage;
 };
 
-type PolicySets = {
+export type PolicySets = {
   central: PolicyRule[];
   taipei: PolicyRule[];
   newTaipei: PolicyRule[];
+  taoyuan?: PolicyRule[];
 };
 
 function evaluatePolicy(
   policyId: string,
   rules: PolicyRule[],
-  applicant: ApplicantProfile
+  applicant: ApplicantProfile,
+  options?: RuleEvaluationOptions
 ): PolicyResult {
   const evaluations =
-    evaluateRules(rules, applicant);
+    evaluateRules(rules, applicant, options);
 
   const overallStatus =
     getOverallStatus(evaluations);
@@ -98,38 +104,56 @@ function coverageBoundaryResult(
 export function evaluateScenario(
   scenario: AddressScenario,
   applicant: ApplicantProfile,
-  policySets: PolicySets
+  policySets: PolicySets,
+  options?: RuleEvaluationOptions & { localOnly?: boolean }
 ): ScenarioResult {
   const policyResults: PolicyResult[] = [];
-  const coverage = assessCityCoverage(scenario.city);
+  const coverage = assessCityCoverage(scenario.city, {
+    localOnly: options?.localOnly,
+  });
 
   // 中央租補：兩個地址都要重新執行
   policyResults.push(
     evaluatePolicy(
       "CENTRAL_RENT_115",
       policySets.central,
-      applicant
+      applicant,
+      options
     )
   );
 
-  // ACTUAL 永和
+  // ACTUAL 永和 / 新北市
   if (coverage.city === "新北市") {
     policyResults.push(
       evaluatePolicy(
         "NEW_TAIPEI_RENT_115",
         policySets.newTaipei,
-        applicant
+        applicant,
+        options
       )
     );
   }
 
-  // WHAT-IF 文山
+  // WHAT-IF 文山 / 臺北市
   if (coverage.city === "臺北市") {
     policyResults.push(
       evaluatePolicy(
         "TAIPEI_RENT_115",
         policySets.taipei,
-        applicant
+        applicant,
+        options
+      )
+    );
+  }
+
+  // 桃園市：300億元中央擴大租金補貼（桃園市政府住宅發展處協辦受理與桃園所得門檻檢核）
+  if (coverage.city === "桃園市" && coverage.status === "COVERED") {
+    policyResults.push(
+      evaluatePolicy(
+        "TAOYUAN_CENTRAL_RENT_115",
+        policySets.taoyuan ?? defaultTaoyuanRules,
+        applicant,
+        options
       )
     );
   }

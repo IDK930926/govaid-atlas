@@ -1,0 +1,171 @@
+{
+  "schemaVersion": "wave2-trace-v1",
+  "runId": "trace-j-custom-childcare",
+  "exportedAt": "2026-11-12T12:20:13.626Z",
+  "goalSummary": "申請二胎育兒津貼",
+  "maxSteps": 8,
+  "stepsTaken": 1,
+  "finalStatus": "COMPLETED",
+  "finalEligibilityStatus": "PASS",
+  "coverageStatus": "COVERED",
+  "events": [
+    {
+      "timestamp": "2026-11-12T12:20:13.626Z",
+      "runId": "agent-1794486013626-c97a09",
+      "step": 1,
+      "currentStateSummary": {
+        "status": "RUNNING_TOOL",
+        "knownFields": [
+          "childAgeMonths",
+          "childHasBirthOrInitialHouseholdRegistration",
+          "isGovernmentPlaced",
+          "receivesPublicOrQuasiPublicChildcare",
+          "birthOrder"
+        ],
+        "missingFields": [],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": [
+          "evaluate_childcare_rules"
+        ]
+      },
+      "plannerProposal": null,
+      "plannerReasoningSummary": null,
+      "selectedTool": "evaluate_childcare_rules",
+      "toolArgumentsSafeSummary": {
+        "domain": "CHILDCARE",
+        "childAgeMonths": 18,
+        "birthOrder": 2
+      },
+      "validationResult": "NOT_APPLICABLE",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "Childcare rules evaluated: PASS (6000 NTD/month)",
+      "coverageStatus": "COVERED",
+      "eligibilityStatus": "PASS",
+      "humanGate": null,
+      "fallbackUsed": false,
+      "provider": "DETERMINISTIC",
+      "latencyMs": 0.111,
+      "finalStatus": "RUNNING_TOOL"
+    },
+    {
+      "timestamp": "2026-11-12T12:20:13.626Z",
+      "runId": "agent-1794486013626-c97a09",
+      "step": 2,
+      "currentStateSummary": {
+        "status": "RUNNING_TOOL",
+        "knownFields": [
+          "childAgeMonths",
+          "childHasBirthOrInitialHouseholdRegistration",
+          "isGovernmentPlaced",
+          "receivesPublicOrQuasiPublicChildcare",
+          "birthOrder"
+        ],
+        "missingFields": [],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": [
+          "evaluate_childcare_rules",
+          "get_policy_evidence"
+        ]
+      },
+      "plannerProposal": null,
+      "plannerReasoningSummary": null,
+      "selectedTool": "get_policy_evidence",
+      "toolArgumentsSafeSummary": {
+        "evaluationCount": 5
+      },
+      "validationResult": "NOT_APPLICABLE",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "5 evidence records bound",
+      "coverageStatus": "COVERED",
+      "eligibilityStatus": "PASS",
+      "humanGate": null,
+      "fallbackUsed": false,
+      "provider": "DETERMINISTIC",
+      "latencyMs": 0.024,
+      "finalStatus": "RUNNING_TOOL"
+    },
+    {
+      "timestamp": "2026-11-12T12:20:13.626Z",
+      "runId": "agent-1794486013626-c97a09",
+      "step": 3,
+      "currentStateSummary": {
+        "status": "RUNNING_TOOL",
+        "knownFields": [
+          "childAgeMonths",
+          "childHasBirthOrInitialHouseholdRegistration",
+          "isGovernmentPlaced",
+          "receivesPublicOrQuasiPublicChildcare",
+          "birthOrder"
+        ],
+        "missingFields": [],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": [
+          "evaluate_childcare_rules",
+          "get_policy_evidence",
+          "generate_childcare_passport"
+        ]
+      },
+      "plannerProposal": null,
+      "plannerReasoningSummary": null,
+      "selectedTool": "generate_childcare_passport",
+      "toolArgumentsSafeSummary": {
+        "caseId": "CASE-CHILDCARE-001",
+        "domain": "CHILDCARE"
+      },
+      "validationResult": "NOT_APPLICABLE",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "Childcare decision passport generated for CASE-CHILDCARE-001: PASS",
+      "coverageStatus": "COVERED",
+      "eligibilityStatus": "PASS",
+      "humanGate": null,
+      "fallbackUsed": false,
+      "provider": "DETERMINISTIC",
+      "latencyMs": 0.036,
+      "finalStatus": "RUNNING_TOOL"
+    },
+    {
+      "timestamp": "2026-11-12T12:20:13.626Z",
+      "runId": "agent-1794486013626-c97a09",
+      "step": 1,
+      "currentStateSummary": {
+        "status": "COMPLETED",
+        "knownFields": [
+          "childAgeMonths",
+          "childHasBirthOrInitialHouseholdRegistration",
+          "isGovernmentPlaced",
+          "receivesPublicOrQuasiPublicChildcare",
+          "birthOrder"
+        ],
+        "missingFields": [],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": [
+          "evaluate_childcare_rules",
+          "get_policy_evidence",
+          "generate_childcare_passport"
+        ]
+      },
+      "plannerProposal": null,
+      "plannerReasoningSummary": null,
+      "selectedTool": "complete",
+      "toolArgumentsSafeSummary": {},
+      "validationResult": "NOT_APPLICABLE",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "Workflow completed with eligibilityStatus=PASS",
+      "coverageStatus": "COVERED",
+      "eligibilityStatus": "PASS",
+      "humanGate": null,
+      "fallbackUsed": false,
+      "provider": "DETERMINISTIC",
+      "latencyMs": 0.005,
+      "finalStatus": "COMPLETED"
+    }
+  ]
+}

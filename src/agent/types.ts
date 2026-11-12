@@ -1,5 +1,5 @@
 import type { CoverageAssessment } from "../coverage";
-import type { AddressScenario, ApplicantProfile, EligibilityStatus } from "../types";
+import type { AddressScenario, ApplicantProfile, BenefitDomain, EligibilityStatus } from "../types";
 
 export type AgentStatus =
   | "IDLE"
@@ -17,8 +17,10 @@ export type AgentToolName =
   | "evaluate_central_rules"
   | "evaluate_actual_scenario"
   | "evaluate_what_if_scenario"
+  | "evaluate_childcare_rules"
   | "detect_policy_conflict"
   | "generate_decision_passport"
+  | "generate_childcare_passport"
   | "get_policy_evidence"
   | "request_missing_field"
   | "request_human_confirmation"
@@ -32,7 +34,13 @@ export type SupportedMissingField =
   | "age"
   | "centralRentApproved"
   | "newTaipeiResidenceStudyWork"
-  | "registeredCity";
+  | "registeredCity"
+  | "childAgeMonths"
+  | "childHasBirthOrInitialHouseholdRegistration"
+  | "receivesPublicOrQuasiPublicChildcare"
+  | "isGovernmentPlaced"
+  | "birthOrder"
+  | "childRegisteredCity";
 
 export type AgentDecisionAction =
   | "CALL_TOOL"
@@ -118,6 +126,7 @@ export type AgentTraceEvent = {
 };
 
 export type AgentWorkflowState = {
+  domain?: BenefitDomain;
   applicant: ApplicantProfile;
   actualScenario: AddressScenario;
   whatIfScenario: AddressScenario;
@@ -126,12 +135,14 @@ export type AgentWorkflowState = {
   centralStatus?: EligibilityStatus;
   actualStatus?: EligibilityStatus;
   whatIfStatus?: EligibilityStatus;
+  childcareStatus?: EligibilityStatus;
   overallEligibilityStatus?: EligibilityStatus | "HUMAN_REVIEW_REQUIRED";
 };
 
 export type AgentRun = {
   id: string;
   runId: string;
+  domain?: BenefitDomain;
   status: AgentStatus;
   goal: string;
   currentStep: string;

@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "wave2-trace-v1",
+  "runId": "trace-k-not-covered-referral",
+  "exportedAt": "2026-11-12T12:20:13.627Z",
+  "goalSummary": "請問 1 歲幼兒的托育補助怎麼申請？",
+  "maxSteps": 8,
+  "stepsTaken": 0,
+  "finalStatus": "NOT_COVERED",
+  "finalEligibilityStatus": "NOT_COVERED",
+  "coverageStatus": "NOT_COVERED",
+  "events": [
+    {
+      "timestamp": "2026-11-12T12:20:13.627Z",
+      "runId": "agent-1794486013627-069520",
+      "step": 1,
+      "currentStateSummary": {
+        "status": "NOT_COVERED",
+        "knownFields": [],
+        "missingFields": [
+          "childAgeMonths",
+          "childHasBirthOrInitialHouseholdRegistration",
+          "isGovernmentPlaced",
+          "receivesPublicOrQuasiPublicChildcare",
+          "birthOrder"
+        ],
+        "actualCity": "新北市",
+        "whatIfCity": "臺北市",
+        "completedTools": []
+      },
+      "plannerProposal": null,
+      "plannerReasoningSummary": null,
+      "selectedTool": null,
+      "toolArgumentsSafeSummary": null,
+      "validationResult": "NOT_APPLICABLE",
+      "proposalRejected": false,
+      "rejectionReason": null,
+      "toolResultSummary": "目前版本僅涵蓋「育有未滿2歲兒童育兒津貼」，尚未涵蓋托育補助、生育獎勵金、就學補助或育嬰留職停薪津貼，因此無法作成該項補助之資格判定。這不代表您無法申請，請以主管機關官方公告為準。",
+      "coverageStatus": "NOT_COVERED",
+      "eligibilityStatus": "NOT_COVERED",
+      "humanGate": null,
+      "fallbackUsed": false,
+      "provider": "DETERMINISTIC",
+      "latencyMs": 0,
+      "finalStatus": "NOT_COVERED"
+    }
+  ]
+}

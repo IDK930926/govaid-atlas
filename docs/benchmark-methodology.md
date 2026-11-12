@@ -41,8 +41,8 @@ GovAid Atlas separates evaluation into **five distinct methods** so that determi
 | Parameter | Specification |
 | :--- | :--- |
 | **Model / Provider** | Supports Pluggable Planner Providers (`ollama` `qwen3.5:4b`, `openai` `gpt-4o-mini` / `gpt-5.4-mini`, and deterministic/scripted test providers for reproducible edge-case & adversarial verification) |
-| **Prompt Version** | Wave 2 Bounded Planner Schema (`src/agent/providers/ollama.ts`, `src/agent/providers/openai.ts`, `src/agent/providers/types.ts`) with 9 allowlisted tools |
-| **Policy Version** | `CENTRAL-RENT-115` (`R1`), `TAIPEI-RENT-115` (`R6`), `NEW-TAIPEI-RENT-115` (`R7`) + Wave 1 Coverage Boundaries (`src/coverage.ts`, `src/status.ts`: `FAIL > NOT_COVERED > UNCERTAIN > PARTIAL_CHECK > PASS`) |
+| **Prompt Version** | Wave 2 Bounded Planner Schema (`src/agent/providers/ollama.ts`, `src/agent/providers/openai.ts`, `src/agent/providers/types.ts`) with 9 allowlisted tools (expanded to 11 allowlisted tools in Wave 4 with `evaluate_childcare_rules` and `evaluate_taoyuan_central_rules` under cross-domain isolation) |
+| **Policy Version** | `CENTRAL-RENT-115` (`R1`), `TAIPEI-RENT-115` (`R6`), `NEW-TAIPEI-RENT-115` (`R7`) + Wave 1 Coverage Boundaries (`src/coverage.ts`, `src/status.ts`: `FAIL > NOT_COVERED > UNCERTAIN > PARTIAL_CHECK > PASS`), expanded in Wave 4 to include `CHILDCARE-ALLOWANCE-115` (`R8`) and `TAOYUAN-RENT-115` (`R9`) |
 | **Number of Runs** | 14 end-to-end scenarios (8 core categories `A`–`H` + 6 adversarial prompt-injection cases `ADV-1`–`ADV-6`) + 5x repeatability runs across representative scenarios recorded in `benchmark/results-wave2-agent.csv` |
 | **Temperature / Settings** | `temperature: 0`, `think: false` (Ollama structured JSON schema output), `MAX_AGENT_STEPS = 8` (configurable per run), provider timeout `15,000 ms` |
 | **Dataset Version** | Wave 3 End-to-End Agent Evaluation Suite (`src/wave3-agent-eval.ts` / `benchmark/results-wave2-agent.csv`, `schemaVersion: wave3-v1`) |
@@ -50,7 +50,7 @@ GovAid Atlas separates evaluation into **five distinct methods** so that determi
 | **Adjudication Process** | Automated assertion suite (`src/agent/wave3-evaluation.test.ts`) + exported JSON traces in `artifacts/traces/trace-a..f.json` indexed in `docs/trace-evidence-index.md` |
 | **Latency** | Deterministic/scripted provider harness: `< 5 ms` per run (mean `~0.8 ms`, max `< 15 ms`); Timeout test harness: `~55 ms` controlled abort; Live local Ollama CPU (`qwen3.5:4b`): median `63.8 s` (warm `61.0–73.5 s`, cold `94.7 s`); Live OpenAI (`gpt-5.4-mini`): median `5.1 s` (`3.7–6.6 s`) |
 | **Cost** | `$0.00` for local Ollama and deterministic harness runs; observed `~$0.001869 / run` (`$0.009343` across 5 runs) for OpenAI `gpt-5.4-mini` |
-| **Tool Usage** | Allowlisted tools only: `evaluate_central_rules`, `evaluate_actual_scenario`, `evaluate_what_if_scenario`, `detect_policy_conflict`, `generate_decision_passport`, `get_policy_evidence`, `request_missing_field`, `request_human_confirmation`, `complete` |
+| **Tool Usage** | Allowlisted tools only: 9 core tools (`evaluate_central_rules`, `evaluate_actual_scenario`, `evaluate_what_if_scenario`, `detect_policy_conflict`, `generate_decision_passport`, `get_policy_evidence`, `request_missing_field`, `request_human_confirmation`, `complete`) plus Wave 4 tools (`evaluate_childcare_rules`, `evaluate_taoyuan_central_rules`), total 11 allowlisted tools |
 | **Human Intervention** | Triggered dynamically via `detectMissingFields` / `request_missing_field` (`WAITING_FOR_HUMAN`) and resumed via `resumeAgentWithFieldResponse` after input validation |
 | **Failure Definition** | Any false `PASS` on partial/uncovered/failed cases, any unvalidated/unknown tool execution, any bypass of deterministic FAIL, any infinite loop (`stepsTaken > maximumSteps`), or any secret/PII leakage in exported traces |
 

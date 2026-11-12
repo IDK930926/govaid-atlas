@@ -318,7 +318,7 @@ test("TRACE-D — NOT_COVERED (Childcare & Taoyuan) never produces PASS", async 
   assert.equal(childcareRun.trace[0]?.proposalRejected, true);
 
   const taoyuanRun = runAgenticGoldenCase(
-    "我住在桃園市桃園區，想確認租屋補助",
+    "我住在桃園市桃園區，想確認地方租屋補助",
     baseProfile,
     taoyuanScenario,
     whatIfTaipei
@@ -326,6 +326,15 @@ test("TRACE-D — NOT_COVERED (Childcare & Taoyuan) never produces PASS", async 
   assert.equal(taoyuanRun.state?.actualStatus, "NOT_COVERED");
   assert.equal(taoyuanRun.state?.overallEligibilityStatus, "NOT_COVERED");
   assert.notEqual(taoyuanRun.state?.overallEligibilityStatus, "PASS");
+
+  const supportedTaoyuanRun = runAgenticGoldenCase(
+    "我住在桃園市桃園區，想確認租屋補助",
+    baseProfile,
+    taoyuanScenario,
+    whatIfTaipei
+  );
+  assert.equal(supportedTaoyuanRun.state?.actualStatus, "PARTIAL_CHECK");
+  assert.notEqual(supportedTaoyuanRun.state?.overallEligibilityStatus, "PASS");
 
   await exportAgentTrace(childcareRun);
 });

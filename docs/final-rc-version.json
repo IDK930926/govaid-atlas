@@ -1,0 +1,40 @@
+{
+  "name": "govaid-atlas",
+  "version": "1.0.0-rc-final",
+  "branch": "release/napai-final-rc",
+  "baseCommit": "223a147",
+  "milestone": "Gate D Final Release Candidate",
+  "buildDate": "2026-11-12",
+  "testSuite": {
+    "totalTests": 99,
+    "passingTests": 99,
+    "failingTests": 0,
+    "testSuites": 10,
+    "typecheck": "PASS",
+    "productionBuild": "PASS"
+  },
+  "policyScope": {
+    "housing": [
+      { "id": "CENTRAL_RENT_115", "name": "300億元中央擴大租金補貼", "source": "R1", "status": "PARTIAL_CHECK" },
+      { "id": "TAIPEI_RENT_115", "name": "臺北幸福租民間租屋租金加碼補貼", "source": "R6", "status": "PARTIAL_CHECK" },
+      { "id": "NEW_TAIPEI_RENT_115", "name": "新北市青年租金補貼", "source": "R7", "status": "PARTIAL_CHECK" },
+      { "id": "TAOYUAN_CENTRAL_RENT_115", "name": "桃園市中央租金補貼受理協辦與所得檢核", "source": "R9", "status": "PARTIAL_CHECK" }
+    ],
+    "childcare": [
+      { "id": "CHILDCARE_ALLOWANCE_UNDER_2_115", "name": "衛生福利部育有未滿2歲兒童育兒津貼", "source": "R8", "status": "PASS", "tiers": [5000, 6000, 7000] }
+    ],
+    "unsupportedScope": {
+      "status": "NOT_COVERED",
+      "behavior": "Deterministic boundary halt with official agency referral links"
+    }
+  },
+  "governance": {
+    "agentToolsCount": 11,
+    "exportedTracesCount": 12,
+    "humanGateFieldsSupported": 14,
+    "providerCascade": "OpenAI Cloud (gpt-5.4-mini) -> Local Ollama (qwen3.5:4b) -> Deterministic Safe Fallback",
+    "goldStandardStatus": "PENDING_INDEPENDENT_REVIEW",
+    "fieldValidationStatus": "PENDING",
+    "demoVideoStatus": "OUTDATED"
+  }
+}

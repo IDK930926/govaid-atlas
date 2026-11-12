@@ -1,0 +1,35 @@
+[
+  {
+    "ruleId": "TAOYUAN-115-HOME-001",
+    "program": "300億元中央擴大租金補貼（桃園市受理導航）",
+    "field": "ownsHome",
+    "operator": "equals",
+    "expected": false,
+    "required": true,
+    "sourceId": "R9",
+    "validFrom": "2026-01-01",
+    "validTo": "2026-12-31"
+  },
+  {
+    "ruleId": "TAOYUAN-115-HOUSING-AID-001",
+    "program": "300億元中央擴大租金補貼（桃園市受理導航）",
+    "field": "receivesOtherHousingAid",
+    "operator": "equals",
+    "expected": false,
+    "required": true,
+    "sourceId": "R9",
+    "validFrom": "2026-01-01",
+    "validTo": "2026-12-31"
+  },
+  {
+    "ruleId": "TAOYUAN-115-INCOME-001",
+    "program": "300億元中央擴大租金補貼（桃園市受理導航）",
+    "field": "monthlyIncome",
+    "operator": "lte",
+    "expected": 50304,
+    "required": false,
+    "sourceId": "R9",
+    "validFrom": "2026-01-01",
+    "validTo": "2026-12-31"
+  }
+]

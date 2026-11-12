@@ -62,39 +62,37 @@ import {listAllowedTools} from "./agent/tools";
 import type {AgentRun, AgentStatus} from "./agent/types";
 import type {ProviderName, ProviderPlannerResult, ProviderUsage} from "./agent/providers/types";
 
+import {
+  buildCaseDraft,
+  buildPersonaChips,
+  CASE_PRESETS,
+  DEFAULT_GOAL,
+  DUAL_CITY_ACTUAL_SCENARIO,
+  WENSHAN_WHAT_IF_SCENARIO,
+  PRESET_HOUSING_APPLICANT,
+  FIELD_SPECS,
+  getGateControl,
+  SELECTABLE_CITIES,
+  submitHumanGateAnswer,
+  toInputString,
+  type CaseDraft,
+  type CaseEdits,
+  type CaseEditsByDomain,
+  type CaseField,
+  type CasePreset,
+  EMPTY_CASE_EDITS,
+} from "./case-input";
+import { detectBenefitDomain } from "./coverage";
+
 const centralRules = centralRulesJson as PolicyRule[];
 
-const initialApplicant: ApplicantProfile = {
-  age: 20,
-  maritalStatus: "single",
-  childrenCount: 0,
-  registeredCity: "臺北市",
-
-  ownsHome: null,
-  receivesOtherHousingAid: false,
-  monthlyIncome: null,
-
-  centralRentApproved: null,
-  newTaipeiResidenceStudyWork: null,
-};
-
-const actualScenario: AddressScenario = {
-  type: "ACTUAL",
-  address: "新北市永和區合成測試地址",
-  city: "新北市",
-  district: "永和區",
-  monthlyRent: 13500,
-};
-
-const whatIfScenario: AddressScenario = {
-  type: "WHAT_IF",
-  address: "臺北市文山區合成測試地址",
-  city: "臺北市",
-  district: "文山區",
-  monthlyRent: 15500,
-};
-
-const agentGoal = "我目前住在新北市永和區，每月租金 13,500 元。如果搬到臺北市文山區、租金 15,500 元，我有哪些租屋補助可以考慮？還缺什麼資料？";
+const initialApplicant: ApplicantProfile = PRESET_HOUSING_APPLICANT;
+const actualScenario: AddressScenario = DUAL_CITY_ACTUAL_SCENARIO;
+const whatIfScenario: AddressScenario = WENSHAN_WHAT_IF_SCENARIO;
+const taoyuanActualScenario: AddressScenario = CASE_PRESETS[1].actualScenario;
+const initialChildcareApplicant: ApplicantProfile = CASE_PRESETS[2].applicant;
+const DEMO_PRESETS = CASE_PRESETS;
+const agentGoal = DEFAULT_GOAL;
 
 const OWNS_HOME_QUESTION = "本人是否持有住宅？";
 
@@ -147,8 +145,13 @@ function prefersReducedMotion(): boolean {
 }
 
 function App() {
-  const [applicant, setApplicant] = useState<ApplicantProfile>(initialApplicant);
-  const [userGoal, setUserGoal] = useState(agentGoal);
+  const [userGoal, setUserGoal] = useState(DEFAULT_GOAL);
+  const [caseEdits, setCaseEdits] = useState<CaseEditsByDomain>(EMPTY_CASE_EDITS);
+  const [isCustomExpanded, setIsCustomExpanded] = useState(false);
+  const [gateError, setGateError] = useState<string | null>(null);
+
+  const draft = useMemo(() => buildCaseDraft(userGoal, caseEdits), [userGoal, caseEdits]);
+  const [applicant, setApplicant] = useState<ApplicantProfile>(() => draft.applicant);
   const [agentRunning, setAgentRunning] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [lastInferenceSeconds, setLastInferenceSeconds] = useState<number | null>(null);
@@ -164,7 +167,7 @@ function App() {
   const [whatIfResult, setWhatIfResult] = useState<ScenarioResult | null>(null);
   const [passport, setPassport] = useState<DecisionPassport | null>(null);
   const [auditTrail, setAuditTrail] = useState<AuditEvent[]>([]);
-  const [agentRun, setAgentRun] = useState<AgentRun>(() => createAgentRun(agentGoal));
+  const [agentRun, setAgentRun] = useState<AgentRun>(() => createAgentRun(DEFAULT_GOAL));
   const [currentRole, setCurrentRole] = useState<UserRole>("APPLICANT");
   const [conflictResult, setConflictResult] = useState<ConflictCheckResult | null>(null);
   const [runtimeMetrics, setRuntimeMetrics] = useState<RuntimeMetrics>(createRuntimeMetrics());
@@ -262,16 +265,45 @@ function App() {
     audit("SYSTEM", "SENSITIVE_PROFILE_ACCESSED", {role, resource: "SENSITIVE_PROFILE"}, {masked: false}, "RBAC-V1");
   }
 
+  function handleSelectPreset(preset: CasePreset) {
+    setUserGoal(preset.goal);
+    setGateError(null);
+    setCaseEdits((prev) => ({
+      ...prev,
+      [preset.domain]: {},
+    }));
+  }
+
+  function handleFieldEdit(field: CaseField, value: string) {
+    setGateError(null);
+    setCaseEdits((prev) => ({
+      ...prev,
+      [draft.domain]: {
+        ...prev[draft.domain],
+        [field]: value,
+      },
+    }));
+  }
+
+  function handleResetEdits() {
+    setGateError(null);
+    setCaseEdits((prev) => ({
+      ...prev,
+      [draft.domain]: {},
+    }));
+  }
+
   function startGoldenCase() {
-    const freshApplicant = {...initialApplicant};
+    const freshApplicant = {...PRESET_HOUSING_APPLICANT};
     setApplicant(freshApplicant);
     setActualResult(null);
     setWhatIfResult(null);
     setPassport(null);
     setConflictResult(null);
     setAuditTrail([]);
+    setGateError(null);
 
-    const newRun = runAgenticGoldenCase(agentGoal, freshApplicant, actualScenario, whatIfScenario);
+    const newRun = runAgenticGoldenCase(DEFAULT_GOAL, freshApplicant, DUAL_CITY_ACTUAL_SCENARIO, WENSHAN_WHAT_IF_SCENARIO);
     setAgentRun(newRun);
 
     const measured = measureSync(() => evaluateRules(centralRules, freshApplicant));
@@ -310,13 +342,13 @@ function App() {
         return metrics;
       }
       const toolName = (event.input as {toolName?: unknown}).toolName;
-      if (toolName === "evaluate_central_rules") {
+      if (toolName === "evaluate_central_rules" || toolName === "evaluate_childcare_rules") {
         return recordRuntimeCall(metrics, "rulesEngineCalls");
       }
       if (toolName === "evaluate_actual_scenario" || toolName === "evaluate_what_if_scenario") {
         return recordRuntimeCall(metrics, "scenarioEvaluations");
       }
-      if (toolName === "generate_decision_passport") {
+      if (toolName === "generate_decision_passport" || toolName === "generate_childcare_passport") {
         return recordRuntimeCall(metrics, "passportGenerations");
       }
       if (toolName === "detect_policy_conflict") {
@@ -332,11 +364,20 @@ function App() {
       return;
     }
 
-    const freshApplicant = {...initialApplicant};
+    const currentDraft = buildCaseDraft(goal, caseEdits);
+    if (!currentDraft.valid) {
+      return;
+    }
+
+    const freshApplicant = currentDraft.applicant;
+    const selectedActualScenario = currentDraft.actualScenario;
+    const selectedWhatIfScenario = currentDraft.whatIfScenario;
+
     inferenceStartedAt.current = performance.now();
     setElapsedSeconds(0);
     setAgentRunning(true);
     setProviderError(null);
+    setGateError(null);
     setApplicant(freshApplicant);
     setActualResult(null);
     setWhatIfResult(null);
@@ -394,11 +435,23 @@ function App() {
       };
     }
 
-    const run = runAgenticGoldenCase(goal, freshApplicant, actualScenario, whatIfScenario, plannerResult);
+    const run = runAgenticGoldenCase(goal, freshApplicant, selectedActualScenario, selectedWhatIfScenario, plannerResult, {
+      includePassport: true,
+      domain: currentDraft.domain,
+      ...(currentDraft.requiredFields ? { requiredFields: [...currentDraft.requiredFields] } : {}),
+    });
     setAgentRun(run);
     recordAgentToolMetrics(run);
     const centralResult = getCompletedToolResult<{evaluations?: RuleEvaluation[]}>(run, "evaluate_central_rules");
     setCentralEvaluation(centralResult?.evaluations ?? []);
+    const actual = getCompletedToolResult<ScenarioResult>(run, "evaluate_actual_scenario");
+    const whatIf = getCompletedToolResult<ScenarioResult>(run, "evaluate_what_if_scenario");
+    const completedPassport =
+      getCompletedToolResult<DecisionPassport>(run, "generate_decision_passport") ??
+      getCompletedToolResult<DecisionPassport>(run, "generate_childcare_passport");
+    if (actual) setActualResult(actual);
+    if (whatIf) setWhatIfResult(whatIf);
+    if (completedPassport) setPassport(completedPassport);
     // Planner latency is only meaningful when the model actually returned a plan; a fast
     // failure followed by the rule-based fallback must read N/A, not "0.0 s".
     setLastInferenceSeconds(plannerResult.decision
@@ -411,17 +464,23 @@ function App() {
     if (agentRun.status !== "WAITING_FOR_HUMAN" || agentRunning) {
       return;
     }
+    setGateError(null);
     const targetField = agentRun.missingField ?? "ownsHome";
     const existingAuditCount = agentRun.auditTrail.length;
     audit("USER", "FIELD_CONFIRMED", {field: targetField, value: answer});
-    const resumed =
-      targetField === "ownsHome" && typeof answer === "boolean"
-        ? resumeAgentRun(agentRun, {...applicant, ownsHome: answer}, actualScenario, whatIfScenario)
-        : resumeAgentWithFieldResponse(agentRun, targetField, answer, actualScenario, whatIfScenario);
+
+    const submission = submitHumanGateAnswer(agentRun, answer, {
+      whatIfMirrorsActual: draft.whatIfMirrorsActual,
+    });
+    if (!submission.ok || submission.error) {
+      setGateError(submission.error ?? "輸入資料無效，請確認後重新輸入。");
+      setAgentRun(submission.run);
+      return;
+    }
+
+    const resumed = submission.run;
     if (resumed.state?.applicant) {
       setApplicant(resumed.state.applicant);
-    } else if (targetField === "ownsHome" && typeof answer === "boolean") {
-      setApplicant({...applicant, ownsHome: answer});
     }
     setAgentRun(resumed);
     recordAgentToolMetrics(resumed, existingAuditCount);
@@ -430,16 +489,22 @@ function App() {
     setCentralEvaluation(centralResult?.evaluations ?? []);
     const actual = getCompletedToolResult<ScenarioResult>(resumed, "evaluate_actual_scenario");
     const whatIf = getCompletedToolResult<ScenarioResult>(resumed, "evaluate_what_if_scenario");
-    const completedPassport = getCompletedToolResult<DecisionPassport>(resumed, "generate_decision_passport");
+    const completedPassport =
+      getCompletedToolResult<DecisionPassport>(resumed, "generate_decision_passport") ??
+      getCompletedToolResult<DecisionPassport>(resumed, "generate_childcare_passport");
     if (actual && whatIf && completedPassport) {
       setActualResult(actual);
       setWhatIfResult(whatIf);
+      setPassport(completedPassport);
+    } else if (completedPassport) {
       setPassport(completedPassport);
     }
   }
 
   function resetDemo() {
-    setApplicant({...initialApplicant});
+    setCaseEdits(EMPTY_CASE_EDITS);
+    setUserGoal(DEFAULT_GOAL);
+    setApplicant({...PRESET_HOUSING_APPLICANT});
     setCentralEvaluation([]);
     setActualResult(null);
     setWhatIfResult(null);
@@ -448,9 +513,9 @@ function App() {
     setConflictResult(null);
     setCurrentRole("APPLICANT");
     setRuntimeMetrics(createRuntimeMetrics());
-    setAgentRun(createAgentRun(agentGoal));
-    setUserGoal(agentGoal);
+    setAgentRun(createAgentRun(DEFAULT_GOAL));
     setProviderError(null);
+    setGateError(null);
     setLastInferenceSeconds(null);
   }
 
@@ -474,7 +539,7 @@ function App() {
   const status = agentRun.status;
   const phase: Phase = status === "IDLE" && !agentRunning
     ? "START"
-    : status === "COMPLETED" && passport && actualResult && whatIfResult
+    : status === "COMPLETED" && passport
       ? "DECIDE"
       : "ANALYZE";
 
@@ -553,9 +618,15 @@ function App() {
           <StartView
             userGoal={userGoal}
             onGoalChange={setUserGoal}
+            onSelectPreset={handleSelectPreset}
+            draft={draft}
+            caseEdits={caseEdits}
+            onFieldEdit={handleFieldEdit}
+            onResetEdits={handleResetEdits}
+            isCustomExpanded={isCustomExpanded}
+            onToggleExpand={setIsCustomExpanded}
             onSubmit={() => void runCustomGoal()}
             running={agentRunning}
-            applicant={applicant}
             providerKind={providerKind}
             providerInfo={providerInfo}
             providerError={providerError}
@@ -573,6 +644,7 @@ function App() {
                 elapsedSeconds={elapsedSeconds}
                 providerInfo={providerInfo}
                 headingRef={focusTargetRef}
+                gateError={gateError}
                 onAnswer={respondToHuman}
                 onReset={resetDemo}
               />
@@ -591,7 +663,7 @@ function App() {
           </section>
         )}
 
-        {phase === "DECIDE" && passport && actualResult && whatIfResult && (
+        {phase === "DECIDE" && passport && (
           <ResultView
             run={agentRun}
             passport={passport}
@@ -710,22 +782,41 @@ function WorkflowProgress({status, running}: {status: AgentStatus; running: bool
 function StartView({
   userGoal,
   onGoalChange,
+  onSelectPreset,
+  draft,
+  caseEdits,
+  onFieldEdit,
+  onResetEdits,
+  isCustomExpanded,
+  onToggleExpand,
   onSubmit,
   running,
-  applicant,
   providerKind,
   providerInfo,
   providerError,
 }: {
   userGoal: string;
   onGoalChange: (value: string) => void;
+  onSelectPreset: (preset: CasePreset) => void;
+  draft: CaseDraft;
+  caseEdits: CaseEditsByDomain;
+  onFieldEdit: (field: CaseField, value: string) => void;
+  onResetEdits: () => void;
+  isCustomExpanded: boolean;
+  onToggleExpand: (open: boolean) => void;
   onSubmit: () => void;
   running: boolean;
-  applicant: ApplicantProfile;
   providerKind: string;
   providerInfo: ProviderInfo;
   providerError: string | null;
 }) {
+  const personaChips = useMemo(
+    () => buildPersonaChips(draft.domain, draft.applicant, draft.actualScenario),
+    [draft.domain, draft.applicant, draft.actualScenario]
+  );
+  const domainEdits = caseEdits[draft.domain] ?? {};
+  const hasEdits = Object.keys(domainEdits).length > 0;
+
   return (
     <div className="start phase-enter">
       <section className="hero" aria-labelledby="hero-title">
@@ -751,6 +842,21 @@ function StartView({
             <h2 id="goal-title"><label htmlFor="agent-goal">你想確認什麼補助？</label></h2>
             <span className="en-companion" lang="en">What would you like to check?</span>
           </div>
+
+          <div className="segmented" role="group" aria-label="快速切換示範領域與情境">
+            {CASE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                className={userGoal === preset.goal ? "is-active" : ""}
+                disabled={running}
+                onClick={() => onSelectPreset(preset)}
+              >
+                {preset.label}
+              </button>
+            ))}
+          </div>
+
           <textarea
             id="agent-goal"
             rows={3}
@@ -761,20 +867,119 @@ function StartView({
             aria-describedby="persona-summary"
           />
 
+          <details
+            className="custom-case-panel"
+            open={isCustomExpanded}
+            onToggle={(e) => onToggleExpand(e.currentTarget.open)}
+          >
+            <summary className="custom-case-toggle">
+              <span>編輯申請人條件（自訂案例條件）</span>
+              <small className="muted">
+                {draft.domain === "CHILDCARE" ? "育兒條件 · 6 項" : "租屋條件 · 9 項"}
+              </small>
+            </summary>
+            <div className="custom-case-body">
+              <div className="custom-case-grid">
+                {draft.fields.map((field) => {
+                  const spec = FIELD_SPECS[field];
+                  const val = draft.values[field];
+                  const source = draft.sources[field];
+                  const error = draft.errors[field];
+                  const currentEdit = domainEdits[field] ?? toInputString(val);
+
+                  const sourceLabel =
+                    source === "edited"
+                      ? "自訂"
+                      : source === "extracted"
+                        ? "對話擷取"
+                        : source === "preset"
+                          ? "示範預設"
+                          : "待確認";
+
+                  return (
+                    <div className="custom-case-field" key={field}>
+                      <label className="custom-case-label" htmlFor={`custom-field-${field}`}>
+                        <span>{spec.label}</span>
+                        <span className="custom-case-tag">{sourceLabel}</span>
+                      </label>
+                      {spec.kind === "city" ? (
+                        <select
+                          id={`custom-field-${field}`}
+                          value={currentEdit}
+                          onChange={(e) => onFieldEdit(field, e.target.value)}
+                          disabled={running}
+                        >
+                          <option value="">-- 請選擇 --</option>
+                          {SELECTABLE_CITIES.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      ) : spec.kind === "boolean" ? (
+                        <select
+                          id={`custom-field-${field}`}
+                          value={currentEdit}
+                          onChange={(e) => onFieldEdit(field, e.target.value)}
+                          disabled={running}
+                        >
+                          <option value="">-- 未指定（由 Agent 詢問） --</option>
+                          {(spec.booleanOptions ?? [
+                            { value: true, label: "是" },
+                            { value: false, label: "否" },
+                          ]).map((opt) => (
+                            <option key={String(opt.value)} value={String(opt.value)}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          id={`custom-field-${field}`}
+                          type="number"
+                          min={spec.min ?? 0}
+                          max={spec.max}
+                          step={spec.kind === "integer" ? "1" : "any"}
+                          placeholder={spec.placeholder}
+                          value={currentEdit}
+                          onChange={(e) => onFieldEdit(field, e.target.value)}
+                          disabled={running}
+                        />
+                      )}
+                      {error && <span className="custom-case-error">{error}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              {hasEdits && (
+                <div className="custom-case-footer">
+                  <button
+                    type="button"
+                    className="custom-case-reset"
+                    onClick={onResetEdits}
+                    disabled={running}
+                  >
+                    重設為預設條件
+                  </button>
+                </div>
+              )}
+            </div>
+          </details>
+
           <div className="persona" id="persona-summary">
-            <span className="persona-label">合成示範身分</span>
-            <ul className="chips" aria-label="示範申請人資料">
-              <li className="chip">{applicant.age} 歲</li>
-              <li className="chip">{applicant.maritalStatus === "single" ? "單身" : "已婚"}</li>
-              <li className="chip">{(applicant.registeredCity ?? "").replace("市", "")}戶籍</li>
-              <li className="chip">目前租屋：{shortPlace(actualScenario)}</li>
-              <li className="chip">月租：{actualScenario.monthlyRent.toLocaleString()}</li>
+            <span className="persona-label">
+              {draft.preset ? "合成示範身分" : "評估身分條件"}
+            </span>
+            <ul className="chips" aria-label="身分條件資料">
+              {personaChips.map((chip) => (
+                <li key={chip.key} className={"chip" + (chip.pending ? " chip-pending" : "")}>
+                  {chip.label}
+                </li>
+              ))}
             </ul>
           </div>
 
           <div className="goal-footer">
             <p className="fine-print">合成資料示範 · 結果僅為預審導航，不代表主管機關核准。</p>
-            <button className="primary cta" type="submit" disabled={running || !userGoal.trim()}>
+            <button className="primary cta" type="submit" disabled={running || !userGoal.trim() || !draft.valid}>
               開始分析
               <span className="cta-en" lang="en">Start Analysis</span>
             </button>
@@ -817,9 +1022,9 @@ function shortPlace(scenario: {city?: string; district?: string}): string {
 // Stage 2 — ANALYZE
 // ---------------------------------------------------------------------------
 
-type StepState = "PENDING" | "ACTIVE" | "DONE" | "BLOCKED";
+export type StepState = "PENDING" | "ACTIVE" | "DONE" | "BLOCKED";
 
-type JourneyStep = {
+export type JourneyStep = {
   key: string;
   zh: string;
   en: string;
@@ -835,11 +1040,94 @@ function toolCompleted(run: AgentRun, toolName: string): boolean {
 }
 
 // Presentation-only view of the agent run; it reads status and audit events and never changes them.
-function buildJourney(run: AgentRun, running: boolean): JourneyStep[] {
+export function buildJourney(run: AgentRun, running: boolean): JourneyStep[] {
+  const domain = run.domain ?? run.state?.domain ?? detectBenefitDomain(run.goal);
   const status = run.status;
   const planned = run.auditTrail.some((event) => event.action === "AGENT_PLAN_CREATED");
   const resumed = run.auditTrail.some((event) => event.action === "AGENT_RESUMED");
   const waiting = status === "WAITING_FOR_HUMAN" || status === "HUMAN_REVIEW_REQUIRED";
+
+  if (domain === "CHILDCARE") {
+    const childcareStatus =
+      run.state?.childcareStatus ??
+      (run.toolResult?.status as EligibilityStatus) ??
+      run.state?.overallEligibilityStatus;
+    const isFail = childcareStatus === "FAIL" || run.state?.overallEligibilityStatus === "FAIL";
+    const isPass = childcareStatus === "PASS" || run.state?.overallEligibilityStatus === "PASS";
+    const isCompleted = status === "COMPLETED";
+    const rulesEvaluated = toolCompleted(run, "evaluate_childcare_rules");
+    const passportGenerated = toolCompleted(run, "generate_childcare_passport");
+
+    const steps: JourneyStep[] = [
+      {
+        key: "understand",
+        zh: "需求辨識",
+        en: "Understand",
+        state: running && status === "IDLE" ? "ACTIVE" : status !== "IDLE" ? "DONE" : "PENDING",
+      },
+      {
+        key: "collect",
+        zh: "蒐集必要條件",
+        en: "Collect",
+        state: planned || rulesEvaluated || isCompleted ? "DONE" : status === "PLANNING" ? "ACTIVE" : "PENDING",
+      },
+      {
+        key: "rules",
+        zh: "檢查未滿2歲育兒津貼資格",
+        en: "Check rules",
+        state: rulesEvaluated
+          ? "DONE"
+          : status === "RUNNING_TOOL" && run.lastToolCall === "evaluate_childcare_rules"
+            ? "ACTIVE"
+            : "PENDING",
+      },
+      {
+        key: "human",
+        zh: "補充缺漏資料 / Human Gate",
+        en: "Human Gate",
+        state: waiting
+          ? "ACTIVE"
+          : resumed || (!isFail && isCompleted)
+            ? "DONE"
+            : "PENDING",
+      },
+      {
+        key: "amount",
+        zh: "計算補助金額",
+        en: "Benefit amount",
+        state: isPass && (rulesEvaluated || isCompleted)
+          ? "DONE"
+          : !isFail && status === "RUNNING_TOOL" && run.lastToolCall === "evaluate_childcare_rules"
+            ? "ACTIVE"
+            : "PENDING",
+      },
+      {
+        key: "passport",
+        zh: "產生育兒 Decision Passport",
+        en: "Decision",
+        state: isPass && (passportGenerated || isCompleted)
+          ? "DONE"
+          : !isFail && status === "RUNNING_TOOL" && run.lastToolCall === "generate_childcare_passport"
+            ? "ACTIVE"
+            : "PENDING",
+      },
+      {
+        key: "navigation",
+        zh: "申辦導航完成",
+        en: "Navigation",
+        state: isPass && isCompleted ? "DONE" : "PENDING",
+      },
+    ];
+
+    if (status === "FAILED" || status === "NOT_COVERED" || isFail) {
+      const blocked = steps.find((step) => step.state !== "DONE");
+      if (blocked) {
+        blocked.state = "BLOCKED";
+      }
+    }
+
+    return steps;
+  }
 
   const steps: JourneyStep[] = [
     {key: "understand", zh: "理解需求", en: "Understand", state: running ? "ACTIVE" : status !== "IDLE" ? "DONE" : "PENDING"},
@@ -907,12 +1195,157 @@ function JourneyStepper({run, running}: {run: AgentRun; running: boolean}) {
   );
 }
 
+function HumanGateControls({
+  run,
+  gateError,
+  onAnswer,
+  onReset,
+}: {
+  run: AgentRun;
+  gateError: string | null;
+  onAnswer: (answer: boolean | number | string) => void;
+  onReset: () => void;
+}) {
+  const field = run.missingField;
+  const control = getGateControl(field);
+  const [customInput, setCustomInput] = useState("");
+
+  useEffect(() => {
+    setCustomInput("");
+  }, [field]);
+
+  if (!control) {
+    return (
+      <div className="gate-actions">
+        <button className="secondary" type="button" onClick={onReset}>重新開始</button>
+      </div>
+    );
+  }
+
+  const isOwnsHome = field === "ownsHome" || run.humanInputRequired === OWNS_HOME_QUESTION;
+
+  if (control.kind === "boolean") {
+    if (isOwnsHome) {
+      return (
+        <div className="gate-actions" role="group" aria-label="回答：本人是否持有住宅">
+          <button className="gate-button" type="button" onClick={() => onAnswer(false)}>沒有自有住宅</button>
+          <button className="gate-button" type="button" onClick={() => onAnswer(true)}>有自有住宅</button>
+        </div>
+      );
+    }
+    const options = control.booleanOptions ?? [
+      { value: true, label: "是／已完成" },
+      { value: false, label: "否／未完成" },
+    ];
+    return (
+      <div className="gate-actions" role="group" aria-label={`回答：${control.label}`}>
+        {options.map((opt) => (
+          <button
+            key={String(opt.value)}
+            className="gate-button"
+            type="button"
+            onClick={() => onAnswer(opt.value)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  if (control.kind === "integer" || control.kind === "number") {
+    return (
+      <div className="gate-numeric-section">
+        {field === "birthOrder" && (
+          <div className="gate-actions" role="group" aria-label="回答：兒童出生胎次">
+            <button className="gate-button" type="button" onClick={() => onAnswer(1)}>第 1 名子女（5,000元/月）</button>
+            <button className="gate-button" type="button" onClick={() => onAnswer(2)}>第 2 名子女（6,000元/月）</button>
+            <button className="gate-button" type="button" onClick={() => onAnswer(3)}>第 3 名以上（7,000元/月）</button>
+          </div>
+        )}
+        <form
+          className="gate-input-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (customInput.trim() !== "") {
+              onAnswer(customInput.trim());
+            }
+          }}
+        >
+          <label htmlFor="gate-number-input" className="gate-input-label">
+            {field === "birthOrder" ? "或自訂輸入胎次數值：" : `請輸入${control.label}：`}
+          </label>
+          <div className="gate-input-row">
+            <input
+              id="gate-number-input"
+              type="number"
+              min={control.min ?? 0}
+              max={control.max}
+              step={control.kind === "integer" ? "1" : "any"}
+              placeholder={control.placeholder ?? "請輸入數值"}
+              value={customInput}
+              onChange={(e) => setCustomInput(e.target.value)}
+              required
+              autoFocus
+            />
+            {control.unit && <span className="gate-unit">{control.unit}</span>}
+            <button className="primary gate-submit" type="submit">確認送出</button>
+          </div>
+          {gateError && (
+            <p className="gate-error-message" role="alert">
+              <span className="badge-glyph" aria-hidden="true">✕</span> {gateError}
+            </p>
+          )}
+        </form>
+      </div>
+    );
+  }
+
+  // City selector
+  return (
+    <form
+      className="gate-input-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (customInput.trim() !== "") {
+          onAnswer(customInput.trim());
+        }
+      }}
+    >
+      <label htmlFor="gate-city-select" className="gate-input-label">請選擇{control.label}：</label>
+      <div className="gate-input-row">
+        <select
+          id="gate-city-select"
+          value={customInput}
+          onChange={(e) => setCustomInput(e.target.value)}
+          required
+          autoFocus
+        >
+          <option value="">-- 請選擇縣市 --</option>
+          {SELECTABLE_CITIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <button className="primary gate-submit" type="submit" disabled={!customInput.trim()}>
+          確認縣市
+        </button>
+      </div>
+      {gateError && (
+        <p className="gate-error-message" role="alert">
+          <span className="badge-glyph" aria-hidden="true">✕</span> {gateError}
+        </p>
+      )}
+    </form>
+  );
+}
+
 function CurrentAction({
   run,
   running,
   elapsedSeconds,
   providerInfo,
   headingRef,
+  gateError,
   onAnswer,
   onReset,
 }: {
@@ -921,7 +1354,8 @@ function CurrentAction({
   elapsedSeconds: number;
   providerInfo: ProviderInfo;
   headingRef: React.Ref<HTMLHeadingElement>;
-  onAnswer: (ownsHome: boolean) => void;
+  gateError: string | null;
+  onAnswer: (answer: boolean | number | string) => void;
   onReset: () => void;
 }) {
   const status = run.status;
@@ -946,31 +1380,28 @@ function CurrentAction({
         </p>
         <dl className="action-facts">
           <div><dt>模型</dt><dd><code>{providerInfo.model}</code></dd></div>
-          <div><dt>下一個工具</dt><dd><code>evaluate_central_rules</code></dd></div>
+          <div><dt>下一個工具</dt><dd><code>{run.domain === "CHILDCARE" ? "evaluate_childcare_rules" : "evaluate_central_rules"}</code></dd></div>
         </dl>
       </article>
     );
   }
 
   if (status === "WAITING_FOR_HUMAN") {
-    const isOwnsHome = run.humanInputRequired === OWNS_HOME_QUESTION;
+    const isOwnsHome = run.humanInputRequired === OWNS_HOME_QUESTION || run.missingField === "ownsHome";
+
     return (
       <article className="action-card gate" aria-labelledby="action-title" aria-describedby="gate-why">
         <p className="gate-eyebrow">需要你的確認 <span lang="en">Human Gate</span></p>
         <h2 id="action-title" ref={headingRef} tabIndex={-1} className="gate-question">{run.humanInputRequired}</h2>
         {isOwnsHome && <p className="gate-en" lang="en">Do you own a home?</p>}
         <p className="gate-why" id="gate-why">這項資料會影響資格判斷，Agent 不會自行猜測。</p>
-        {isOwnsHome ? (
-          <div className="gate-actions" role="group" aria-label="回答：本人是否持有住宅">
-            <button className="gate-button" type="button" onClick={() => onAnswer(false)}>沒有自有住宅</button>
-            <button className="gate-button" type="button" onClick={() => onAnswer(true)}>有自有住宅</button>
-          </div>
-        ) : (
-          <div className="gate-actions">
-            <button className="secondary" type="button" onClick={onReset}>重新開始</button>
-          </div>
-        )}
-        <p className="gate-foot">Agent 已暫停 · 中央條件目前為「待確認」 · 回答後會重新執行規則檢查</p>
+        <HumanGateControls
+          run={run}
+          gateError={gateError}
+          onAnswer={onAnswer}
+          onReset={onReset}
+        />
+        <p className="gate-foot">Agent 已暫停 · 必要條件目前為「待確認」 · 回答後會重新執行規則檢查</p>
       </article>
     );
   }
@@ -987,14 +1418,48 @@ function CurrentAction({
   }
 
   if (status === "NOT_COVERED") {
+    const referrals = run.coverage?.officialReferrals ?? [];
     return (
-      <article className="action-card gate" aria-labelledby="action-title">
+      <article className="action-card gate not-covered-card" aria-labelledby="action-title">
         <p className="gate-eyebrow">涵蓋範圍邊界 <span lang="en">Coverage Boundary</span></p>
         <h2 id="action-title" ref={headingRef} tabIndex={-1} className="gate-question">
           {run.coverage?.message ?? "目前版本尚未完整涵蓋此類補助，因此無法作成完整資格判定。"}
         </h2>
         <p className="gate-why">系統不會在缺少政策規則時猜測或宣稱符合資格，亦不代表您無法申請。請以主管機關官方公告為準。</p>
-        <div className="gate-actions"><button className="secondary" type="button" onClick={onReset}>重新開始</button></div>
+
+        {referrals.length > 0 && (
+          <div className="coverage-referrals" style={{marginTop: "1.25rem"}}>
+            <h3 className="referral-heading" style={{fontSize: "1rem", fontWeight: 600, marginBottom: "0.6rem", display: "flex", alignItems: "center", gap: "0.5rem"}}>
+              <span>官方申辦與查閱管道</span>
+              <span className="en-companion" lang="en" style={{fontSize: "0.8rem", opacity: 0.75, fontWeight: 400}}>Official Referrals</span>
+            </h3>
+            <ul className="referral-list" style={{listStyle: "none", padding: 0, margin: 0, display: "flex", flexDirection: "column", gap: "0.6rem"}}>
+              {referrals.map((ref, idx) => (
+                <li key={idx} className="referral-item" style={{padding: "0.75rem 1rem", background: "rgba(255, 255, 255, 0.04)", borderRadius: "8px", border: "1px solid rgba(255, 255, 255, 0.12)"}}>
+                  <div style={{display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem"}}>
+                    <div style={{display: "flex", flexDirection: "column", gap: "0.2rem"}}>
+                      <span className="referral-label" style={{fontWeight: 600}}>{ref.label}</span>
+                      {ref.agency && <span className="referral-agency" style={{fontSize: "0.82rem", opacity: 0.8}}>主管機關：{ref.agency}</span>}
+                    </div>
+                    {ref.url && (
+                      <a
+                        href={ref.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="referral-link"
+                        style={{display: "inline-flex", alignItems: "center", gap: "0.3rem", padding: "0.4rem 0.8rem", background: "#2563eb", color: "#ffffff", borderRadius: "4px", textDecoration: "none", fontSize: "0.85rem", fontWeight: 500}}
+                      >
+                        前往官方網站 ↗
+                      </a>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="gate-actions" style={{marginTop: "1.25rem"}}><button className="secondary" type="button" onClick={onReset}>重新開始</button></div>
       </article>
     );
   }
@@ -1046,6 +1511,7 @@ function ContextPanel({
     ? (llmEvent.output as {decision?: {reasoningSummary?: string}} | undefined)?.decision?.reasoningSummary
     : undefined;
   const allowed = listAllowedTools();
+  const personaChips = buildPersonaChips(run.domain ?? "HOUSING", applicant, run.state?.actualScenario);
 
   return (
     <aside className="context dim-when-gated" aria-labelledby="context-title">
@@ -1056,11 +1522,11 @@ function ContextPanel({
       <p className="context-goal">{run.goal}</p>
 
       <ul className="chips chips-sm" aria-label="申請人資料">
-        <li className="chip">{applicant.age} 歲 · 單身</li>
-        <li className="chip">{applicant.registeredCity}戶籍</li>
-        <li className={"chip" + (applicant.ownsHome === null ? " chip-pending" : "")}>
-          自有住宅：{applicant.ownsHome === null ? "待確認" : applicant.ownsHome ? "有" : "沒有"}
-        </li>
+        {personaChips.map((chip) => (
+          <li key={chip.key} className={"chip" + (chip.pending ? " chip-pending" : "")}>
+            {chip.label}
+          </li>
+        ))}
       </ul>
 
       <dl className="context-facts">
@@ -1103,6 +1569,8 @@ const policyLabels: Record<string, {name: string; short: string; detail: string}
   CENTRAL_RENT_115: {name: "中央租屋補助", short: "中央方案", detail: "中央擴大租金補貼（115年度）"},
   NEW_TAIPEI_RENT_115: {name: "新北地方方案", short: "新北方案", detail: "新北市青年租金補貼（115年度）"},
   TAIPEI_RENT_115: {name: "臺北地方方案", short: "臺北方案", detail: "臺北幸福租－租金加碼補貼（115年度）"},
+  TAOYUAN_CENTRAL_RENT_115: {name: "桃園市受理方案", short: "桃園受理", detail: "300億元中央擴大租金補貼（桃園市政府住宅發展處協辦受理）"},
+  CHILDCARE_ALLOWANCE_UNDER_2_115: {name: "未滿2歲育兒津貼", short: "育兒津貼", detail: "衛生福利部育有未滿2歲兒童育兒津貼（115年度）"},
   LOCAL_COVERAGE_BOUNDARY: {name: "地方方案涵蓋範圍", short: "地方方案", detail: "地方租屋補助涵蓋邊界檢查"},
 };
 
@@ -1116,6 +1584,11 @@ const fieldLabels: Record<string, string> = {
   receivesOtherHousingAid: "是否領有其他住宅補貼",
   centralRentApproved: "中央租金補貼是否已核准",
   newTaipeiResidenceStudyWork: "新北市設籍、就學或就業條件",
+  childAgeMonths: "兒童年齡（月齡）",
+  childHasBirthOrInitialHouseholdRegistration: "出生登記或初設戶籍登記",
+  receivesPublicOrQuasiPublicChildcare: "是否接受公共化或準公共托育服務",
+  isGovernmentPlaced: "是否經政府公費安置收容",
+  birthOrder: "兒童出生排序（胎次）",
 };
 
 function policyName(policyId: string): string {
@@ -1208,8 +1681,8 @@ function ResultView({
 }: {
   run: AgentRun;
   passport: DecisionPassport;
-  actual: ScenarioResult;
-  whatIf: ScenarioResult;
+  actual: ScenarioResult | null;
+  whatIf: ScenarioResult | null;
   ownsHome: boolean | null;
   headingRef: React.Ref<HTMLHeadingElement>;
   onOpenGovernance: () => void;
@@ -1226,6 +1699,7 @@ function ResultView({
     .filter((item, index, array) => array.findIndex((candidate) => candidate.sourceId === item.sourceId) === index)
     .sort((left, right) => left.sourceId.localeCompare(right.sourceId, "en", {numeric: true}));
   const generatedAt = new Date(passport.generatedAt).toLocaleString("zh-TW", {hour12: false});
+  const guides = passport.applicationGuides ?? [];
 
   return (
     <div className="result phase-enter">
@@ -1235,8 +1709,11 @@ function ResultView({
           <p className="eyebrow">分析完成 <span lang="en">Decision Result</span></p>
           <h1 id="result-title" ref={headingRef} tabIndex={-1}>你的補助決策摘要</h1>
           <p className="trace">
-            {resumeIndex >= 0 && ownsHome !== null && <>已依你的確認（{ownsHome ? "有" : "沒有"}自有住宅）繼續分析 · </>}
+            {resumeIndex >= 0 && ownsHome !== null && passport.domain !== "CHILDCARE" && <>已依你的確認（{ownsHome ? "有" : "沒有"}自有住宅）繼續分析 · </>}
             執行 {toolsAfterResume} 個政策工具
+            {passport.childcare?.estimatedMonthlyBenefitNtd && (
+              <> · 預估每月津貼 <strong>NT${passport.childcare.estimatedMonthlyBenefitNtd.toLocaleString()}</strong></>
+            )}
           </p>
         </header>
 
@@ -1259,7 +1736,9 @@ function ResultView({
                   <li key={verdict.policyId + verdict.scope}>
                     <strong>{policyName(verdict.policyId)}</strong>
                     {verdict.status === "PASS"
-                      ? `：${verdict.scope === "兩個地址皆適用" ? "兩個地址" : verdict.scope}在目前資料下皆通過條件檢查`
+                      ? `：${verdict.scope === "兩個地址皆適用" ? "依目前條件" : verdict.scope}在目前資料下通過條件檢查${
+                          passport.childcare?.benefitTierLabel ? `（${passport.childcare.benefitTierLabel}）` : ""
+                        }`
                       : `：不符合（${verdict.gap ?? "條件不符"}）`}
                   </li>
                 ))}
@@ -1282,14 +1761,16 @@ function ResultView({
         </div>
       </section>
 
-      {/* 2 — Actual vs What-if */}
-      <section className="compare" aria-labelledby="compare-title">
-        <div className="section-head">
-          <h2 id="compare-title">目前住址 vs 搬遷假設</h2>
-          <span className="en-companion" lang="en">Actual vs What-if</span>
-        </div>
-        <CompareTable actual={actual} whatIf={whatIf}/>
-      </section>
+      {/* 2 — Actual vs What-if (Housing only) */}
+      {actual && whatIf && passport.domain !== "CHILDCARE" && (
+        <section className="compare" aria-labelledby="compare-title">
+          <div className="section-head">
+            <h2 id="compare-title">目前住址 vs 搬遷假設</h2>
+            <span className="en-companion" lang="en">Actual vs What-if</span>
+          </div>
+          <CompareTable actual={actual} whatIf={whatIf}/>
+        </section>
+      )}
 
       {/* 3 — Decision Passport (the take-away document) */}
       <article className="passport-doc" aria-labelledby="passport-title">
@@ -1317,13 +1798,70 @@ function ResultView({
           <ol className="steps">{passport.nextSteps.map((item) => <li key={item}>{item}</li>)}</ol>
         </section>
 
+        {guides.length > 0 && (
+          <section className="doc-section" aria-labelledby="ps-navigation">
+            <h3 id="ps-navigation"><span className="doc-num" aria-hidden="true">03</span>申辦導航（應備文件、受理機關與申請連結）</h3>
+            <div className="panel-stack">
+              {guides.map((guide) => (
+                <div className="gov-card" key={guide.policyId}>
+                  <div className="card-head">
+                    <h4>{guide.programTitle}</h4>
+                    <span className="en-companion">
+                      {guide.applicationStatus === "OPEN"
+                        ? "受理中（OPEN）"
+                        : guide.applicationStatus === "ROLLING"
+                          ? "全年常態受理（ROLLING）"
+                          : "已截止（CLOSED）"}
+                    </span>
+                  </div>
+                  <dl className="kv">
+                    <div><dt>主管／受理機關</dt><dd>{guide.administeringAgency}</dd></div>
+                    <div><dt>受理期間</dt><dd>{guide.applicationPeriod}</dd></div>
+                    <div><dt>政策有效期間</dt><dd>{guide.validFrom} 至 {guide.validTo}</dd></div>
+                    {guide.benefitAmountFormula && (
+                      <div><dt>補助金額基準</dt><dd>{guide.benefitAmountFormula}</dd></div>
+                    )}
+                    <div><dt>臨櫃／郵寄資訊</dt><dd>{guide.officeInformation}</dd></div>
+                    <div><dt>諮詢電話</dt><dd>{guide.contactInformation}</dd></div>
+                    {guide.onlineApplicationUrl && (
+                      <div>
+                        <dt>官方線上申辦</dt>
+                        <dd>
+                          <a href={guide.onlineApplicationUrl} target="_blank" rel="noreferrer">
+                            {guide.onlineApplicationUrl} ↗
+                          </a>
+                        </dd>
+                      </div>
+                    )}
+                  </dl>
+                  <p><strong>應備文件清單：</strong></p>
+                  <ul className="checklist">
+                    {guide.requiredDocuments.map((doc) => (
+                      <li key={doc.documentId}>
+                        {doc.title}
+                        {!doc.required && doc.conditionNote ? `（選備：${doc.conditionNote}）` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                  <p><strong>申請方式：</strong></p>
+                  <ul className="steps">
+                    {guide.applicationMethods.map((method) => (
+                      <li key={method}>{method}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
+
         <section className="doc-section" aria-labelledby="ps-risks">
-          <h3 id="ps-risks"><span className="doc-num" aria-hidden="true">03</span>風險提醒</h3>
+          <h3 id="ps-risks"><span className="doc-num" aria-hidden="true">04</span>風險提醒與排除條件</h3>
           <ul className="risks">{passport.risks.map((item) => <li key={item}>{item}</li>)}</ul>
         </section>
 
         <section className="doc-section" aria-labelledby="evidence-title">
-          <h3 id="evidence-title"><span className="doc-num" aria-hidden="true">04</span>官方依據</h3>
+          <h3 id="evidence-title"><span className="doc-num" aria-hidden="true">05</span>官方依據</h3>
           <ul className="evidence-list">
             {evidence.map((item) => (
               <li key={item.sourceId}>

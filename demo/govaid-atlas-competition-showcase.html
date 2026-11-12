@@ -919,10 +919,10 @@ footer.foot{padding:22px 0;background:#1b2023;color:#7b868b;font-size:12px;text-
         <ul><li>少花時間翻政策<span class="en">Less policy searching</span></li><li>清楚知道缺什麼資料<span class="en">Clear missing information</span></li><li>看得懂的判斷理由<span class="en">More explainable decisions</span></li></ul></div>
       <div class="icard rv"><div class="ic"><svg width="22" height="22"><use href="#i-gov"/></svg></div><h3>政府<span class="en">For Government</span></h3>
         <ul><li>減少資料不完整的詢問<span class="en">Fewer incomplete inquiries</span></li><li>推理過程可追溯<span class="en">Traceable reasoning</span></li><li>更安全的 AI 協助<span class="en">Safer AI assistance</span></li></ul></div>
-      <div class="icard future rv"><div class="ic"><svg width="22" height="22"><use href="#i-grid"/></svg></div><h3>擴充<span class="en">For Expansion</span></h3>
-        <span class="future-tag">Future policy domains · 尚未實作</span>
-        <div class="domains"><span class="cur">Housing 租屋（本 Demo）</span><span>Childcare 育兒</span><span>Education 教育</span><span>Social welfare 社福</span></div>
-        <ul style="margin-top:14px"><li style="border-top:0;font-size:13px;color:var(--muted)">同一套「規劃 → 規則 → 確認 → 依據」架構，可延伸至其他補助領域。目前僅租屋補助已實作。</li></ul>
+      <div class="icard future rv"><div class="ic"><svg width="22" height="22"><use href="#i-grid"/></svg></div><h3>涵蓋領域<span class="en">Supported & Boundary</span></h3>
+        <span class="future-tag" style="background:rgba(37,99,235,0.1);color:var(--accent,#2563eb)">Multi-Domain Active</span>
+        <div class="domains"><span class="cur">Housing 租屋（雙北+桃園導航）</span><span class="cur">Childcare 育兒津貼（未滿2歲）</span><span>Education 教育（未涵蓋）</span><span>Social welfare 社福（未涵蓋）</span></div>
+        <ul style="margin-top:14px"><li style="border-top:0;font-size:13px;color:var(--muted)">同一套「規劃 → 規則 → 人工確認 → 申辦導航」架構已支援租屋補助（雙北+桃園受理導航）與未滿2歲育兒津貼；未涵蓋領域（托育補助、其他縣市地方加碼）以 NOT_COVERED 安全阻斷並提供官方申辦管道。</li></ul>
       </div>
     </div>
   </div>
@@ -1081,8 +1081,8 @@ footer.foot{padding:22px 0;background:#1b2023;color:#7b868b;font-size:12px;text-
     setStep("resume",{s:"active"}); setTrace("RESUMING · 重新執行規則");
     later(function(){
       if(ans==="no"){
-        setStep("central",{s:"done",r:chip("pass","PASS"),d:'<span class="tool">check_central_rent_rules</span> 中央規則 PASS — 依目前 Demo 已實作規則'});
-        setStep("resume",{s:"done",r:chip("pass","PASS"),d:"中央租金補貼：依已實作規則符合基本條件"});
+        setStep("central",{s:"done",r:chip("pass","PARTIAL_CHECK"),d:'<span class="tool">evaluate_central_rules</span> 中央規則 PARTIAL_CHECK — 僅完成部分條件預審'});
+        setStep("resume",{s:"done",r:chip("pass","PARTIAL_CHECK"),d:"中央租金補貼：完成已編碼條件預審（PARTIAL_CHECK）"});
         setStep("compare",{s:"active"}); setTrace("RUNNING · 情境比較");
         later(function(){
           setStep("compare",{s:"done",r:chip("unc","2 UNCERTAIN"),d:'<span class="tool">compare_scenarios</span> 新北 / 臺北地方方案仍需確認條件'});
@@ -1108,7 +1108,7 @@ footer.foot{padding:22px 0;background:#1b2023;color:#7b868b;font-size:12px;text-
   function showOutcome(ans){
     var oc=$("#outcome");
     if(ans==="no"){
-      oc.innerHTML='<div class="oc ok"><div class="oi"><svg width="24" height="24"><use href="#i-check"/></svg></div><div class="ot"><b>中央租金補貼：依目前 Demo 已實作規則 PASS</b><span>新北 / 臺北地方方案仍為 UNCERTAIN，缺口已列入 Decision Passport。這不是政府正式核准。</span></div><div class="oa"><button class="btn btn-ghost" type="button" data-go2="scenario">查看情境比較</button><button class="btn btn-primary" type="button" data-go2="passport">Decision Passport <svg width="16" height="16"><use href="#i-arrow"/></svg></button></div></div>';
+      oc.innerHTML='<div class="oc ok"><div class="oi"><svg width="24" height="24"><use href="#i-check"/></svg></div><div class="ot"><b>中央租金補貼：完成已編碼條件預審 PARTIAL_CHECK</b><span>新北 / 臺北地方方案仍為 UNCERTAIN，缺口已列入 Decision Passport。這不是政府正式核准。</span></div><div class="oa"><button class="btn btn-ghost" type="button" data-go2="scenario">查看情境比較</button><button class="btn btn-primary" type="button" data-go2="passport">Decision Passport <svg width="16" height="16"><use href="#i-arrow"/></svg></button></div></div>';
     } else {
       oc.innerHTML='<div class="oc no"><div class="oi"><svg width="24" height="24"><use href="#i-x"/></svg></div><div class="ot"><b>中央租金補貼：依目前 Demo 已實作規則 FAIL</b><span>原因：本人持有自有住宅。這不是官方駁回；實際資格以主管機關審查為準。</span></div><div class="oa"><button class="btn btn-ghost" type="button" data-act2="regate">重新回答 Human Gate</button><button class="btn btn-primary" type="button" data-go2="passport">Decision Passport <svg width="16" height="16"><use href="#i-arrow"/></svg></button></div></div>';
     }

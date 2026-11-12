@@ -1,8 +1,8 @@
 import type { AddressScenario, ApplicantProfile } from "../types";
-import { normalizeCityName } from "../coverage";
+import { isSupportedTaiwanCity, normalizeCityName } from "../coverage";
 import type { AgentTraceStateSummary, SupportedMissingField } from "./types";
 
-export const SUPPORTED_MISSING_FIELDS: readonly SupportedMissingField[] = [
+export const HOUSING_MISSING_FIELDS: readonly SupportedMissingField[] = [
   "ownsHome",
   "receivesOtherHousingAid",
   "city",
@@ -11,6 +11,20 @@ export const SUPPORTED_MISSING_FIELDS: readonly SupportedMissingField[] = [
   "centralRentApproved",
   "newTaipeiResidenceStudyWork",
   "registeredCity",
+] as const;
+
+export const CHILDCARE_MISSING_FIELDS: readonly SupportedMissingField[] = [
+  "childAgeMonths",
+  "childHasBirthOrInitialHouseholdRegistration",
+  "isGovernmentPlaced",
+  "receivesPublicOrQuasiPublicChildcare",
+  "birthOrder",
+] as const;
+
+export const SUPPORTED_MISSING_FIELDS: readonly SupportedMissingField[] = [
+  ...HOUSING_MISSING_FIELDS,
+  ...CHILDCARE_MISSING_FIELDS,
+  "childRegisteredCity",
 ] as const;
 
 export const MISSING_FIELD_QUESTIONS: Record<SupportedMissingField, string> = {
@@ -22,6 +36,12 @@ export const MISSING_FIELD_QUESTIONS: Record<SupportedMissingField, string> = {
   centralRentApproved: "請問您的中央擴大租金補貼是否已核准？",
   newTaipeiResidenceStudyWork: "請問您是否符合在新北市設籍、就學或就業之條件？",
   registeredCity: "請問您的戶籍設於哪個縣市？",
+  childAgeMonths: "請問兒童目前的年齡是幾個月？（未滿2歲育兒津貼適用0至23個月）",
+  childHasBirthOrInitialHouseholdRegistration: "請問兒童是否已完成出生登記或初設戶籍登記？",
+  receivesPublicOrQuasiPublicChildcare: "請問兒童目前是否正在送托公共化或準公共托育服務（公托、準公共托嬰中心或準公共保母）？",
+  isGovernmentPlaced: "請問兒童目前是否經政府公費安置收容？",
+  birthOrder: "請問該名兒童為家中的第幾名子女（胎次：1、2 或 3 以上）？",
+  childRegisteredCity: "請問兒童戶籍設於哪個縣市？",
 };
 
 export function isSupportedMissingField(value: unknown): value is SupportedMissingField {
@@ -54,6 +74,24 @@ export function isFieldMissing(
       return applicant.centralRentApproved === undefined || applicant.centralRentApproved === null;
     case "newTaipeiResidenceStudyWork":
       return applicant.newTaipeiResidenceStudyWork === undefined || applicant.newTaipeiResidenceStudyWork === null;
+    case "childAgeMonths":
+      return applicant.childAgeMonths === undefined || applicant.childAgeMonths === null;
+    case "childHasBirthOrInitialHouseholdRegistration":
+      return (
+        applicant.childHasBirthOrInitialHouseholdRegistration === undefined ||
+        applicant.childHasBirthOrInitialHouseholdRegistration === null
+      );
+    case "receivesPublicOrQuasiPublicChildcare":
+      return (
+        applicant.receivesPublicOrQuasiPublicChildcare === undefined ||
+        applicant.receivesPublicOrQuasiPublicChildcare === null
+      );
+    case "isGovernmentPlaced":
+      return applicant.isGovernmentPlaced === undefined || applicant.isGovernmentPlaced === null;
+    case "birthOrder":
+      return applicant.birthOrder === undefined || applicant.birthOrder === null;
+    case "childRegisteredCity":
+      return !applicant.childRegisteredCity || !applicant.childRegisteredCity.trim();
   }
 }
 
@@ -77,6 +115,27 @@ export type FieldValidationOutcome = {
   error?: string;
 };
 
+// Strict numeric parsing for user-entered strings: only plain decimal digits
+// (optionally with thousands separators and, when allowed, a decimal part).
+// Rejects hex ("0x10"), exponent ("1e3"), signs, whitespace-only and mixed text,
+// so nonsense input is never silently coerced into a number.
+function parseStrictNumber(rawValue: unknown, allowDecimal: boolean): number {
+  if (typeof rawValue === "number") {
+    return rawValue;
+  }
+  if (typeof rawValue !== "string") {
+    return NaN;
+  }
+  const trimmed = rawValue.trim();
+  const pattern = allowDecimal
+    ? /^(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/
+    : /^(?:\d{1,3}(?:,\d{3})+|\d+)$/;
+  if (!pattern.test(trimmed)) {
+    return NaN;
+  }
+  return Number(trimmed.replace(/,/g, ""));
+}
+
 export function validateMissingFieldInput(
   field: SupportedMissingField,
   rawValue: unknown
@@ -85,16 +144,19 @@ export function validateMissingFieldInput(
     case "ownsHome":
     case "receivesOtherHousingAid":
     case "centralRentApproved":
-    case "newTaipeiResidenceStudyWork": {
+    case "newTaipeiResidenceStudyWork":
+    case "childHasBirthOrInitialHouseholdRegistration":
+    case "receivesPublicOrQuasiPublicChildcare":
+    case "isGovernmentPlaced": {
       if (typeof rawValue === "boolean") {
         return { valid: true, value: rawValue };
       }
       if (typeof rawValue === "string") {
         const normalized = rawValue.trim().toLowerCase();
-        if (["true", "yes", "1", "是", "有", "已核准", "符合"].includes(normalized)) {
+        if (["true", "yes", "1", "是", "有", "已核准", "符合", "已完成", "已登記"].includes(normalized)) {
           return { valid: true, value: true };
         }
-        if (["false", "no", "0", "否", "沒有", "無", "未核准", "不符合"].includes(normalized)) {
+        if (["false", "no", "0", "否", "沒有", "無", "未核准", "不符合", "未完成", "未送托"].includes(normalized)) {
           return { valid: true, value: false };
         }
       }
@@ -102,7 +164,7 @@ export function validateMissingFieldInput(
     }
 
     case "monthlyIncome": {
-      const num = typeof rawValue === "number" ? rawValue : typeof rawValue === "string" && rawValue.trim() !== "" ? Number(rawValue) : NaN;
+      const num = parseStrictNumber(rawValue, true);
       if (!Number.isFinite(num) || num < 0) {
         return { valid: false, error: "INVALID_MONTHLY_INCOME" };
       }
@@ -110,20 +172,37 @@ export function validateMissingFieldInput(
     }
 
     case "age": {
-      const num = typeof rawValue === "number" ? rawValue : typeof rawValue === "string" && rawValue.trim() !== "" ? Number(rawValue) : NaN;
+      const num = parseStrictNumber(rawValue, false);
       if (!Number.isFinite(num) || !Number.isInteger(num) || num < 0 || num > 130) {
         return { valid: false, error: "INVALID_AGE" };
       }
       return { valid: true, value: num };
     }
 
+    case "childAgeMonths": {
+      const num = parseStrictNumber(rawValue, false);
+      if (!Number.isFinite(num) || !Number.isInteger(num) || num < 0 || num > 240) {
+        return { valid: false, error: "INVALID_CHILD_AGE_MONTHS" };
+      }
+      return { valid: true, value: num };
+    }
+
+    case "birthOrder": {
+      const num = parseStrictNumber(rawValue, false);
+      if (!Number.isFinite(num) || !Number.isInteger(num) || num < 1 || num > 20) {
+        return { valid: false, error: "INVALID_BIRTH_ORDER" };
+      }
+      return { valid: true, value: num };
+    }
+
     case "city":
-    case "registeredCity": {
+    case "registeredCity":
+    case "childRegisteredCity": {
       if (typeof rawValue !== "string" || !rawValue.trim()) {
         return { valid: false, error: `INVALID_CITY_FOR_${field}` };
       }
       const normalized = normalizeCityName(rawValue);
-      if (!normalized) {
+      if (!normalized || !isSupportedTaiwanCity(normalized)) {
         return { valid: false, error: `INVALID_CITY_FOR_${field}` };
       }
       return { valid: true, value: normalized };
@@ -156,7 +235,19 @@ export function applyValidatedFieldUpdate(
     };
   }
 
-  if (field === "age" || field === "monthlyIncome") {
+  if (field === "childRegisteredCity") {
+    return {
+      applicant: { ...applicant, childRegisteredCity: String(validatedValue) },
+      actualScenario: { ...actualScenario },
+    };
+  }
+
+  if (
+    field === "age" ||
+    field === "monthlyIncome" ||
+    field === "childAgeMonths" ||
+    field === "birthOrder"
+  ) {
     return {
       applicant: { ...applicant, [field]: Number(validatedValue) },
       actualScenario: { ...actualScenario },
@@ -177,16 +268,19 @@ export function summarizeSafeState(
   completedTools: string[] = [],
   requiredFields: SupportedMissingField[] = ["ownsHome", "receivesOtherHousingAid"]
 ): AgentTraceStateSummary {
+  const isChildcareContext = requiredFields.some((f) =>
+    (CHILDCARE_MISSING_FIELDS as readonly string[]).includes(f)
+  );
+  const fieldsToInspect = isChildcareContext
+    ? CHILDCARE_MISSING_FIELDS
+    : HOUSING_MISSING_FIELDS;
+
   const knownFields: string[] = [];
   const allMissing: string[] = [];
 
-  for (const field of SUPPORTED_MISSING_FIELDS) {
+  for (const field of fieldsToInspect) {
     if (isFieldMissing(field, applicant, actualScenario)) {
-      if (requiredFields.includes(field) || !SUPPORTED_MISSING_FIELDS.includes(field)) {
-        allMissing.push(field);
-      } else {
-        allMissing.push(field);
-      }
+      allMissing.push(field);
     } else {
       knownFields.push(field);
     }
@@ -206,7 +300,7 @@ export function summarizeSafeSnapshot(
   applicant: ApplicantProfile,
   actualScenario?: AddressScenario
 ): Record<string, unknown> {
-  return {
+  const snapshot: Record<string, unknown> = {
     age: applicant.age ?? null,
     registeredCity: applicant.registeredCity ?? null,
     ownsHome: applicant.ownsHome ?? null,
@@ -216,4 +310,22 @@ export function summarizeSafeSnapshot(
     newTaipeiResidenceStudyWork: applicant.newTaipeiResidenceStudyWork ?? null,
     actualCity: actualScenario?.city ?? null,
   };
+
+  if (
+    applicant.childAgeMonths !== undefined ||
+    applicant.childHasBirthOrInitialHouseholdRegistration !== undefined ||
+    applicant.receivesPublicOrQuasiPublicChildcare !== undefined ||
+    applicant.isGovernmentPlaced !== undefined ||
+    applicant.birthOrder !== undefined
+  ) {
+    snapshot.childAgeMonths = applicant.childAgeMonths ?? null;
+    snapshot.childHasBirthOrInitialHouseholdRegistration =
+      applicant.childHasBirthOrInitialHouseholdRegistration ?? null;
+    snapshot.receivesPublicOrQuasiPublicChildcare =
+      applicant.receivesPublicOrQuasiPublicChildcare ?? null;
+    snapshot.isGovernmentPlaced = applicant.isGovernmentPlaced ?? null;
+    snapshot.birthOrder = applicant.birthOrder ?? null;
+  }
+
+  return snapshot;
 }
