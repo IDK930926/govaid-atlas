@@ -1,5 +1,5 @@
 import type { AddressScenario, ApplicantProfile } from "../types";
-import { normalizeCityName } from "../coverage";
+import { isSupportedTaiwanCity, normalizeCityName } from "../coverage";
 import type { AgentTraceStateSummary, SupportedMissingField } from "./types";
 
 export const HOUSING_MISSING_FIELDS: readonly SupportedMissingField[] = [
@@ -24,6 +24,7 @@ export const CHILDCARE_MISSING_FIELDS: readonly SupportedMissingField[] = [
 export const SUPPORTED_MISSING_FIELDS: readonly SupportedMissingField[] = [
   ...HOUSING_MISSING_FIELDS,
   ...CHILDCARE_MISSING_FIELDS,
+  "childRegisteredCity",
 ] as const;
 
 export const MISSING_FIELD_QUESTIONS: Record<SupportedMissingField, string> = {
@@ -40,6 +41,7 @@ export const MISSING_FIELD_QUESTIONS: Record<SupportedMissingField, string> = {
   receivesPublicOrQuasiPublicChildcare: "請問兒童目前是否正在送托公共化或準公共托育服務（公托、準公共托嬰中心或準公共保母）？",
   isGovernmentPlaced: "請問兒童目前是否經政府公費安置收容？",
   birthOrder: "請問該名兒童為家中的第幾名子女（胎次：1、2 或 3 以上）？",
+  childRegisteredCity: "請問兒童戶籍設於哪個縣市？",
 };
 
 export function isSupportedMissingField(value: unknown): value is SupportedMissingField {
@@ -88,6 +90,8 @@ export function isFieldMissing(
       return applicant.isGovernmentPlaced === undefined || applicant.isGovernmentPlaced === null;
     case "birthOrder":
       return applicant.birthOrder === undefined || applicant.birthOrder === null;
+    case "childRegisteredCity":
+      return !applicant.childRegisteredCity || !applicant.childRegisteredCity.trim();
   }
 }
 
@@ -110,6 +114,27 @@ export type FieldValidationOutcome = {
   value?: boolean | number | string;
   error?: string;
 };
+
+// Strict numeric parsing for user-entered strings: only plain decimal digits
+// (optionally with thousands separators and, when allowed, a decimal part).
+// Rejects hex ("0x10"), exponent ("1e3"), signs, whitespace-only and mixed text,
+// so nonsense input is never silently coerced into a number.
+function parseStrictNumber(rawValue: unknown, allowDecimal: boolean): number {
+  if (typeof rawValue === "number") {
+    return rawValue;
+  }
+  if (typeof rawValue !== "string") {
+    return NaN;
+  }
+  const trimmed = rawValue.trim();
+  const pattern = allowDecimal
+    ? /^(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?$/
+    : /^(?:\d{1,3}(?:,\d{3})+|\d+)$/;
+  if (!pattern.test(trimmed)) {
+    return NaN;
+  }
+  return Number(trimmed.replace(/,/g, ""));
+}
 
 export function validateMissingFieldInput(
   field: SupportedMissingField,
@@ -139,12 +164,7 @@ export function validateMissingFieldInput(
     }
 
     case "monthlyIncome": {
-      const num =
-        typeof rawValue === "number"
-          ? rawValue
-          : typeof rawValue === "string" && rawValue.trim() !== ""
-            ? Number(rawValue)
-            : NaN;
+      const num = parseStrictNumber(rawValue, true);
       if (!Number.isFinite(num) || num < 0) {
         return { valid: false, error: "INVALID_MONTHLY_INCOME" };
       }
@@ -152,12 +172,7 @@ export function validateMissingFieldInput(
     }
 
     case "age": {
-      const num =
-        typeof rawValue === "number"
-          ? rawValue
-          : typeof rawValue === "string" && rawValue.trim() !== ""
-            ? Number(rawValue)
-            : NaN;
+      const num = parseStrictNumber(rawValue, false);
       if (!Number.isFinite(num) || !Number.isInteger(num) || num < 0 || num > 130) {
         return { valid: false, error: "INVALID_AGE" };
       }
@@ -165,12 +180,7 @@ export function validateMissingFieldInput(
     }
 
     case "childAgeMonths": {
-      const num =
-        typeof rawValue === "number"
-          ? rawValue
-          : typeof rawValue === "string" && rawValue.trim() !== ""
-            ? Number(rawValue)
-            : NaN;
+      const num = parseStrictNumber(rawValue, false);
       if (!Number.isFinite(num) || !Number.isInteger(num) || num < 0 || num > 240) {
         return { valid: false, error: "INVALID_CHILD_AGE_MONTHS" };
       }
@@ -178,12 +188,7 @@ export function validateMissingFieldInput(
     }
 
     case "birthOrder": {
-      const num =
-        typeof rawValue === "number"
-          ? rawValue
-          : typeof rawValue === "string" && rawValue.trim() !== ""
-            ? Number(rawValue)
-            : NaN;
+      const num = parseStrictNumber(rawValue, false);
       if (!Number.isFinite(num) || !Number.isInteger(num) || num < 1 || num > 20) {
         return { valid: false, error: "INVALID_BIRTH_ORDER" };
       }
@@ -191,12 +196,13 @@ export function validateMissingFieldInput(
     }
 
     case "city":
-    case "registeredCity": {
+    case "registeredCity":
+    case "childRegisteredCity": {
       if (typeof rawValue !== "string" || !rawValue.trim()) {
         return { valid: false, error: `INVALID_CITY_FOR_${field}` };
       }
       const normalized = normalizeCityName(rawValue);
-      if (!normalized) {
+      if (!normalized || !isSupportedTaiwanCity(normalized)) {
         return { valid: false, error: `INVALID_CITY_FOR_${field}` };
       }
       return { valid: true, value: normalized };
@@ -225,6 +231,13 @@ export function applyValidatedFieldUpdate(
   if (field === "registeredCity") {
     return {
       applicant: { ...applicant, registeredCity: String(validatedValue) },
+      actualScenario: { ...actualScenario },
+    };
+  }
+
+  if (field === "childRegisteredCity") {
+    return {
+      applicant: { ...applicant, childRegisteredCity: String(validatedValue) },
       actualScenario: { ...actualScenario },
     };
   }

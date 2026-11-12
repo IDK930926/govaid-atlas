@@ -39,7 +39,8 @@ export type SupportedMissingField =
   | "childHasBirthOrInitialHouseholdRegistration"
   | "receivesPublicOrQuasiPublicChildcare"
   | "isGovernmentPlaced"
-  | "birthOrder";
+  | "birthOrder"
+  | "childRegisteredCity";
 
 export type AgentDecisionAction =
   | "CALL_TOOL"

@@ -62,90 +62,36 @@ import {listAllowedTools} from "./agent/tools";
 import type {AgentRun, AgentStatus} from "./agent/types";
 import type {ProviderName, ProviderPlannerResult, ProviderUsage} from "./agent/providers/types";
 
+import {
+  buildCaseDraft,
+  buildPersonaChips,
+  CASE_PRESETS,
+  DEFAULT_GOAL,
+  DUAL_CITY_ACTUAL_SCENARIO,
+  WENSHAN_WHAT_IF_SCENARIO,
+  PRESET_HOUSING_APPLICANT,
+  FIELD_SPECS,
+  getGateControl,
+  SELECTABLE_CITIES,
+  submitHumanGateAnswer,
+  toInputString,
+  type CaseDraft,
+  type CaseEdits,
+  type CaseEditsByDomain,
+  type CaseField,
+  type CasePreset,
+  EMPTY_CASE_EDITS,
+} from "./case-input";
+
 const centralRules = centralRulesJson as PolicyRule[];
 
-const initialApplicant: ApplicantProfile = {
-  age: 20,
-  maritalStatus: "single",
-  childrenCount: 0,
-  registeredCity: "臺北市",
-
-  ownsHome: null,
-  receivesOtherHousingAid: false,
-  monthlyIncome: null,
-
-  centralRentApproved: null,
-  newTaipeiResidenceStudyWork: null,
-};
-
-const actualScenario: AddressScenario = {
-  type: "ACTUAL",
-  address: "新北市永和區合成測試地址",
-  city: "新北市",
-  district: "永和區",
-  monthlyRent: 13500,
-};
-
-const whatIfScenario: AddressScenario = {
-  type: "WHAT_IF",
-  address: "臺北市文山區合成測試地址",
-  city: "臺北市",
-  district: "文山區",
-  monthlyRent: 15500,
-};
-
-const taoyuanActualScenario: AddressScenario = {
-  type: "ACTUAL",
-  address: "桃園市桃園區中正路合成測試地址",
-  city: "桃園市",
-  district: "桃園區",
-  monthlyRent: 12000,
-};
-
-const initialChildcareApplicant: ApplicantProfile = {
-  ...initialApplicant,
-  maritalStatus: "married",
-  childrenCount: 1,
-  childAgeMonths: 10,
-  childHasBirthOrInitialHouseholdRegistration: true,
-  isGovernmentPlaced: false,
-  receivesPublicOrQuasiPublicChildcare: null,
-  birthOrder: 1,
-  childRegisteredCity: "臺北市",
-};
-
-const DEMO_PRESETS: Array<{
-  id: string;
-  label: string;
-  goal: string;
-  applicant: ApplicantProfile;
-}> = [
-  {
-    id: "housing-dual-city",
-    label: "租屋補助（雙北搬遷比較）",
-    goal: "我目前住在新北市永和區，每月租金 13,500 元。如果搬到臺北市文山區、租金 15,500 元，我有哪些租屋補助可以考慮？還缺什麼資料？",
-    applicant: initialApplicant,
-  },
-  {
-    id: "housing-taoyuan",
-    label: "租屋補助（桃園市申辦導航）",
-    goal: "我目前租屋在桃園市桃園區，每月租金 12,000 元，想查詢可申請的租屋補助與桃園市政府住宅發展處申辦方式。",
-    applicant: {
-      ...initialApplicant,
-      registeredCity: "桃園市",
-      monthlyIncome: 38000,
-      ownsHome: null,
-    },
-  },
-  {
-    id: "childcare-under2",
-    label: "育兒津貼（未滿2歲育兒津貼）",
-    goal: "我家寶寶目前 10 個月大，是家中第 1 胎，已完成出生戶籍登記，想確認未滿2歲育兒津貼資格、每月金額與線上申辦方式。",
-    applicant: initialChildcareApplicant,
-  },
-];
-
-const agentGoal = "我目前住在新北市永和區，每月租金 13,500 元。如果搬到臺北市文山區、租金 15,500 元，我有哪些租屋補助可以考慮？還缺什麼資料？";
+const initialApplicant: ApplicantProfile = PRESET_HOUSING_APPLICANT;
+const actualScenario: AddressScenario = DUAL_CITY_ACTUAL_SCENARIO;
+const whatIfScenario: AddressScenario = WENSHAN_WHAT_IF_SCENARIO;
+const taoyuanActualScenario: AddressScenario = CASE_PRESETS[1].actualScenario;
+const initialChildcareApplicant: ApplicantProfile = CASE_PRESETS[2].applicant;
+const DEMO_PRESETS = CASE_PRESETS;
+const agentGoal = DEFAULT_GOAL;
 
 const OWNS_HOME_QUESTION = "本人是否持有住宅？";
 
@@ -198,8 +144,13 @@ function prefersReducedMotion(): boolean {
 }
 
 function App() {
-  const [applicant, setApplicant] = useState<ApplicantProfile>(initialApplicant);
-  const [userGoal, setUserGoal] = useState(agentGoal);
+  const [userGoal, setUserGoal] = useState(DEFAULT_GOAL);
+  const [caseEdits, setCaseEdits] = useState<CaseEditsByDomain>(EMPTY_CASE_EDITS);
+  const [isCustomExpanded, setIsCustomExpanded] = useState(false);
+  const [gateError, setGateError] = useState<string | null>(null);
+
+  const draft = useMemo(() => buildCaseDraft(userGoal, caseEdits), [userGoal, caseEdits]);
+  const [applicant, setApplicant] = useState<ApplicantProfile>(() => draft.applicant);
   const [agentRunning, setAgentRunning] = useState(false);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [lastInferenceSeconds, setLastInferenceSeconds] = useState<number | null>(null);
@@ -215,7 +166,7 @@ function App() {
   const [whatIfResult, setWhatIfResult] = useState<ScenarioResult | null>(null);
   const [passport, setPassport] = useState<DecisionPassport | null>(null);
   const [auditTrail, setAuditTrail] = useState<AuditEvent[]>([]);
-  const [agentRun, setAgentRun] = useState<AgentRun>(() => createAgentRun(agentGoal));
+  const [agentRun, setAgentRun] = useState<AgentRun>(() => createAgentRun(DEFAULT_GOAL));
   const [currentRole, setCurrentRole] = useState<UserRole>("APPLICANT");
   const [conflictResult, setConflictResult] = useState<ConflictCheckResult | null>(null);
   const [runtimeMetrics, setRuntimeMetrics] = useState<RuntimeMetrics>(createRuntimeMetrics());
@@ -313,16 +264,45 @@ function App() {
     audit("SYSTEM", "SENSITIVE_PROFILE_ACCESSED", {role, resource: "SENSITIVE_PROFILE"}, {masked: false}, "RBAC-V1");
   }
 
+  function handleSelectPreset(preset: CasePreset) {
+    setUserGoal(preset.goal);
+    setGateError(null);
+    setCaseEdits((prev) => ({
+      ...prev,
+      [preset.domain]: {},
+    }));
+  }
+
+  function handleFieldEdit(field: CaseField, value: string) {
+    setGateError(null);
+    setCaseEdits((prev) => ({
+      ...prev,
+      [draft.domain]: {
+        ...prev[draft.domain],
+        [field]: value,
+      },
+    }));
+  }
+
+  function handleResetEdits() {
+    setGateError(null);
+    setCaseEdits((prev) => ({
+      ...prev,
+      [draft.domain]: {},
+    }));
+  }
+
   function startGoldenCase() {
-    const freshApplicant = {...initialApplicant};
+    const freshApplicant = {...PRESET_HOUSING_APPLICANT};
     setApplicant(freshApplicant);
     setActualResult(null);
     setWhatIfResult(null);
     setPassport(null);
     setConflictResult(null);
     setAuditTrail([]);
+    setGateError(null);
 
-    const newRun = runAgenticGoldenCase(agentGoal, freshApplicant, actualScenario, whatIfScenario);
+    const newRun = runAgenticGoldenCase(DEFAULT_GOAL, freshApplicant, DUAL_CITY_ACTUAL_SCENARIO, WENSHAN_WHAT_IF_SCENARIO);
     setAgentRun(newRun);
 
     const measured = measureSync(() => evaluateRules(centralRules, freshApplicant));
@@ -383,19 +363,20 @@ function App() {
       return;
     }
 
-    const matchingPreset = DEMO_PRESETS.find((p) => p.goal === goal);
-    const freshApplicant = matchingPreset
-      ? { ...matchingPreset.applicant }
-      : goal.includes("育兒") || goal.includes("幼兒") || goal.includes("嬰兒")
-        ? { ...initialChildcareApplicant }
-        : goal.includes("桃園")
-          ? { ...initialApplicant, registeredCity: "桃園市", monthlyIncome: 38000 }
-          : { ...initialApplicant };
-    const selectedActualScenario = goal.includes("桃園") ? taoyuanActualScenario : actualScenario;
+    const currentDraft = buildCaseDraft(goal, caseEdits);
+    if (!currentDraft.valid) {
+      return;
+    }
+
+    const freshApplicant = currentDraft.applicant;
+    const selectedActualScenario = currentDraft.actualScenario;
+    const selectedWhatIfScenario = currentDraft.whatIfScenario;
+
     inferenceStartedAt.current = performance.now();
     setElapsedSeconds(0);
     setAgentRunning(true);
     setProviderError(null);
+    setGateError(null);
     setApplicant(freshApplicant);
     setActualResult(null);
     setWhatIfResult(null);
@@ -453,8 +434,10 @@ function App() {
       };
     }
 
-    const run = runAgenticGoldenCase(goal, freshApplicant, selectedActualScenario, whatIfScenario, plannerResult, {
+    const run = runAgenticGoldenCase(goal, freshApplicant, selectedActualScenario, selectedWhatIfScenario, plannerResult, {
       includePassport: true,
+      domain: currentDraft.domain,
+      ...(currentDraft.requiredFields ? { requiredFields: [...currentDraft.requiredFields] } : {}),
     });
     setAgentRun(run);
     recordAgentToolMetrics(run);
@@ -480,18 +463,23 @@ function App() {
     if (agentRun.status !== "WAITING_FOR_HUMAN" || agentRunning) {
       return;
     }
+    setGateError(null);
     const targetField = agentRun.missingField ?? "ownsHome";
-    const selectedActualScenario = userGoal.includes("桃園") ? taoyuanActualScenario : actualScenario;
     const existingAuditCount = agentRun.auditTrail.length;
     audit("USER", "FIELD_CONFIRMED", {field: targetField, value: answer});
-    const resumed =
-      targetField === "ownsHome" && typeof answer === "boolean" && agentRun.domain !== "CHILDCARE"
-        ? resumeAgentRun(agentRun, {...applicant, ownsHome: answer}, selectedActualScenario, whatIfScenario)
-        : resumeAgentWithFieldResponse(agentRun, targetField, answer, selectedActualScenario, whatIfScenario);
+
+    const submission = submitHumanGateAnswer(agentRun, answer, {
+      whatIfMirrorsActual: draft.whatIfMirrorsActual,
+    });
+    if (!submission.ok || submission.error) {
+      setGateError(submission.error ?? "輸入資料無效，請確認後重新輸入。");
+      setAgentRun(submission.run);
+      return;
+    }
+
+    const resumed = submission.run;
     if (resumed.state?.applicant) {
       setApplicant(resumed.state.applicant);
-    } else if (targetField === "ownsHome" && typeof answer === "boolean") {
-      setApplicant({...applicant, ownsHome: answer});
     }
     setAgentRun(resumed);
     recordAgentToolMetrics(resumed, existingAuditCount);
@@ -513,7 +501,9 @@ function App() {
   }
 
   function resetDemo() {
-    setApplicant({...initialApplicant});
+    setCaseEdits(EMPTY_CASE_EDITS);
+    setUserGoal(DEFAULT_GOAL);
+    setApplicant({...PRESET_HOUSING_APPLICANT});
     setCentralEvaluation([]);
     setActualResult(null);
     setWhatIfResult(null);
@@ -522,9 +512,9 @@ function App() {
     setConflictResult(null);
     setCurrentRole("APPLICANT");
     setRuntimeMetrics(createRuntimeMetrics());
-    setAgentRun(createAgentRun(agentGoal));
-    setUserGoal(agentGoal);
+    setAgentRun(createAgentRun(DEFAULT_GOAL));
     setProviderError(null);
+    setGateError(null);
     setLastInferenceSeconds(null);
   }
 
@@ -623,9 +613,15 @@ function App() {
           <StartView
             userGoal={userGoal}
             onGoalChange={setUserGoal}
+            onSelectPreset={handleSelectPreset}
+            draft={draft}
+            caseEdits={caseEdits}
+            onFieldEdit={handleFieldEdit}
+            onResetEdits={handleResetEdits}
+            isCustomExpanded={isCustomExpanded}
+            onToggleExpand={setIsCustomExpanded}
             onSubmit={() => void runCustomGoal()}
             running={agentRunning}
-            applicant={applicant}
             providerKind={providerKind}
             providerInfo={providerInfo}
             providerError={providerError}
@@ -643,6 +639,7 @@ function App() {
                 elapsedSeconds={elapsedSeconds}
                 providerInfo={providerInfo}
                 headingRef={focusTargetRef}
+                gateError={gateError}
                 onAnswer={respondToHuman}
                 onReset={resetDemo}
               />
@@ -780,22 +777,41 @@ function WorkflowProgress({status, running}: {status: AgentStatus; running: bool
 function StartView({
   userGoal,
   onGoalChange,
+  onSelectPreset,
+  draft,
+  caseEdits,
+  onFieldEdit,
+  onResetEdits,
+  isCustomExpanded,
+  onToggleExpand,
   onSubmit,
   running,
-  applicant,
   providerKind,
   providerInfo,
   providerError,
 }: {
   userGoal: string;
   onGoalChange: (value: string) => void;
+  onSelectPreset: (preset: CasePreset) => void;
+  draft: CaseDraft;
+  caseEdits: CaseEditsByDomain;
+  onFieldEdit: (field: CaseField, value: string) => void;
+  onResetEdits: () => void;
+  isCustomExpanded: boolean;
+  onToggleExpand: (open: boolean) => void;
   onSubmit: () => void;
   running: boolean;
-  applicant: ApplicantProfile;
   providerKind: string;
   providerInfo: ProviderInfo;
   providerError: string | null;
 }) {
+  const personaChips = useMemo(
+    () => buildPersonaChips(draft.domain, draft.applicant, draft.actualScenario),
+    [draft.domain, draft.applicant, draft.actualScenario]
+  );
+  const domainEdits = caseEdits[draft.domain] ?? {};
+  const hasEdits = Object.keys(domainEdits).length > 0;
+
   return (
     <div className="start phase-enter">
       <section className="hero" aria-labelledby="hero-title">
@@ -823,13 +839,13 @@ function StartView({
           </div>
 
           <div className="segmented" role="group" aria-label="快速切換示範領域與情境">
-            {DEMO_PRESETS.map((preset) => (
+            {CASE_PRESETS.map((preset) => (
               <button
                 key={preset.id}
                 type="button"
                 className={userGoal === preset.goal ? "is-active" : ""}
                 disabled={running}
-                onClick={() => onGoalChange(preset.goal)}
+                onClick={() => onSelectPreset(preset)}
               >
                 {preset.label}
               </button>
@@ -846,20 +862,119 @@ function StartView({
             aria-describedby="persona-summary"
           />
 
+          <details
+            className="custom-case-panel"
+            open={isCustomExpanded}
+            onToggle={(e) => onToggleExpand(e.currentTarget.open)}
+          >
+            <summary className="custom-case-toggle">
+              <span>編輯申請人條件（自訂案例條件）</span>
+              <small className="muted">
+                {draft.domain === "CHILDCARE" ? "育兒條件 · 6 項" : "租屋條件 · 9 項"}
+              </small>
+            </summary>
+            <div className="custom-case-body">
+              <div className="custom-case-grid">
+                {draft.fields.map((field) => {
+                  const spec = FIELD_SPECS[field];
+                  const val = draft.values[field];
+                  const source = draft.sources[field];
+                  const error = draft.errors[field];
+                  const currentEdit = domainEdits[field] ?? toInputString(val);
+
+                  const sourceLabel =
+                    source === "edited"
+                      ? "自訂"
+                      : source === "extracted"
+                        ? "對話擷取"
+                        : source === "preset"
+                          ? "示範預設"
+                          : "待確認";
+
+                  return (
+                    <div className="custom-case-field" key={field}>
+                      <label className="custom-case-label" htmlFor={`custom-field-${field}`}>
+                        <span>{spec.label}</span>
+                        <span className="custom-case-tag">{sourceLabel}</span>
+                      </label>
+                      {spec.kind === "city" ? (
+                        <select
+                          id={`custom-field-${field}`}
+                          value={currentEdit}
+                          onChange={(e) => onFieldEdit(field, e.target.value)}
+                          disabled={running}
+                        >
+                          <option value="">-- 請選擇 --</option>
+                          {SELECTABLE_CITIES.map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      ) : spec.kind === "boolean" ? (
+                        <select
+                          id={`custom-field-${field}`}
+                          value={currentEdit}
+                          onChange={(e) => onFieldEdit(field, e.target.value)}
+                          disabled={running}
+                        >
+                          <option value="">-- 未指定（由 Agent 詢問） --</option>
+                          {(spec.booleanOptions ?? [
+                            { value: true, label: "是" },
+                            { value: false, label: "否" },
+                          ]).map((opt) => (
+                            <option key={String(opt.value)} value={String(opt.value)}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          id={`custom-field-${field}`}
+                          type="number"
+                          min={spec.min ?? 0}
+                          max={spec.max}
+                          step={spec.kind === "integer" ? "1" : "any"}
+                          placeholder={spec.placeholder}
+                          value={currentEdit}
+                          onChange={(e) => onFieldEdit(field, e.target.value)}
+                          disabled={running}
+                        />
+                      )}
+                      {error && <span className="custom-case-error">{error}</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              {hasEdits && (
+                <div className="custom-case-footer">
+                  <button
+                    type="button"
+                    className="custom-case-reset"
+                    onClick={onResetEdits}
+                    disabled={running}
+                  >
+                    重設為預設條件
+                  </button>
+                </div>
+              )}
+            </div>
+          </details>
+
           <div className="persona" id="persona-summary">
-            <span className="persona-label">合成示範身分</span>
-            <ul className="chips" aria-label="示範申請人資料">
-              <li className="chip">{applicant.age} 歲</li>
-              <li className="chip">{applicant.maritalStatus === "single" ? "單身" : "已婚"}</li>
-              <li className="chip">{(applicant.registeredCity ?? "").replace("市", "")}戶籍</li>
-              <li className="chip">目前租屋：{shortPlace(actualScenario)}</li>
-              <li className="chip">月租：{actualScenario.monthlyRent.toLocaleString()}</li>
+            <span className="persona-label">
+              {draft.preset ? "合成示範身分" : "評估身分條件"}
+            </span>
+            <ul className="chips" aria-label="身分條件資料">
+              {personaChips.map((chip) => (
+                <li key={chip.key} className={"chip" + (chip.pending ? " chip-pending" : "")}>
+                  {chip.label}
+                </li>
+              ))}
             </ul>
           </div>
 
           <div className="goal-footer">
             <p className="fine-print">合成資料示範 · 結果僅為預審導航，不代表主管機關核准。</p>
-            <button className="primary cta" type="submit" disabled={running || !userGoal.trim()}>
+            <button className="primary cta" type="submit" disabled={running || !userGoal.trim() || !draft.valid}>
               開始分析
               <span className="cta-en" lang="en">Start Analysis</span>
             </button>
@@ -992,12 +1107,157 @@ function JourneyStepper({run, running}: {run: AgentRun; running: boolean}) {
   );
 }
 
+function HumanGateControls({
+  run,
+  gateError,
+  onAnswer,
+  onReset,
+}: {
+  run: AgentRun;
+  gateError: string | null;
+  onAnswer: (answer: boolean | number | string) => void;
+  onReset: () => void;
+}) {
+  const field = run.missingField;
+  const control = getGateControl(field);
+  const [customInput, setCustomInput] = useState("");
+
+  useEffect(() => {
+    setCustomInput("");
+  }, [field]);
+
+  if (!control) {
+    return (
+      <div className="gate-actions">
+        <button className="secondary" type="button" onClick={onReset}>重新開始</button>
+      </div>
+    );
+  }
+
+  const isOwnsHome = field === "ownsHome" || run.humanInputRequired === OWNS_HOME_QUESTION;
+
+  if (control.kind === "boolean") {
+    if (isOwnsHome) {
+      return (
+        <div className="gate-actions" role="group" aria-label="回答：本人是否持有住宅">
+          <button className="gate-button" type="button" onClick={() => onAnswer(false)}>沒有自有住宅</button>
+          <button className="gate-button" type="button" onClick={() => onAnswer(true)}>有自有住宅</button>
+        </div>
+      );
+    }
+    const options = control.booleanOptions ?? [
+      { value: true, label: "是／已完成" },
+      { value: false, label: "否／未完成" },
+    ];
+    return (
+      <div className="gate-actions" role="group" aria-label={`回答：${control.label}`}>
+        {options.map((opt) => (
+          <button
+            key={String(opt.value)}
+            className="gate-button"
+            type="button"
+            onClick={() => onAnswer(opt.value)}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
+
+  if (control.kind === "integer" || control.kind === "number") {
+    return (
+      <div className="gate-numeric-section">
+        {field === "birthOrder" && (
+          <div className="gate-actions" role="group" aria-label="回答：兒童出生胎次">
+            <button className="gate-button" type="button" onClick={() => onAnswer(1)}>第 1 名子女（5,000元/月）</button>
+            <button className="gate-button" type="button" onClick={() => onAnswer(2)}>第 2 名子女（6,000元/月）</button>
+            <button className="gate-button" type="button" onClick={() => onAnswer(3)}>第 3 名以上（7,000元/月）</button>
+          </div>
+        )}
+        <form
+          className="gate-input-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (customInput.trim() !== "") {
+              onAnswer(customInput.trim());
+            }
+          }}
+        >
+          <label htmlFor="gate-number-input" className="gate-input-label">
+            {field === "birthOrder" ? "或自訂輸入胎次數值：" : `請輸入${control.label}：`}
+          </label>
+          <div className="gate-input-row">
+            <input
+              id="gate-number-input"
+              type="number"
+              min={control.min ?? 0}
+              max={control.max}
+              step={control.kind === "integer" ? "1" : "any"}
+              placeholder={control.placeholder ?? "請輸入數值"}
+              value={customInput}
+              onChange={(e) => setCustomInput(e.target.value)}
+              required
+              autoFocus
+            />
+            {control.unit && <span className="gate-unit">{control.unit}</span>}
+            <button className="primary gate-submit" type="submit">確認送出</button>
+          </div>
+          {gateError && (
+            <p className="gate-error-message" role="alert">
+              <span className="badge-glyph" aria-hidden="true">✕</span> {gateError}
+            </p>
+          )}
+        </form>
+      </div>
+    );
+  }
+
+  // City selector
+  return (
+    <form
+      className="gate-input-form"
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (customInput.trim() !== "") {
+          onAnswer(customInput.trim());
+        }
+      }}
+    >
+      <label htmlFor="gate-city-select" className="gate-input-label">請選擇{control.label}：</label>
+      <div className="gate-input-row">
+        <select
+          id="gate-city-select"
+          value={customInput}
+          onChange={(e) => setCustomInput(e.target.value)}
+          required
+          autoFocus
+        >
+          <option value="">-- 請選擇縣市 --</option>
+          {SELECTABLE_CITIES.map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        <button className="primary gate-submit" type="submit" disabled={!customInput.trim()}>
+          確認縣市
+        </button>
+      </div>
+      {gateError && (
+        <p className="gate-error-message" role="alert">
+          <span className="badge-glyph" aria-hidden="true">✕</span> {gateError}
+        </p>
+      )}
+    </form>
+  );
+}
+
 function CurrentAction({
   run,
   running,
   elapsedSeconds,
   providerInfo,
   headingRef,
+  gateError,
   onAnswer,
   onReset,
 }: {
@@ -1006,6 +1266,7 @@ function CurrentAction({
   elapsedSeconds: number;
   providerInfo: ProviderInfo;
   headingRef: React.Ref<HTMLHeadingElement>;
+  gateError: string | null;
   onAnswer: (answer: boolean | number | string) => void;
   onReset: () => void;
 }) {
@@ -1039,17 +1300,6 @@ function CurrentAction({
 
   if (status === "WAITING_FOR_HUMAN") {
     const isOwnsHome = run.humanInputRequired === OWNS_HOME_QUESTION || run.missingField === "ownsHome";
-    const field = run.missingField;
-    const isBooleanGate =
-      isOwnsHome ||
-      field === "receivesOtherHousingAid" ||
-      field === "centralRentApproved" ||
-      field === "newTaipeiResidenceStudyWork" ||
-      field === "childHasBirthOrInitialHouseholdRegistration" ||
-      field === "receivesPublicOrQuasiPublicChildcare" ||
-      field === "isGovernmentPlaced";
-    const isBirthOrderGate = field === "birthOrder";
-    const isChildAgeGate = field === "childAgeMonths";
 
     return (
       <article className="action-card gate" aria-labelledby="action-title" aria-describedby="gate-why">
@@ -1057,37 +1307,12 @@ function CurrentAction({
         <h2 id="action-title" ref={headingRef} tabIndex={-1} className="gate-question">{run.humanInputRequired}</h2>
         {isOwnsHome && <p className="gate-en" lang="en">Do you own a home?</p>}
         <p className="gate-why" id="gate-why">這項資料會影響資格判斷，Agent 不會自行猜測。</p>
-        {isOwnsHome ? (
-          <div className="gate-actions" role="group" aria-label="回答：本人是否持有住宅">
-            <button className="gate-button" type="button" onClick={() => onAnswer(false)}>沒有自有住宅</button>
-            <button className="gate-button" type="button" onClick={() => onAnswer(true)}>有自有住宅</button>
-          </div>
-        ) : field === "receivesPublicOrQuasiPublicChildcare" ? (
-          <div className="gate-actions" role="group" aria-label="回答：是否送托公托或準公共托育">
-            <button className="gate-button" type="button" onClick={() => onAnswer(false)}>未送托公托／準公共托育（自行照顧或一般托育）</button>
-            <button className="gate-button" type="button" onClick={() => onAnswer(true)}>正在接受公托或準公共托育服務</button>
-          </div>
-        ) : isBooleanGate ? (
-          <div className="gate-actions" role="group" aria-label="回答：是否符合條件">
-            <button className="gate-button" type="button" onClick={() => onAnswer(true)}>是／已完成</button>
-            <button className="gate-button" type="button" onClick={() => onAnswer(false)}>否／未完成</button>
-          </div>
-        ) : isBirthOrderGate ? (
-          <div className="gate-actions" role="group" aria-label="回答：兒童出生胎次">
-            <button className="gate-button" type="button" onClick={() => onAnswer(1)}>第 1 名子女（5,000元/月）</button>
-            <button className="gate-button" type="button" onClick={() => onAnswer(2)}>第 2 名子女（6,000元/月）</button>
-            <button className="gate-button" type="button" onClick={() => onAnswer(3)}>第 3 名以上（7,000元/月）</button>
-          </div>
-        ) : isChildAgeGate ? (
-          <div className="gate-actions" role="group" aria-label="回答：兒童月齡">
-            <button className="gate-button" type="button" onClick={() => onAnswer(10)}>10 個月（未滿2歲）</button>
-            <button className="gate-button" type="button" onClick={() => onAnswer(26)}>26 個月（已滿2歲）</button>
-          </div>
-        ) : (
-          <div className="gate-actions">
-            <button className="secondary" type="button" onClick={onReset}>重新開始</button>
-          </div>
-        )}
+        <HumanGateControls
+          run={run}
+          gateError={gateError}
+          onAnswer={onAnswer}
+          onReset={onReset}
+        />
         <p className="gate-foot">Agent 已暫停 · 必要條件目前為「待確認」 · 回答後會重新執行規則檢查</p>
       </article>
     );
@@ -1164,6 +1389,7 @@ function ContextPanel({
     ? (llmEvent.output as {decision?: {reasoningSummary?: string}} | undefined)?.decision?.reasoningSummary
     : undefined;
   const allowed = listAllowedTools();
+  const personaChips = buildPersonaChips(run.domain ?? "HOUSING", applicant, run.state?.actualScenario);
 
   return (
     <aside className="context dim-when-gated" aria-labelledby="context-title">
@@ -1174,11 +1400,11 @@ function ContextPanel({
       <p className="context-goal">{run.goal}</p>
 
       <ul className="chips chips-sm" aria-label="申請人資料">
-        <li className="chip">{applicant.age} 歲 · 單身</li>
-        <li className="chip">{applicant.registeredCity}戶籍</li>
-        <li className={"chip" + (applicant.ownsHome === null ? " chip-pending" : "")}>
-          自有住宅：{applicant.ownsHome === null ? "待確認" : applicant.ownsHome ? "有" : "沒有"}
-        </li>
+        {personaChips.map((chip) => (
+          <li key={chip.key} className={"chip" + (chip.pending ? " chip-pending" : "")}>
+            {chip.label}
+          </li>
+        ))}
       </ul>
 
       <dl className="context-facts">

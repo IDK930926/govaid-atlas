@@ -677,6 +677,106 @@ a {
   font-size: var(--fs-caption);
 }
 
+/* Custom Case Inputs panel */
+.custom-case-panel {
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  padding: var(--s2) var(--s4);
+}
+
+.custom-case-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--brand-strong);
+  padding: var(--s2) 0;
+  user-select: none;
+}
+
+.custom-case-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.custom-case-body {
+  display: grid;
+  gap: var(--s3);
+  padding: var(--s3) 0 var(--s2);
+  border-top: 1px solid var(--line);
+}
+
+.custom-case-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--s3) var(--s4);
+}
+
+.custom-case-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.custom-case-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.custom-case-tag {
+  font-size: var(--fs-micro);
+  color: var(--muted);
+  font-weight: normal;
+}
+
+.custom-case-field input,
+.custom-case-field select {
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-family: inherit;
+}
+
+.custom-case-field input:focus,
+.custom-case-field select:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: -1px;
+}
+
+.custom-case-error {
+  font-size: var(--fs-micro);
+  color: var(--fail);
+}
+
+.custom-case-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s2);
+  padding-top: var(--s2);
+}
+
+.custom-case-reset {
+  font-size: var(--fs-caption);
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.custom-case-reset:hover {
+  color: var(--ink);
+}
+
 .goal-footer {
   display: flex;
   align-items: center;
@@ -1111,6 +1211,77 @@ a {
   margin-top: var(--s2);
   font-size: var(--fs-caption);
   color: var(--muted);
+}
+
+/* Human Gate input controls */
+.gate-numeric-section {
+  display: grid;
+  gap: var(--s3);
+}
+
+.gate-input-form {
+  display: grid;
+  gap: var(--s2);
+  margin-top: var(--s3);
+}
+
+.gate-input-label {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+.gate-input-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  max-width: 480px;
+}
+
+.gate-input-row input,
+.gate-input-row select {
+  flex: 1;
+  min-height: 52px;
+  padding: 0 var(--s3);
+  border: 2px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: #fff;
+  color: var(--ink);
+  font-size: 18px;
+  font-family: inherit;
+}
+
+.gate-input-row input:focus,
+.gate-input-row select:focus {
+  outline: 3px solid rgba(176, 114, 22, 0.25);
+  border-color: var(--gate);
+}
+
+.gate-unit {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.gate-submit {
+  min-height: 52px;
+  padding: 0 var(--s4);
+  font-size: 17px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.gate-error-message {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--fail);
+  padding: var(--s2) var(--s3);
+  background: var(--fail-soft);
+  border-radius: 6px;
+  margin-top: var(--s2);
 }
 
 /* Context column */
