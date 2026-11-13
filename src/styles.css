@@ -1481,6 +1481,7 @@ a {
 .summary {
   display: grid;
   gap: 20px;
+  min-width: 0;
   animation: rise 320ms var(--ease) both;
 }
 
@@ -1532,6 +1533,7 @@ a {
   display: grid;
   gap: var(--s2);
   align-content: start;
+  min-width: 0;
   padding: 20px var(--s5) var(--s4);
   border-top: 4px solid transparent;
 }
@@ -1577,6 +1579,16 @@ a {
   font-weight: 700;
   white-space: nowrap;
   line-height: 1.2;
+}
+
+.badge-partial_check {
+  white-space: normal;
+}
+
+.badge-lg.badge-partial_check {
+  flex-wrap: wrap;
+  font-size: clamp(18px, 2vw, 24px);
+  line-height: 1.25;
 }
 
 .badge-pass { color: var(--pass); }
@@ -1637,7 +1649,18 @@ a {
   gap: var(--s6);
 }
 
+.partial-explanation {
+  padding: var(--s3) var(--s4);
+  border-left: 3px solid var(--gate);
+  border-radius: 0 4px 4px 0;
+  background: var(--warn-soft);
+  color: var(--ink-2);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+}
+
 .split-col {
+  min-width: 0;
   padding-left: var(--s4);
   border-left: 3px solid;
 }
@@ -1678,10 +1701,26 @@ a {
   color: var(--warn);
 }
 
+.split-group + .split-group {
+  margin-top: var(--s4);
+}
+
+.split-group h3 {
+  margin-top: var(--s3);
+  font-size: var(--fs-small);
+  font-weight: 800;
+  color: var(--warn);
+}
+
+.split-group:first-of-type h3 {
+  margin-top: var(--s2);
+}
+
 /* 2 — Actual vs What-if as an aligned table */
 .compare {
   display: grid;
   gap: var(--s4);
+  min-width: 0;
   animation: rise 320ms 60ms var(--ease) both;
 }
 
@@ -1691,6 +1730,7 @@ a {
 }
 
 .compare-wrap {
+  min-width: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface);
@@ -1699,6 +1739,7 @@ a {
 
 .compare-table {
   display: grid;
+  min-width: 0;
 }
 
 .ct-row {
@@ -1861,11 +1902,24 @@ a {
   cursor: pointer;
 }
 
+.gov-card > summary,
+.gov-card > summary h4 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .rule-details-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--s5);
   margin-top: var(--s3);
+}
+
+.rule-details-note {
+  margin-top: var(--s3);
+  color: var(--muted);
+  font-size: var(--fs-caption);
+  line-height: 1.5;
 }
 
 .rule-scenario {
@@ -1899,6 +1953,7 @@ a {
 
 /* 3 — Decision Passport: a document, not a card grid */
 .passport-doc {
+  min-width: 0;
   border: 1px solid var(--line-strong);
   border-radius: 4px;
   background: var(--surface);
@@ -1943,9 +1998,40 @@ a {
 .doc-section {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
+  min-width: 0;
   gap: var(--s5);
   padding: 20px var(--s6);
   border-top: 1px solid var(--line);
+}
+
+.passport-check-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s5);
+}
+
+.passport-check-grid > div {
+  min-width: 0;
+}
+
+.passport-check-grid h4 {
+  margin-bottom: var(--s2);
+  font-size: var(--fs-body);
+  font-weight: 800;
+}
+
+.check-summary-list {
+  display: grid;
+  gap: var(--s2);
+  padding-left: 20px;
+  list-style: disc;
+  font-size: var(--fs-small);
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.passport-check-group + .passport-check-group {
+  margin-top: var(--s4);
 }
 
 .doc-head + .doc-section {
@@ -1956,9 +2042,11 @@ a {
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
+  min-width: 0;
   gap: 0 var(--s2);
   font-size: var(--fs-h3);
   font-weight: 800;
+  overflow-wrap: anywhere;
 }
 
 .doc-section h3 .en-inline {
@@ -1982,6 +2070,11 @@ a {
   font-size: var(--fs-body);
   line-height: 1.6;
   list-style: none;
+}
+
+.checklist li,
+.steps li {
+  overflow-wrap: anywhere;
 }
 
 .checklist li {
@@ -2230,6 +2323,7 @@ a {
 
 .gov-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s3);
   padding: var(--s5);
   border: 1px solid var(--line);
@@ -2292,6 +2386,10 @@ a {
 
 .kv dd {
   font-weight: 700;
+}
+
+.kv dd a {
+  overflow-wrap: anywhere;
 }
 
 .kv-row {
@@ -2880,7 +2978,8 @@ a {
 
   .verdict-split,
   .eval-grid,
-  .rule-details-grid {
+  .rule-details-grid,
+  .passport-check-grid {
     grid-template-columns: 1fr;
     gap: var(--s4);
   }
@@ -2948,11 +3047,48 @@ a {
     padding: var(--s3) 10px;
   }
 
+  .rule-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .rule-row code {
+    grid-column: 1;
+    overflow-wrap: anywhere;
+  }
+
+  .rule-row .rule-reason {
+    grid-column: 1 / -1;
+    overflow-wrap: anywhere;
+  }
+
+  .rule-row .badge {
+    grid-column: 2;
+    grid-row: 1;
+  }
+
   .doc-head,
   .doc-section,
   .doc-foot {
     padding-left: var(--s4);
     padding-right: var(--s4);
+  }
+
+  .doc-section h3 {
+    display: block;
+  }
+
+  .doc-section {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .doc-section h3 .doc-num {
+    display: inline-block;
+    margin-right: var(--s2);
+  }
+
+  .panel-stack,
+  .gov-card {
+    min-width: 0;
   }
 
   .doc-head h2 {

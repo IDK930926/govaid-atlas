@@ -3,6 +3,10 @@ import {
   actorCopy,
   auditCopy,
   benchmarkCopy,
+  getExecutedRuleSummaries,
+  getMissingUserFieldLabels,
+  getPolicyCoverageLimitation,
+  getVerifiedRuleLabels,
   resultCopy,
   roleCopy,
   statusCopy,
@@ -11,6 +15,7 @@ import {
   toolCopy,
   workflowSteps,
 } from "./ui-copy";
+import {PARTIAL_CHECK_NOTE} from "./coverage";
 
 import {
   detectConflicts,
@@ -1875,8 +1880,8 @@ function describeGap(evaluations: RuleEvaluation[]): string | null {
   if (!gap) {
     return null;
   }
-  const field = gap.reason.match(/缺少必要資料：(.+)/)?.[1] ?? gap.reason.split(" ")[0];
-  return fieldLabels[field] ?? field;
+  const field = gap.reason.match(/缺少必要資料：(.+)/)?.[1];
+  return field ? fieldLabels[field] ?? field : gap.reason;
 }
 
 type ProgramVerdict = {
@@ -1884,6 +1889,8 @@ type ProgramVerdict = {
   status: ResultStatus;
   scope: string;
   gap: string | null;
+  verifiedConditions: string[];
+  missingFields: string[];
 };
 
 // Groups the passport's per-scenario programs into one verdict per program (and per status if they differ).
@@ -1913,7 +1920,13 @@ function buildVerdicts(
     },
   ];
   const order: string[] = [];
-  const byPolicy = new Map<string, {label: string; status: ResultStatus; gap: string | null}[]>();
+  const byPolicy = new Map<string, {
+    label: string;
+    status: ResultStatus;
+    gap: string | null;
+    verifiedConditions: string[];
+    missingFields: string[];
+  }[]>();
   for (const scenario of scenarios) {
     for (const program of scenario.data.programs) {
       if (!byPolicy.has(program.policyId)) {
@@ -1927,6 +1940,8 @@ function buildVerdicts(
           ? NEW_TAIPEI_STUDENT_PENDING_GAP
           : failGap(program.status, program.ruleResults, program.failedConditions)
             ?? describeGap(program.ruleResults) ?? program.coverageNote ?? null,
+        verifiedConditions: getVerifiedRuleLabels(program.ruleResults),
+        missingFields: getMissingUserFieldLabels(program.ruleResults),
       });
     }
   }
@@ -1942,9 +1957,18 @@ function buildVerdicts(
           ? dualCityComparison ? "方案 A、B 皆適用" : "兩個地址皆適用"
           : entries[0].label,
         gap: entries.find((entry) => entry.gap)?.gap ?? null,
+        verifiedConditions: [...new Set(entries.flatMap((entry) => entry.verifiedConditions))],
+        missingFields: [...new Set(entries.flatMap((entry) => entry.missingFields))],
       }];
     }
-    return entries.map((entry) => ({policyId, status: entry.status, scope: entry.label, gap: entry.gap}));
+    return entries.map((entry) => ({
+      policyId,
+      status: entry.status,
+      scope: entry.label,
+      gap: entry.gap,
+      verifiedConditions: entry.verifiedConditions,
+      missingFields: entry.missingFields,
+    }));
   });
 }
 
@@ -1990,11 +2014,22 @@ function ResultView({
   const newTaipeiStudentHint = hasTaipeiStudyWithTaoyuanRegistration(passport, run.goal);
   const verdicts = buildVerdicts(passport, newTaipeiStudentHint, dualCityComparison);
   const certain = verdicts.filter((verdict) => verdict.status === "PASS" || verdict.status === "FAIL");
-  const pending = verdicts.filter((verdict) => verdict.status !== "PASS" && verdict.status !== "FAIL");
+  const partial = verdicts.filter((verdict) => verdict.status === "PARTIAL_CHECK");
+  const missingFields = verdicts.filter((verdict) => verdict.status === "UNCERTAIN" && verdict.missingFields.length > 0);
+  const uncertainWithoutMissingFields = verdicts.filter((verdict) => verdict.status === "UNCERTAIN" && verdict.missingFields.length === 0);
+  const notCovered = verdicts.filter((verdict) => verdict.status === "NOT_COVERED");
   const resumeIndex = run.auditTrail.findIndex((event) => event.action === "AGENT_RESUMED");
   const toolsAfterResume = run.auditTrail
     .slice(Math.max(resumeIndex, 0))
     .filter((event) => event.action === "AGENT_TOOL_COMPLETED").length;
+  const passportPrograms = [...passport.actual.programs, ...passport.whatIf.programs];
+  const passportRuleSummaries = [...new Set(passportPrograms.flatMap((program) =>
+    getExecutedRuleSummaries(program.ruleResults).map((summary) => `${policyName(program.policyId)}：${summary}`)
+  ))];
+  const passportMissingFields = [...new Set(passportPrograms.flatMap((program) =>
+    getMissingUserFieldLabels(program.ruleResults).map((field) => `${policyName(program.policyId)}：${field}`)
+  ))];
+  const passportOfficialReviews = [...new Map(partial.map((verdict) => [verdict.policyId, verdict])).values()];
   const evidence = [...passport.actual.programs, ...passport.whatIf.programs]
     .flatMap((program) => program.evidence)
     .filter((item, index, array) => array.findIndex((candidate) => candidate.sourceId === item.sourceId) === index)
@@ -2027,12 +2062,26 @@ function ResultView({
             </li>
           ))}
         </ul>
+        {partial.length > 0 && (
+          <p className="partial-explanation">
+            已完成目前系統已實作規則的檢查；但此結果不代表完整法定資格核定，最終仍以主管機關審查為準。
+          </p>
+        )}
 
         <div className="verdict-split">
           <div className="split-col split-certain">
-            <h2>目前可以確定</h2>
-            {certain.length ? (
+            <h2>已驗證</h2>
+            {certain.length || partial.length ? (
               <ul>
+                {partial.map((verdict) => (
+                  <li key={verdict.policyId + verdict.scope}>
+                    <strong>{policyName(verdict.policyId)}</strong>：
+                    {verdict.verifiedConditions.length
+                      ? `${verdict.verifiedConditions.join("、")} 已通過目前實作規則`
+                      : "目前沒有已通過的規則結果"}
+                    <span className="split-scope">{verdict.scope}</span>
+                  </li>
+                ))}
                 {certain.map((verdict) => (
                   <li key={verdict.policyId + verdict.scope}>
                     <strong>{policyName(verdict.policyId)}</strong>
@@ -2040,24 +2089,69 @@ function ResultView({
                       ? `：${verdict.scope === "兩個地址皆適用" ? "依目前條件" : verdict.scope}在目前資料下通過條件檢查${
                           passport.childcare?.benefitTierLabel ? `（${passport.childcare.benefitTierLabel}）` : ""
                         }`
-                      : `：不符合（${verdict.gap ?? "條件不符"}）`}
+                      : `：不符合（${verdict.gap ?? "條件不符"}）。依目前已實作規則判定，不代表官方駁回。`}
                   </li>
                 ))}
               </ul>
-            ) : <p className="muted">目前沒有可確定的方案。</p>}
+            ) : <p className="muted">目前沒有已執行的明確規則結果。</p>}
           </div>
           <div className="split-col split-pending">
-            <h2>目前仍需確認</h2>
-            {pending.length ? (
-              <ul>
-                {pending.map((verdict) => (
-                  <li key={verdict.policyId + verdict.scope}>
-                    <strong>{policyName(verdict.policyId)}</strong>：{verdict.gap ?? "缺少必要資料"}
-                    <span className="split-scope">{verdict.scope}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : <p className="muted">沒有待確認的項目。</p>}
+            <h2>尚未完整驗證</h2>
+            {partial.length > 0 && (
+              <div className="split-group">
+                <h3>尚需主管機關核定</h3>
+                <ul>
+                  {partial.map((verdict) => (
+                    <li key={verdict.policyId + verdict.scope}>
+                      <strong>{policyName(verdict.policyId)}</strong>：{getPolicyCoverageLimitation(verdict.policyId)}
+                      <span className="split-scope">{verdict.scope}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {missingFields.length > 0 && (
+              <div className="split-group">
+                <h3>仍需你確認</h3>
+                <ul>
+                  {missingFields.map((verdict) => (
+                    <li key={verdict.policyId + verdict.scope}>
+                      <strong>{policyName(verdict.policyId)}</strong>：{verdict.missingFields.join("、")}
+                      <span className="split-scope">{verdict.scope}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {uncertainWithoutMissingFields.length > 0 && (
+              <div className="split-group">
+                <h3>規則狀態待確認</h3>
+                <ul>
+                  {uncertainWithoutMissingFields.map((verdict) => (
+                    <li key={verdict.policyId + verdict.scope}>
+                      <strong>{policyName(verdict.policyId)}</strong>：{verdict.gap ?? "規則結果尚待確認"}
+                      <span className="split-scope">{verdict.scope}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {notCovered.length > 0 && (
+              <div className="split-group">
+                <h3>目前尚未涵蓋</h3>
+                <ul>
+                  {notCovered.map((verdict) => (
+                    <li key={verdict.policyId + verdict.scope}>
+                      <strong>{policyName(verdict.policyId)}</strong>：{verdict.gap ?? "請洽主管機關確認適用方案"}
+                      <span className="split-scope">{verdict.scope}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {partial.length === 0 && missingFields.length === 0
+              && uncertainWithoutMissingFields.length === 0 && notCovered.length === 0
+              && <p className="muted">沒有待處理或待核定的項目。</p>}
           </div>
         </div>
       </section>
@@ -2095,11 +2189,49 @@ function ResultView({
           </dl>
         </header>
 
-        <section className="doc-section" aria-labelledby="ps-missing">
-          <h3 id="ps-missing"><span className="doc-num" aria-hidden="true">01</span>需要補充的資料</h3>
-          {passport.missingItems.length
-            ? <ul className="checklist">{passport.missingItems.map((item) => <li key={item}>{item}</li>)}</ul>
-            : <p className="muted">無</p>}
+        <section className="doc-section" aria-labelledby="ps-checks">
+          <h3 id="ps-checks"><span className="doc-num" aria-hidden="true">01</span>資格檢查摘要</h3>
+          <div className="passport-check-grid">
+            <div>
+              <h4>已由系統驗證</h4>
+              {passportRuleSummaries.length > 0
+                ? <ul className="check-summary-list">{passportRuleSummaries.map((item) => <li key={item}>{item}</li>)}</ul>
+                : <p className="muted">目前沒有已執行的明確規則結果。</p>}
+            </div>
+            <div>
+              {passportOfficialReviews.length > 0 && (
+                <div className="passport-check-group">
+                  <h4>尚需官方核定</h4>
+                  <ul className="check-summary-list">
+                    {passportOfficialReviews.map((verdict) => (
+                      <li key={verdict.policyId}>{policyName(verdict.policyId)}：{getPolicyCoverageLimitation(verdict.policyId)}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {passportMissingFields.length > 0 && (
+                <div className="passport-check-group">
+                  <h4>仍需使用者補充</h4>
+                  <ul className="check-summary-list">{passportMissingFields.map((item) => <li key={item}>{item}</li>)}</ul>
+                </div>
+              )}
+              {uncertainWithoutMissingFields.length > 0 && (
+                <div className="passport-check-group">
+                  <h4>規則狀態待確認</h4>
+                  <ul className="check-summary-list">
+                    {uncertainWithoutMissingFields.map((verdict) => (
+                      <li key={verdict.policyId + verdict.scope}>
+                        {policyName(verdict.policyId)}：{verdict.gap ?? "規則結果尚待確認"}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {passportOfficialReviews.length === 0 && passportMissingFields.length === 0
+                && uncertainWithoutMissingFields.length === 0
+                && <p className="muted">本次沒有缺漏欄位或 PARTIAL_CHECK 項目。</p>}
+            </div>
+          </div>
         </section>
 
         <section className="doc-section" aria-labelledby="ps-next">
@@ -2195,7 +2327,9 @@ function ResultView({
 
         <section className="doc-section" aria-labelledby="ps-risks">
           <h3 id="ps-risks"><span className="doc-num" aria-hidden="true">04</span>風險提醒與排除條件</h3>
-          <ul className="risks">{passport.risks.map((item) => <li key={item}>{item}</li>)}</ul>
+          <ul className="risks">{passport.risks
+            .filter((item) => item !== PARTIAL_CHECK_NOTE)
+            .map((item) => <li key={item}>{item}</li>)}</ul>
         </section>
 
         <section className="doc-section" aria-labelledby="evidence-title">
@@ -2257,7 +2391,7 @@ function CompareCell({
   const gap = status === "PASS"
     ? null
     : status === "PARTIAL_CHECK"
-      ? "僅完成已編碼條件預審；所得、年齡、家戶等條件待核對"
+      ? "已通過目前實作規則；仍非完整法定資格核定。"
       : status === "NOT_COVERED"
         ? (policy.coverageNote ?? "目前版本尚未完整涵蓋")
         : newTaipeiStudentHint && policy.policyId === "NEW_TAIPEI_RENT_115" && status === "UNCERTAIN"
@@ -2269,14 +2403,23 @@ function CompareCell({
     ? "不符合："
     : status === "NOT_COVERED"
       ? "尚未涵蓋："
-      : "待確認：";
+      : status === "PARTIAL_CHECK"
+        ? ""
+        : status === "UNCERTAIN" && getMissingUserFieldLabels(policy.evaluations).length > 0
+          ? "仍需你確認："
+          : "狀態待確認：";
   return (
     <span role="cell" className="ct-cell">
       <span className="ct-policy">
         {kind === "local" && <span className="ct-policy-name">{policyLabels[policy.policyId]?.short ?? policy.policyId}</span>}
         <ResultBadge status={status}/>
       </span>
-      {gap && <small className="ct-gap">{prefix}{gap}</small>}
+      {gap && (
+        <small className="ct-gap">
+          {prefix}{gap}
+          {status === "FAIL" && " 依目前已實作規則判定，不代表官方駁回。"}
+        </small>
+      )}
     </span>
   );
 }
@@ -2371,6 +2514,9 @@ function CompareTable({
 
       <details className="rule-details">
         <summary>查看規則細節</summary>
+        <p className="rule-details-note">
+          以下僅列出 GovAid Atlas 目前已實作並實際執行的規則，不代表該方案全部法定資格條件。
+        </p>
         <div className="rule-details-grid">
           {scenarios.map((scenario) => (
             <div key={scenario.key}>

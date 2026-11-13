@@ -26,6 +26,83 @@ export function summarizeFailReasons(evaluations: readonly RuleEvaluation[]): st
     .join("、");
 }
 
+const ruleResultLabels: Record<string, string> = {
+  "CENTRAL-115-HOME-001": "名下住宅條件",
+  "CENTRAL-115-HOUSING-AID-001": "其他住宅補助條件",
+  "TAOYUAN-115-HOME-001": "名下住宅條件",
+  "TAOYUAN-115-HOUSING-AID-001": "其他住宅補助條件",
+  "TAOYUAN-115-INCOME-001": "桃園市家庭平均月所得門檻",
+  "NEWTAIPEI-115-LOCAL-001": "新北市設籍／就學／就業條件",
+  "NEWTAIPEI-115-AID-001": "其他住宅補助條件",
+  "TAIPEI-115-REGISTERED-001": "臺北市設籍條件",
+  "TAIPEI-115-CENTRAL-001": "中央租金補貼核定條件",
+  "CHILDCARE-115-AGE-001": "兒童未滿 24 個月",
+  "CHILDCARE-115-REG-001": "出生登記或初設戶籍登記",
+  "CHILDCARE-115-PLACEMENT-001": "未經政府公費安置",
+  "CHILDCARE-115-CARE-001": "未接受公共化／準公共托育",
+  "CHILDCARE-115-ORDER-001": "出生胎次",
+};
+
+const applicantFieldLabels: Record<string, string> = {
+  age: "年齡",
+  maritalStatus: "婚姻狀態",
+  childrenCount: "子女數",
+  registeredCity: "戶籍城市",
+  monthlyIncome: "月所得",
+  ownsHome: "本人是否持有住宅",
+  receivesOtherHousingAid: "是否領有其他住宅補助",
+  centralRentApproved: "中央租金補貼是否已核准",
+  newTaipeiResidenceStudyWork: "新北市設籍、就學或就業條件",
+  childAgeMonths: "兒童年齡（月齡）",
+  childHasBirthOrInitialHouseholdRegistration: "出生登記或初設戶籍登記",
+  receivesPublicOrQuasiPublicChildcare: "是否接受公共化或準公共托育",
+  isGovernmentPlaced: "是否經政府公費安置",
+  birthOrder: "兒童出生胎次",
+};
+
+export function getVerifiedRuleLabels(evaluations: readonly RuleEvaluation[]): string[] {
+  return [...new Set(evaluations
+    .filter((evaluation) => evaluation.status === "PASS")
+    .map((evaluation) => ruleResultLabels[evaluation.ruleId])
+    .filter((label): label is string => label !== undefined))];
+}
+
+export function getExecutedRuleSummaries(evaluations: readonly RuleEvaluation[]): string[] {
+  return [...new Set(evaluations
+    .filter((evaluation) => evaluation.status !== "UNCERTAIN")
+    .map((evaluation) => {
+      const label = ruleResultLabels[evaluation.ruleId];
+      return label ? `${label}：${evaluation.status === "PASS" ? "通過" : "不符合"}` : undefined;
+    })
+    .filter((summary): summary is string => summary !== undefined))];
+}
+
+export function getMissingUserFieldLabels(evaluations: readonly RuleEvaluation[]): string[] {
+  return [...new Set(evaluations
+    .filter((evaluation) => evaluation.status === "UNCERTAIN")
+    .map((evaluation) => {
+      const field = evaluation.reason.match(/缺少必要資料：([A-Za-z][A-Za-z0-9]*)$/)?.[1];
+      return field ? applicantFieldLabels[field] ?? field : undefined;
+    })
+    .filter((label): label is string => label !== undefined))];
+}
+
+export const policyCoverageLimitations: Record<string, string> = {
+  CENTRAL_RENT_115:
+    "目前僅預審無自有住宅及未重複領取住宅補助等已編碼條件；其他法定資格仍由主管機關依正式申請資料核定。",
+  NEW_TAIPEI_RENT_115:
+    "目前僅預審新北市設籍／就學／就業及未重複領取住宅補助等已編碼條件；完整資格仍由主管機關核定。",
+  TAIPEI_RENT_115:
+    "目前僅預審臺北市設籍及中央租金補貼核定條件；完整資格仍由主管機關核定。",
+  TAOYUAN_CENTRAL_RENT_115:
+    "目前僅預審無自有住宅、未重複領取住宅補助及桃園市家庭平均月所得門檻；租約與房屋稅籍仍由主管機關審查。",
+};
+
+export function getPolicyCoverageLimitation(policyId: string): string {
+  return policyCoverageLimitations[policyId]
+    ?? "本系統目前僅檢查已實作規則；完整法定資格仍由主管機關核定。";
+}
+
 // Presentation only. Raw state and rule semantics remain owned by the agent.
 export const agentStatusCopy: Record<AgentStatus, BilingualCopy> = {
   IDLE: {zh: "待命", en: "Idle"},
@@ -60,7 +137,7 @@ export const resultCopy: Record<EligibilityStatus, BilingualCopy> = {
   PASS: {zh: "通過", en: "PASS"},
   FAIL: {zh: "不符合", en: "FAIL"},
   UNCERTAIN: {zh: "待確認", en: "UNCERTAIN"},
-  PARTIAL_CHECK: {zh: "僅完成部分檢查", en: "PARTIAL_CHECK"},
+  PARTIAL_CHECK: {zh: "已完成系統可驗證項目", en: "PARTIAL_CHECK"},
   NOT_COVERED: {zh: "尚未涵蓋", en: "NOT_COVERED"},
 };
 
@@ -77,7 +154,7 @@ export const statusCopy: Record<string, BilingualCopy> = {
   PASS: {zh: "通過", en: "PASS"},
   FAIL: {zh: "不通過", en: "FAIL"},
   UNCERTAIN: {zh: "待確認", en: "UNCERTAIN"},
-  PARTIAL_CHECK: {zh: "僅完成部分檢查", en: "PARTIAL_CHECK"},
+  PARTIAL_CHECK: {zh: "已完成系統可驗證項目", en: "PARTIAL_CHECK"},
   NOT_COVERED: {zh: "尚未涵蓋", en: "NOT_COVERED"},
   PENDING: {zh: "等待中", en: "PENDING"},
   ACTIVE: {zh: "執行中", en: "ACTIVE"},

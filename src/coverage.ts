@@ -361,4 +361,4 @@ export function getPolicyCompleteness(policyId: string): PolicyCompleteness {
 }
 
 export const PARTIAL_CHECK_NOTE =
-  "本系統目前僅檢查已編碼的部分條件；所得、財產、年齡、家戶等其他資格條件尚未由本系統驗證，最終資格以主管機關審查為準。";
+  "已完成本系統目前已實作規則的檢查；此結果不代表完整法定資格核定，最終仍以主管機關審查為準。";
