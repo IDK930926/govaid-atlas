@@ -57,6 +57,7 @@ import type {
 import {evaluateRules} from "./rules";
 import type {ScenarioResult} from "./scenario";
 import type {DecisionPassport} from "./passport";
+import {displayedPassportPrograms, displayedPassportRisks, displayedPassportScenarios} from "./scenario-view";
 
 import {
   createAgentRun,
@@ -509,6 +510,9 @@ function App() {
     const freshApplicant = currentDraft.applicant;
     const selectedActualScenario = currentDraft.actualScenario;
     const selectedWhatIfScenario = currentDraft.whatIfScenario;
+    // No explicit relocation / option-B request => the case has no what-if; any mirror
+    // the engine evaluates must never surface as a comparison.
+    const caseHasWhatIf = currentDraft.domain === "HOUSING" && !currentDraft.whatIfMirrorsActual;
 
     inferenceStartedAt.current = performance.now();
     setElapsedSeconds(0);
@@ -653,7 +657,7 @@ function App() {
       getCompletedToolResult<DecisionPassport>(run, "generate_decision_passport") ??
       getCompletedToolResult<DecisionPassport>(run, "generate_childcare_passport");
     if (actual) setActualResult(actual);
-    if (whatIf) setWhatIfResult(whatIf);
+    setWhatIfResult(caseHasWhatIf && whatIf ? whatIf : null);
     if (completedPassport) setPassport(completedPassport);
     // Planner latency is only meaningful when the model actually returned a plan; a fast
     // failure followed by the rule-based fallback must read N/A, not "0.0 s".
@@ -697,7 +701,7 @@ function App() {
       getCompletedToolResult<DecisionPassport>(resumed, "generate_childcare_passport");
     if (actual && whatIf && completedPassport) {
       setActualResult(actual);
-      setWhatIfResult(whatIf);
+      setWhatIfResult(draft.domain === "HOUSING" && !draft.whatIfMirrorsActual ? whatIf : null);
       setPassport(completedPassport);
     } else if (completedPassport) {
       setPassport(completedPassport);
@@ -1131,7 +1135,7 @@ function StartView({
                       <span>情境二 · 目標搬遷</span>
                       <select
                         id="scenario-what-if-city"
-                        value={draft.whatIfScenario.city ?? ""}
+                        value={draft.whatIfMirrorsActual ? "" : draft.whatIfScenario.city ?? ""}
                         onChange={(e) => onFieldEdit("whatIfCity", e.target.value)}
                         disabled={running}
                       >
@@ -1906,19 +1910,16 @@ function hasTaipeiStudyWithTaoyuanRegistration(passport: DecisionPassport, goal:
 
 function buildVerdicts(
   passport: DecisionPassport,
+  hasWhatIf: boolean,
   newTaipeiStudentHint = false,
   dualCityComparison = false,
 ): ProgramVerdict[] {
-  const scenarios = [
-    {
-      label: `${dualCityComparison ? "方案 A" : "目前住址"} · ${shortPlace(passport.actual)}`,
-      data: passport.actual,
-    },
-    {
-      label: `${dualCityComparison ? "方案 B" : "搬遷假設"} · ${shortPlace(passport.whatIf)}`,
-      data: passport.whatIf,
-    },
-  ];
+  const scenarios = displayedPassportScenarios(passport, hasWhatIf).map((scenario) => ({
+    label: scenario.kind === "ACTUAL"
+      ? `${dualCityComparison ? "方案 A" : "目前住址"} · ${shortPlace(scenario.data)}`
+      : `${dualCityComparison ? "方案 B" : "搬遷假設"} · ${shortPlace(scenario.data)}`,
+    data: scenario.data,
+  }));
   const order: string[] = [];
   const byPolicy = new Map<string, {
     label: string;
@@ -2012,7 +2013,12 @@ function ResultView({
   const dualCityComparison = passport.domain !== "CHILDCARE"
     && extractFactsFromGoal(run.goal, "HOUSING").dualCityComparison === true;
   const newTaipeiStudentHint = hasTaipeiStudyWithTaoyuanRegistration(passport, run.goal);
-  const verdicts = buildVerdicts(passport, newTaipeiStudentHint, dualCityComparison);
+  // Housing: a what-if exists only when the run kept one (see analysis start). Childcare
+  // keeps its existing single-scenario display path unchanged.
+  const hasWhatIf = passport.domain === "CHILDCARE" || whatIf !== null;
+  const verdicts = buildVerdicts(passport, hasWhatIf, newTaipeiStudentHint, dualCityComparison);
+  const displayedPrograms = displayedPassportPrograms(passport, hasWhatIf);
+  const displayedRisks = displayedPassportRisks(passport, hasWhatIf);
   const certain = verdicts.filter((verdict) => verdict.status === "PASS" || verdict.status === "FAIL");
   const partial = verdicts.filter((verdict) => verdict.status === "PARTIAL_CHECK");
   const missingFields = verdicts.filter((verdict) => verdict.status === "UNCERTAIN" && verdict.missingFields.length > 0);
@@ -2022,7 +2028,8 @@ function ResultView({
   const toolsAfterResume = run.auditTrail
     .slice(Math.max(resumeIndex, 0))
     .filter((event) => event.action === "AGENT_TOOL_COMPLETED").length;
-  const passportPrograms = [...passport.actual.programs, ...passport.whatIf.programs];
+  // Only the scenarios this case actually displays (a Taoyuan-only case has no Taipei what-if).
+  const passportPrograms = displayedPrograms;
   const passportRuleSummaries = [...new Set(passportPrograms.flatMap((program) =>
     getExecutedRuleSummaries(program.ruleResults).map((summary) => `${policyName(program.policyId)}：${summary}`)
   ))];
@@ -2030,12 +2037,13 @@ function ResultView({
     getMissingUserFieldLabels(program.ruleResults).map((field) => `${policyName(program.policyId)}：${field}`)
   ))];
   const passportOfficialReviews = [...new Map(partial.map((verdict) => [verdict.policyId, verdict])).values()];
-  const evidence = [...passport.actual.programs, ...passport.whatIf.programs]
+  const evidence = displayedPrograms
     .flatMap((program) => program.evidence)
     .filter((item, index, array) => array.findIndex((candidate) => candidate.sourceId === item.sourceId) === index)
     .sort((left, right) => left.sourceId.localeCompare(right.sourceId, "en", {numeric: true}));
   const generatedAt = new Date(passport.generatedAt).toLocaleString("zh-TW", {hour12: false});
-  const guides = passport.applicationGuides ?? [];
+  const guides = (passport.applicationGuides ?? [])
+    .filter((guide) => hasWhatIf || displayedPrograms.some((program) => program.policyId === guide.policyId));
 
   return (
     <div className="result phase-enter">
@@ -2244,7 +2252,7 @@ function ResultView({
             <h3 id="ps-navigation"><span className="doc-num" aria-hidden="true">03</span>申辦導航（應備文件、受理機關與申請連結）</h3>
             <div className="panel-stack">
               {guides.map((guide) => {
-                const programs = [...passport.actual.programs, ...passport.whatIf.programs]
+                const programs = displayedPrograms
                   .filter((program) => program.policyId === guide.policyId);
                 const verdict = programs.find((program) => program.status === "FAIL")
                   ?? programs.find((program) => program.status === "UNCERTAIN")
@@ -2327,7 +2335,7 @@ function ResultView({
 
         <section className="doc-section" aria-labelledby="ps-risks">
           <h3 id="ps-risks"><span className="doc-num" aria-hidden="true">04</span>風險提醒與排除條件</h3>
-          <ul className="risks">{passport.risks
+          <ul className="risks">{displayedRisks
             .filter((item) => item !== PARTIAL_CHECK_NOTE)
             .map((item) => <li key={item}>{item}</li>)}</ul>
         </section>
