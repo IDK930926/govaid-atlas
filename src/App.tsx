@@ -7,6 +7,7 @@ import {
   roleCopy,
   statusCopy,
   statusDisplayCopy,
+  summarizeFailReasons,
   toolCopy,
   workflowSteps,
 } from "./ui-copy";
@@ -76,6 +77,7 @@ import {
   submitHumanGateAnswer,
   toInputString,
   type CaseDraft,
+  type CaseEditField,
   type CaseEdits,
   type CaseEditsByDomain,
   type CaseField,
@@ -274,7 +276,7 @@ function App() {
     }));
   }
 
-  function handleFieldEdit(field: CaseField, value: string) {
+  function handleFieldEdit(field: CaseEditField, value: string) {
     setGateError(null);
     setCaseEdits((prev) => ({
       ...prev,
@@ -800,7 +802,7 @@ function StartView({
   onSelectPreset: (preset: CasePreset) => void;
   draft: CaseDraft;
   caseEdits: CaseEditsByDomain;
-  onFieldEdit: (field: CaseField, value: string) => void;
+  onFieldEdit: (field: CaseEditField, value: string) => void;
   onResetEdits: () => void;
   isCustomExpanded: boolean;
   onToggleExpand: (open: boolean) => void;
@@ -879,8 +881,41 @@ function StartView({
               </small>
             </summary>
             <div className="custom-case-body">
+              {draft.domain === "HOUSING" && (
+                <fieldset className="scenario-city-picker">
+                  <legend>人工確認：雙情境目標縣市</legend>
+                  <div className="scenario-city-grid">
+                    <label className="scenario-city-card" htmlFor="scenario-actual-city">
+                      <span>情境一 · 目前租屋</span>
+                      <select
+                        id="scenario-actual-city"
+                        value={draft.actualScenario.city ?? ""}
+                        onChange={(e) => onFieldEdit("city", e.target.value)}
+                        disabled={running}
+                      >
+                        <option value="">尚未指定</option>
+                        {SELECTABLE_CITIES.map((city) => <option key={city} value={city}>{city}</option>)}
+                      </select>
+                      {draft.errors.city && <span className="custom-case-error">{draft.errors.city}</span>}
+                    </label>
+                    <label className="scenario-city-card" htmlFor="scenario-what-if-city">
+                      <span>情境二 · 目標搬遷</span>
+                      <select
+                        id="scenario-what-if-city"
+                        value={draft.whatIfScenario.city ?? ""}
+                        onChange={(e) => onFieldEdit("whatIfCity", e.target.value)}
+                        disabled={running}
+                      >
+                        <option value="">尚未指定</option>
+                        {SELECTABLE_CITIES.map((city) => <option key={city} value={city}>{city}</option>)}
+                      </select>
+                      {draft.errors.whatIfCity && <span className="custom-case-error">{draft.errors.whatIfCity}</span>}
+                    </label>
+                  </div>
+                </fieldset>
+              )}
               <div className="custom-case-grid">
-                {draft.fields.map((field) => {
+                {draft.fields.filter((field) => field !== "city").map((field) => {
                   const spec = FIELD_SPECS[field];
                   const val = draft.values[field];
                   const source = draft.sources[field];
@@ -1595,10 +1630,14 @@ function policyName(policyId: string): string {
   return policyLabels[policyId]?.name ?? policyId;
 }
 
-// Surfaces the first unresolved rule for display; statuses come straight from the rules engine.
+// Summarizes failed rules or surfaces the first unresolved rule for display.
 function describeGap(evaluations: RuleEvaluation[]): string | null {
+  const failures = summarizeFailReasons(evaluations);
+  if (failures) {
+    return failures;
+  }
   const gap = evaluations.find((evaluation) => evaluation.status === "UNCERTAIN")
-    ?? evaluations.find((evaluation) => evaluation.status === "FAIL");
+    ?? undefined;
   if (!gap) {
     return null;
   }
@@ -1802,55 +1841,74 @@ function ResultView({
           <section className="doc-section" aria-labelledby="ps-navigation">
             <h3 id="ps-navigation"><span className="doc-num" aria-hidden="true">03</span>申辦導航（應備文件、受理機關與申請連結）</h3>
             <div className="panel-stack">
-              {guides.map((guide) => (
-                <div className="gov-card" key={guide.policyId}>
-                  <div className="card-head">
-                    <h4>{guide.programTitle}</h4>
-                    <span className="en-companion">
-                      {guide.applicationStatus === "OPEN"
-                        ? "受理中（OPEN）"
-                        : guide.applicationStatus === "ROLLING"
-                          ? "全年常態受理（ROLLING）"
-                          : "已截止（CLOSED）"}
-                    </span>
-                  </div>
-                  <dl className="kv">
-                    <div><dt>主管／受理機關</dt><dd>{guide.administeringAgency}</dd></div>
-                    <div><dt>受理期間</dt><dd>{guide.applicationPeriod}</dd></div>
-                    <div><dt>政策有效期間</dt><dd>{guide.validFrom} 至 {guide.validTo}</dd></div>
-                    {guide.benefitAmountFormula && (
-                      <div><dt>補助金額基準</dt><dd>{guide.benefitAmountFormula}</dd></div>
-                    )}
-                    <div><dt>臨櫃／郵寄資訊</dt><dd>{guide.officeInformation}</dd></div>
-                    <div><dt>諮詢電話</dt><dd>{guide.contactInformation}</dd></div>
-                    {guide.onlineApplicationUrl && (
-                      <div>
-                        <dt>官方線上申辦</dt>
-                        <dd>
-                          <a href={guide.onlineApplicationUrl} target="_blank" rel="noreferrer">
-                            {guide.onlineApplicationUrl} ↗
-                          </a>
-                        </dd>
-                      </div>
-                    )}
-                  </dl>
-                  <p><strong>應備文件清單：</strong></p>
-                  <ul className="checklist">
-                    {guide.requiredDocuments.map((doc) => (
-                      <li key={doc.documentId}>
-                        {doc.title}
-                        {!doc.required && doc.conditionNote ? `（選備：${doc.conditionNote}）` : ""}
-                      </li>
-                    ))}
-                  </ul>
-                  <p><strong>申請方式：</strong></p>
-                  <ul className="steps">
-                    {guide.applicationMethods.map((method) => (
-                      <li key={method}>{method}</li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+              {guides.map((guide) => {
+                const programs = [...passport.actual.programs, ...passport.whatIf.programs]
+                  .filter((program) => program.policyId === guide.policyId);
+                const verdict = programs.find((program) => program.status === "FAIL")
+                  ?? programs.find((program) => program.status === "UNCERTAIN")
+                  ?? programs.find((program) => program.status === "PARTIAL_CHECK")
+                  ?? programs[0];
+                const failReason = summarizeFailReasons(programs.flatMap((program) => program.ruleResults));
+                const ineligible = verdict?.status === "FAIL";
+                return (
+                  <details className="gov-card" key={guide.policyId} open={!ineligible}>
+                    <summary className="card-head">
+                      <h4>{guide.programTitle}</h4>
+                      <span className="guide-summary-status">
+                        {ineligible ? (
+                          <>
+                            <span className="guide-ineligible">資格不符（暫不建議申辦）</span>
+                            {failReason && <span className="guide-fail-reason">{failReason}</span>}
+                          </>
+                        ) : (
+                          <span className="en-companion">
+                            {guide.applicationStatus === "OPEN"
+                              ? "受理中（OPEN）"
+                              : guide.applicationStatus === "ROLLING"
+                                ? "全年常態受理（ROLLING）"
+                                : "已截止（CLOSED）"}
+                          </span>
+                        )}
+                      </span>
+                    </summary>
+                    <dl className="kv">
+                      <div><dt>主管／受理機關</dt><dd>{guide.administeringAgency}</dd></div>
+                      <div><dt>受理期間</dt><dd>{guide.applicationPeriod}</dd></div>
+                      <div><dt>政策有效期間</dt><dd>{guide.validFrom} 至 {guide.validTo}</dd></div>
+                      {guide.benefitAmountFormula && (
+                        <div><dt>補助金額基準</dt><dd>{guide.benefitAmountFormula}</dd></div>
+                      )}
+                      <div><dt>臨櫃／郵寄資訊</dt><dd>{guide.officeInformation}</dd></div>
+                      <div><dt>諮詢電話</dt><dd>{guide.contactInformation}</dd></div>
+                      {guide.onlineApplicationUrl && (
+                        <div>
+                          <dt>官方線上申辦</dt>
+                          <dd>
+                            <a href={guide.onlineApplicationUrl} target="_blank" rel="noreferrer">
+                              {guide.onlineApplicationUrl} ↗
+                            </a>
+                          </dd>
+                        </div>
+                      )}
+                    </dl>
+                    <p><strong>應備文件清單：</strong></p>
+                    <ul className="checklist">
+                      {guide.requiredDocuments.map((doc) => (
+                        <li key={doc.documentId}>
+                          {doc.title}
+                          {!doc.required && doc.conditionNote ? `（選備：${doc.conditionNote}）` : ""}
+                        </li>
+                      ))}
+                    </ul>
+                    <p><strong>申請方式：</strong></p>
+                    <ul className="steps">
+                      {guide.applicationMethods.map((method) => (
+                        <li key={method}>{method}</li>
+                      ))}
+                    </ul>
+                  </details>
+                );
+              })}
             </div>
           </section>
         )}
@@ -2293,9 +2351,13 @@ function EvaluationPanel({deterministic}: {deterministic: ReturnType<typeof runB
         <div className="regression">
           {deterministic.results.map((result) => (
             <div className="regression-row" key={result.id}>
-              <code>{result.id}</code>
-              <span>{result.name}</span>
-              <span className="muted small">預期 {statusCopy[result.expected]?.zh ?? result.expected} · 實際 {statusCopy[result.actual]?.zh ?? result.actual}</span>
+              <div className="regression-case min-w-[180px] shrink-0">
+                <code>{result.id}</code>
+                <span>{result.name}</span>
+              </div>
+              <span className="regression-status min-w-0 flex-1 break-words [overflow-wrap:anywhere] muted small">
+                預期 {statusCopy[result.expected]?.zh ?? result.expected} · 實際 {statusCopy[result.actual]?.zh ?? result.actual}
+              </span>
               <strong className={result.passed ? "ok" : "bad"}>{result.passed ? "通過" : "未通過"}</strong>
             </div>
           ))}

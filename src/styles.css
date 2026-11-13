@@ -714,6 +714,49 @@ a {
   gap: var(--s3) var(--s4);
 }
 
+.scenario-city-picker {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.scenario-city-picker legend {
+  margin-bottom: var(--s2);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.scenario-city-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s3);
+}
+
+.scenario-city-card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  font-size: var(--fs-caption);
+  font-weight: 600;
+}
+
+.scenario-city-card select {
+  min-width: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: var(--fs-small);
+  font-family: inherit;
+}
+
 .custom-case-field {
   display: flex;
   flex-direction: column;
@@ -2383,12 +2426,47 @@ a {
 }
 
 .regression-row {
-  display: grid;
-  grid-template-columns: 70px minmax(0, 1fr) auto auto;
+  display: flex;
   gap: 10px;
   align-items: center;
   padding: 7px 0;
   border-bottom: 1px solid var(--line);
+}
+
+.regression-case {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 180px;
+  flex-shrink: 0;
+}
+
+.regression-status {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.guide-summary-status {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  min-width: 0;
+}
+
+.guide-ineligible {
+  color: var(--fail);
+  font-weight: 700;
+}
+
+.guide-fail-reason {
+  max-width: 34rem;
+  color: var(--fail);
+  font-size: var(--fs-caption);
+  font-weight: 500;
+  text-align: right;
+  overflow-wrap: anywhere;
 }
 
 .regression .ok {
@@ -2813,10 +2891,29 @@ a {
   }
 
   .regression-row {
-    grid-template-columns: 60px minmax(0, 1fr) auto;
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) auto;
+    align-items: start;
   }
 
-  .regression-row .muted {
-    display: none;
+  .regression-case {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 180px;
+  }
+
+  .regression-status {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .regression-row > strong {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  .scenario-city-grid {
+    grid-template-columns: 1fr;
   }
 }

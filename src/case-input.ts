@@ -333,6 +333,7 @@ export function findPresetByGoal(goal: string): CasePreset | undefined {
 export type ExtractedFacts = Partial<Record<CaseField, CaseFieldValue>> & {
   whatIfCity?: string;
   whatIfMonthlyRent?: number;
+  dualCityComparison?: boolean;
 };
 
 const CITY_TOKENS: string[] = (() => {
@@ -411,6 +412,15 @@ function extractHousingFacts(text: string, facts: ExtractedFacts): void {
   if (rent) {
     const amount = parseAmount(rent[1], rent[2]);
     if (amount !== undefined) facts.monthlyRent = amount;
+  }
+
+  if (/雙北/.test(text)) {
+    const hasDistinctCities = Boolean(facts.city && facts.whatIfCity && facts.city !== facts.whatIfCity);
+    if (!hasDistinctCities) {
+      facts.city = "臺北市";
+      facts.whatIfCity = "新北市";
+      facts.dualCityComparison = true;
+    }
   }
 
   // Age: "28 歲", but not thresholds such as "未滿 2 歲" / "65 歲以上".
@@ -581,7 +591,8 @@ export function toInputString(value: CaseFieldValue | null | undefined): string 
 // ---------------------------------------------------------------------------
 
 export type FieldSource = "preset" | "extracted" | "edited" | "missing";
-export type CaseEdits = Partial<Record<CaseField, string>>;
+export type CaseEditField = CaseField | "whatIfCity";
+export type CaseEdits = Partial<Record<CaseField, string>> & { whatIfCity?: string };
 export type CaseEditsByDomain = Record<BenefitDomain, CaseEdits>;
 
 export const EMPTY_CASE_EDITS: CaseEditsByDomain = { HOUSING: {}, CHILDCARE: {} };
@@ -593,7 +604,7 @@ export type CaseDraft = {
   fields: readonly CaseField[];
   values: Partial<Record<CaseField, CaseFieldValue>>;
   sources: Partial<Record<CaseField, FieldSource>>;
-  errors: Partial<Record<CaseField, string>>;
+  errors: Partial<Record<CaseEditField, string>>;
   applicant: ApplicantProfile;
   actualScenario: AddressScenario;
   whatIfScenario: AddressScenario;
@@ -618,7 +629,8 @@ function buildHousingCase(
   goal: string,
   preset: CasePreset | null,
   values: Partial<Record<CaseField, CaseFieldValue>>,
-  extracted: ExtractedFacts
+  extracted: ExtractedFacts,
+  whatIfCityOverride?: string
 ): Pick<CaseDraft, "applicant" | "actualScenario" | "whatIfScenario" | "whatIfMirrorsActual" | "requiredFields"> {
   const applicant: ApplicantProfile = {};
   if (preset) {
@@ -653,14 +665,23 @@ function buildHousingCase(
 
   let whatIfScenario: AddressScenario;
   let whatIfMirrorsActual = false;
-  if (preset) {
+  if (whatIfCityOverride) {
+    whatIfScenario = {
+      type: "WHAT_IF",
+      address: `${whatIfCityOverride}（搬遷假設，未提供詳細地址）`,
+      city: whatIfCityOverride,
+      monthlyRent: extracted.dualCityComparison
+        ? monthlyRent
+        : preset?.whatIfScenario.monthlyRent ?? (extracted.whatIfCity ? extracted.whatIfMonthlyRent ?? 0 : monthlyRent),
+    };
+  } else if (preset) {
     whatIfScenario = { ...preset.whatIfScenario };
   } else if (extracted.whatIfCity) {
     whatIfScenario = {
       type: "WHAT_IF",
       address: `${extracted.whatIfCity}（搬遷假設，未提供詳細地址）`,
       city: extracted.whatIfCity,
-      monthlyRent: extracted.whatIfMonthlyRent ?? 0,
+      monthlyRent: extracted.dualCityComparison ? monthlyRent : extracted.whatIfMonthlyRent ?? 0,
     };
   } else {
     whatIfScenario = { ...actualScenario, type: "WHAT_IF" };
@@ -726,7 +747,7 @@ export function buildCaseDraft(goal: string, editsByDomain: CaseEditsByDomain = 
 
   const values: Partial<Record<CaseField, CaseFieldValue>> = {};
   const sources: Partial<Record<CaseField, FieldSource>> = {};
-  const errors: Partial<Record<CaseField, string>> = {};
+  const errors: Partial<Record<CaseEditField, string>> = {};
 
   for (const field of fields) {
     const raw = edits[field];
@@ -760,9 +781,20 @@ export function buildCaseDraft(goal: string, editsByDomain: CaseEditsByDomain = 
     sources[field] = "missing";
   }
 
+  const rawWhatIfCity = edits.whatIfCity;
+  const whatIfCityValidation = rawWhatIfCity === undefined
+    ? undefined
+    : validateCaseFieldInput("city", rawWhatIfCity);
+  if (whatIfCityValidation && !whatIfCityValidation.valid) {
+    errors.whatIfCity = whatIfCityValidation.error ?? fieldErrorMessage("city");
+  }
+  const whatIfCityOverride = typeof whatIfCityValidation?.value === "string"
+    ? whatIfCityValidation.value
+    : undefined;
+
   const built = domain === "CHILDCARE"
     ? buildChildcareCase(preset, values)
-    : buildHousingCase(trimmed, preset, values, extracted);
+    : buildHousingCase(trimmed, preset, values, extracted, whatIfCityOverride);
 
   return {
     goal: trimmed,

@@ -82,7 +82,7 @@ var PLANNER_SYSTEM_PROMPT, AGENT_DECISION_SCHEMA, ALLOWED_AGENT_TOOL_NAMES;
 var init_types = __esm({
   "src/agent/providers/types.ts"() {
     "use strict";
-    PLANNER_SYSTEM_PROMPT = "You are the planning and tool-routing layer for GovAid Atlas. You do not determine eligibility. You may only choose from allowed tools. All policy eligibility status comes exclusively from deterministic tool results. Never convert UNCERTAIN into PASS or FAIL. Never invent policy evidence. If required applicant data is missing, ask for human confirmation and include a non-empty humanQuestion. If policies conflict, request human review. Return only the required structured decision.";
+    PLANNER_SYSTEM_PROMPT = "You are the planning and tool-routing layer for GovAid Atlas. You do not determine eligibility. You may only choose from allowed tools. All policy eligibility status comes exclusively from deterministic tool results. Never convert UNCERTAIN into PASS or FAIL. Never invent policy evidence. For a housing request mentioning \u96D9\u5317 without two distinct current and target cities, the input layer resolves the comparison to \u81FA\u5317\u5E02 and \u65B0\u5317\u5E02 using the shared monthly rent; trust the supplied scenario values and do not ask the user to repeat them. If other required applicant data is missing, ask for human confirmation and include a non-empty humanQuestion. If policies conflict, request human review. Return only the required structured decision.";
     AGENT_DECISION_SCHEMA = {
       type: "object",
       properties: {
@@ -102,8 +102,10 @@ var init_types = __esm({
       "evaluate_central_rules",
       "evaluate_actual_scenario",
       "evaluate_what_if_scenario",
+      "evaluate_childcare_rules",
       "detect_policy_conflict",
       "generate_decision_passport",
+      "generate_childcare_passport",
       "get_policy_evidence",
       "request_missing_field",
       "request_human_confirmation",
@@ -728,9 +730,195 @@ var init_status = __esm({
 });
 
 // src/coverage.ts
+function detectBenefitDomain(goal) {
+  const text = goal.toLowerCase();
+  if (CHILDCARE_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
+    return "CHILDCARE";
+  }
+  return "HOUSING";
+}
+function assessQueryCoverage(goal) {
+  const text = goal.toLowerCase();
+  if (CHILDCARE_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
+    if (UNSUPPORTED_CHILDCARE_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
+      return {
+        status: "NOT_COVERED",
+        domain: "CHILDCARE",
+        reason: "CHILDCARE_POLICY_NOT_IMPLEMENTED",
+        message: "\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u300C\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u300D\uFF0C\u5C1A\u672A\u6DB5\u84CB\u6258\u80B2\u88DC\u52A9\u3001\u751F\u80B2\u734E\u52F5\u91D1\u3001\u5C31\u5B78\u88DC\u52A9\u6216\u80B2\u5B30\u7559\u8077\u505C\u85AA\u6D25\u8CBC\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u9805\u88DC\u52A9\u4E4B\u8CC7\u683C\u5224\u5B9A\u3002\u9019\u4E0D\u4EE3\u8868\u60A8\u7121\u6CD5\u7533\u8ACB\uFF0C\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002",
+        officialReferrals: [
+          {
+            label: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72\uFF0D\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u8207\u6258\u80B2\u88DC\u52A9\u5C08\u5340",
+            agency: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72",
+            url: "https://www.sfaa.gov.tw/SFAA/Pages/Detail.aspx?nodeid=415&pid=7582"
+          },
+          {
+            label: "\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7DB2",
+            agency: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72",
+            url: "https://twbaby.sfaa.gov.tw/"
+          }
+        ]
+      };
+    }
+    return {
+      status: "COVERED",
+      domain: "CHILDCARE",
+      reason: "CHILDCARE_UNDER2_ALLOWANCE_IN_SCOPE",
+      message: "\u76EE\u524D\u7248\u672C\u5DF2\u652F\u63F4\u300C\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\uFF08115\u5E74\u5EA6\uFF09\u300D\u4E4B\u8CC7\u683C\u9810\u5BE9\u3001\u80CE\u6B21\u91D1\u984D\u8A66\u7B97\u8207\u7533\u8FA6\u5C0E\u822A\u3002",
+      officialReferrals: [
+        {
+          label: "\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7DB2",
+          agency: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72",
+          url: "https://twbaby.sfaa.gov.tw/"
+        }
+      ]
+    };
+  }
+  if (UNSUPPORTED_HOUSING_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
+    return {
+      status: "NOT_COVERED",
+      domain: "RENTAL_SUBSIDY",
+      reason: "UNSUPPORTED_HOUSING_POLICY_NOT_IMPLEMENTED",
+      message: "\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u300C300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\uFF08\u542B\u96D9\u5317\u8207\u6843\u5712\u5E02\u53D7\u7406\u5C0E\u822A\uFF09\u300D\u3001\u300C\u81FA\u5317\u5E02\u81FA\u5317\u5E78\u798F\u79DF\u52A0\u78BC\u300D\u8207\u300C\u65B0\u5317\u5E02\u9752\u5E74\u79DF\u91D1\u88DC\u8CBC\u300D\uFF0C\u5C1A\u672A\u6DB5\u84CB\u6843\u5712\u5E02\u7368\u7ACB\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9\u3001\u539F\u4F4F\u6C11\u65CF\u5C08\u6848\u79DF\u91D1\u88DC\u8CBC\u3001\u793E\u6703\u4F4F\u5B85\u5305\u79DF\u4EE3\u7BA1\u6216\u8CFC\u5C4B\u8CB8\u6B3E\u88DC\u8CBC\u3002\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002",
+      officialReferrals: [
+        {
+          label: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72\uFF0D300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7CFB\u7D71",
+          agency: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72",
+          url: "https://has.nlma.gov.tw/subsidyOnline/"
+        },
+        {
+          label: "\u6843\u5712\u5E02\u653F\u5E9C\u4F4F\u5B85\u767C\u5C55\u8655\u5B98\u65B9\u7DB2\u7AD9",
+          agency: "\u6843\u5712\u5E02\u653F\u5E9C\u4F4F\u5B85\u767C\u5C55\u8655",
+          url: "https://ohd.tycg.gov.tw/"
+        }
+      ]
+    };
+  }
+  const normalizedText = text.replace(/台/g, "\u81FA");
+  const matchedCity = TAIWAN_CITIES.find((c) => normalizedText.includes(c));
+  if (matchedCity && !ALL_COVERED_HOUSING_CITIES.includes(matchedCity)) {
+    return {
+      status: "NOT_COVERED",
+      domain: "RENTAL_SUBSIDY",
+      reason: "UNSUPPORTED_CITY_HOUSING_POLICY_NOT_IMPLEMENTED",
+      message: `\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u96D9\u5317\u53CA\u6843\u5712\u5E02\uFF08\u53D7\u7406\u5C0E\u822A\uFF09\u4E4B\u79DF\u91D1\u88DC\u8CBC\uFF0C\u5C1A\u672A\u5B8C\u6574\u6DB5\u84CB${matchedCity}\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u7E23\u5E02\u88DC\u52A9\u4E4B\u8CC7\u683C\u5224\u5B9A\u3002\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002`,
+      officialReferrals: [
+        {
+          label: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72\uFF0D300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7CFB\u7D71",
+          agency: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72",
+          url: "https://has.nlma.gov.tw/subsidyOnline/"
+        }
+      ]
+    };
+  }
+  if (UNSUPPORTED_GENERAL_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
+    return {
+      status: "NOT_COVERED",
+      domain: "RENTAL_SUBSIDY",
+      reason: "UNSUPPORTED_DOMAIN_NOT_IMPLEMENTED",
+      message: "\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u7279\u5B9A\u79DF\u5C4B\u88DC\u8CBC\u8207\u672A\u6EFF2\u6B72\u80B2\u5152\u6D25\u8CBC\uFF0C\u5C1A\u672A\u6DB5\u84CB\u6B64\u985E\u653F\u7B56\u9805\u76EE\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u9805\u88DC\u52A9\u4E4B\u8CC7\u683C\u5224\u5B9A\u3002\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002",
+      officialReferrals: [
+        {
+          label: "\u885B\u751F\u798F\u5229\u90E8 1957 \u798F\u5229\u8AEE\u8A62\u5C08\u7DDA",
+          agency: "\u885B\u751F\u798F\u5229\u90E8",
+          url: "https://1957.mohw.gov.tw/"
+        }
+      ]
+    };
+  }
+  return {
+    status: "COVERED",
+    domain: "RENTAL_SUBSIDY",
+    reason: "RENTAL_SUBSIDY_IN_SCOPE",
+    message: "\u76EE\u524D\u7248\u672C\u53EF\u9032\u884C\u79DF\u5C4B\u88DC\u52A9\u7684\u90E8\u5206\u689D\u4EF6\u9810\u5BE9\u8207\u7533\u8FA6\u5C0E\u822A\u3002",
+    officialReferrals: []
+  };
+}
+var COVERED_LOCAL_CITIES, COVERED_CENTRAL_NAVIGATION_CITIES, ALL_COVERED_HOUSING_CITIES, CHILDCARE_KEYWORDS, UNSUPPORTED_CHILDCARE_KEYWORDS, UNSUPPORTED_HOUSING_KEYWORDS, UNSUPPORTED_GENERAL_KEYWORDS, TAIWAN_CITIES;
 var init_coverage = __esm({
   "src/coverage.ts"() {
     "use strict";
+    COVERED_LOCAL_CITIES = ["\u81FA\u5317\u5E02", "\u65B0\u5317\u5E02"];
+    COVERED_CENTRAL_NAVIGATION_CITIES = ["\u6843\u5712\u5E02"];
+    ALL_COVERED_HOUSING_CITIES = [
+      ...COVERED_LOCAL_CITIES,
+      ...COVERED_CENTRAL_NAVIGATION_CITIES
+    ];
+    CHILDCARE_KEYWORDS = [
+      "\u80B2\u5152",
+      "\u80B2\u5B30",
+      "\u6258\u80B2",
+      "\u6258\u5B30",
+      "\u5E7C\u5152",
+      "\u751F\u80B2",
+      "\u5B30\u5152",
+      "\u4FDD\u6BCD",
+      "\u4FDD\u59C6",
+      "\u6E96\u516C\u5171",
+      "\u672A\u6EFF2\u6B72",
+      "\u672A\u6EFF\u4E8C\u6B72",
+      "childcare",
+      "child care",
+      "parental leave"
+    ];
+    UNSUPPORTED_CHILDCARE_KEYWORDS = [
+      "\u6258\u80B2\u88DC\u52A9",
+      "\u6E96\u516C\u5171\u6258\u80B2\u88DC\u52A9",
+      "\u751F\u80B2\u6D25\u8CBC",
+      "\u751F\u80B2\u734E\u52F5",
+      "\u751F\u80B2\u88DC\u52A9",
+      "\u5C31\u5B78\u88DC\u52A9",
+      "\u5E7C\u5152\u5712\u88DC\u52A9",
+      "\u80B2\u5B30\u7559\u8077\u505C\u85AA",
+      "parental leave"
+    ];
+    UNSUPPORTED_HOUSING_KEYWORDS = [
+      "\u6843\u5712\u5E02\u5730\u65B9\u52A0\u78BC",
+      "\u6843\u5712\u5730\u65B9\u52A0\u78BC",
+      "\u6843\u5712\u5E02\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9",
+      "\u6843\u5712\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9",
+      "\u539F\u4F4F\u6C11\u65CF\u79DF\u91D1\u88DC\u8CBC",
+      "\u539F\u4F4F\u6C11\u79DF\u91D1\u88DC\u8CBC",
+      "\u5305\u79DF\u4EE3\u7BA1",
+      "\u8CFC\u5C4B\u8CB8\u6B3E",
+      "\u9752\u5E74\u8CFC\u5C4B",
+      "\u4FEE\u7E55\u4F4F\u5B85"
+    ];
+    UNSUPPORTED_GENERAL_KEYWORDS = [
+      "\u8001\u4EBA",
+      "\u9577\u7167",
+      "\u8EAB\u5FC3\u969C\u7919",
+      "\u6025\u96E3\u6551\u52A9",
+      "\u5931\u696D",
+      "\u5E74\u91D1",
+      "\u52DE\u4FDD",
+      "\u5065\u4FDD",
+      "\u91CD\u967D"
+    ];
+    TAIWAN_CITIES = [
+      "\u81FA\u5317\u5E02",
+      "\u65B0\u5317\u5E02",
+      "\u6843\u5712\u5E02",
+      "\u81FA\u4E2D\u5E02",
+      "\u81FA\u5357\u5E02",
+      "\u9AD8\u96C4\u5E02",
+      "\u57FA\u9686\u5E02",
+      "\u65B0\u7AF9\u5E02",
+      "\u5609\u7FA9\u5E02",
+      "\u65B0\u7AF9\u7E23",
+      "\u82D7\u6817\u7E23",
+      "\u5F70\u5316\u7E23",
+      "\u5357\u6295\u7E23",
+      "\u96F2\u6797\u7E23",
+      "\u5609\u7FA9\u7E23",
+      "\u5C4F\u6771\u7E23",
+      "\u5B9C\u862D\u7E23",
+      "\u82B1\u84EE\u7E23",
+      "\u81FA\u6771\u7E23",
+      "\u6F8E\u6E56\u7E23",
+      "\u91D1\u9580\u7E23",
+      "\u9023\u6C5F\u7E23"
+    ];
   }
 });
 
@@ -741,11 +929,28 @@ var init_evidence = __esm({
   }
 });
 
+// src/rules.ts
+var init_rules = __esm({
+  "src/rules.ts"() {
+    "use strict";
+  }
+});
+
+// src/navigation.ts
+var init_navigation = __esm({
+  "src/navigation.ts"() {
+    "use strict";
+    init_evidence();
+    init_rules();
+  }
+});
+
 // src/passport.ts
 var init_passport = __esm({
   "src/passport.ts"() {
     "use strict";
     init_evidence();
+    init_navigation();
     init_status();
     init_coverage();
   }
@@ -754,13 +959,6 @@ var init_passport = __esm({
 // src/conflict.ts
 var init_conflict = __esm({
   "src/conflict.ts"() {
-    "use strict";
-  }
-});
-
-// src/rules.ts
-var init_rules = __esm({
-  "src/rules.ts"() {
     "use strict";
   }
 });
@@ -775,11 +973,46 @@ var init_scenario = __esm({
   }
 });
 
+// src/childcare.ts
+var init_childcare = __esm({
+  "src/childcare.ts"() {
+    "use strict";
+    init_evidence();
+    init_navigation();
+    init_rules();
+    init_status();
+    init_coverage();
+  }
+});
+
 // src/agent/missing-fields.ts
+var HOUSING_MISSING_FIELDS, CHILDCARE_MISSING_FIELDS, SUPPORTED_MISSING_FIELDS;
 var init_missing_fields = __esm({
   "src/agent/missing-fields.ts"() {
     "use strict";
     init_coverage();
+    HOUSING_MISSING_FIELDS = [
+      "ownsHome",
+      "receivesOtherHousingAid",
+      "city",
+      "monthlyIncome",
+      "age",
+      "centralRentApproved",
+      "newTaipeiResidenceStudyWork",
+      "registeredCity"
+    ];
+    CHILDCARE_MISSING_FIELDS = [
+      "childAgeMonths",
+      "childHasBirthOrInitialHouseholdRegistration",
+      "isGovernmentPlaced",
+      "receivesPublicOrQuasiPublicChildcare",
+      "birthOrder"
+    ];
+    SUPPORTED_MISSING_FIELDS = [
+      ...HOUSING_MISSING_FIELDS,
+      ...CHILDCARE_MISSING_FIELDS,
+      "childRegisteredCity"
+    ];
   }
 });
 
@@ -795,6 +1028,7 @@ var init_tools = __esm({
     init_evidence();
     init_conflict();
     init_scenario();
+    init_childcare();
     init_rules();
     init_status();
     init_coverage();
@@ -803,8 +1037,10 @@ var init_tools = __esm({
       "evaluate_central_rules",
       "evaluate_actual_scenario",
       "evaluate_what_if_scenario",
+      "evaluate_childcare_rules",
       "detect_policy_conflict",
       "generate_decision_passport",
+      "generate_childcare_passport",
       "get_policy_evidence",
       "request_missing_field",
       "request_human_confirmation",
@@ -821,7 +1057,15 @@ var init_trace = __esm({
 });
 
 // src/agent/orchestrator.ts
-function buildSafePlan(goal) {
+function buildSafePlan(goal, domain = detectBenefitDomain(goal)) {
+  if (domain === "CHILDCARE") {
+    return [
+      "Check under-2 childcare allowance rules",
+      "Resolve missing childcare applicant fields",
+      "Check official childcare policy evidence",
+      "Generate Childcare Decision Passport"
+    ].map((step, index) => `${index + 1}. ${step} \u2014 ${goal}`);
+  }
   return [
     "Check central rental rules",
     "Resolve missing applicant fields",
@@ -1093,7 +1337,9 @@ async function handleRequest(request, response) {
       return;
     }
     const allowlistedTools = listAllowedTools();
-    const defaultPlan = buildSafePlan(trimmedGoal);
+    const domain = detectBenefitDomain(trimmedGoal);
+    const coverage = assessQueryCoverage(trimmedGoal);
+    const defaultPlan = buildSafePlan(trimmedGoal, domain);
     const timeoutMs = Number(process.env.AGENT_PROVIDER_TIMEOUT_MS ?? DEFAULT_PROVIDER_TIMEOUT_MS);
     const plannerStarted = performance.now();
     const llmResult = await callPlanner({
@@ -1104,6 +1350,24 @@ async function handleRequest(request, response) {
     const plannerLatencyMs = performance.now() - plannerStarted;
     const llmCallSucceeded = llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision);
     const safeErrorCode = llmCallSucceeded ? null : llmResult.error === "AGENT_PROVIDER_TIMEOUT" ? "AGENT_PROVIDER_TIMEOUT" : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE";
+    const fallbackDecision = coverage.status === "NOT_COVERED" ? {
+      reasoningSummary: coverage.message ?? "Request is outside covered policies; safe fallback stops without tool execution.",
+      nextAction: "COMPLETE"
+    } : domain === "CHILDCARE" ? {
+      reasoningSummary: "Live provider unavailable; fallback to deterministic childcare plan.",
+      nextAction: "CALL_TOOL",
+      toolName: "evaluate_childcare_rules",
+      toolArguments: {
+        profile: body.profile ?? {}
+      }
+    } : {
+      reasoningSummary: "Live provider unavailable; fallback to deterministic plan and tool allowlist.",
+      nextAction: "CALL_TOOL",
+      toolName: "evaluate_central_rules",
+      toolArguments: {
+        profile: body.profile ?? {}
+      }
+    };
     const responseBody = {
       ok: true,
       provider: llmResult.provider,
@@ -1112,14 +1376,7 @@ async function handleRequest(request, response) {
       goal: trimmedGoal,
       plan: defaultPlan,
       allowedTools: allowlistedTools,
-      decision: llmResult.decision ?? {
-        reasoningSummary: "Live provider unavailable; fallback to deterministic plan and tool allowlist.",
-        nextAction: "CALL_TOOL",
-        toolName: "evaluate_central_rules",
-        toolArguments: {
-          profile: body.profile ?? {}
-        }
-      },
+      decision: llmResult.decision ?? fallbackDecision,
       metadata: {
         mode: llmResult.mode ?? null,
         usage: llmResult.usage ?? null,
@@ -1167,6 +1424,7 @@ var init_server = __esm({
     init_client();
     init_orchestrator();
     init_tools();
+    init_coverage();
     try {
       process.loadEnvFile((0, import_node_path.resolve)(__dirname, "../.env"));
     } catch (error) {

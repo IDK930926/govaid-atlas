@@ -1,7 +1,30 @@
 import type {AgentStatus} from "./agent/types";
-import type {EligibilityStatus} from "./types";
+import type {EligibilityStatus, RuleEvaluation} from "./types";
 
 export type BilingualCopy = {zh: string; en: string};
+
+const failReasonCopy: Record<string, string> = {
+  "CENTRAL-115-HOME-001": "名下持有住宅",
+  "CENTRAL-115-HOUSING-AID-001": "目前領有其他政府住宅補貼",
+  "TAOYUAN-115-HOME-001": "名下持有住宅",
+  "TAOYUAN-115-HOUSING-AID-001": "目前領有其他政府住宅補貼",
+  "TAOYUAN-115-INCOME-001": "家庭平均月所得超過桃園市 50,304 元門檻",
+  "NEWTAIPEI-115-LOCAL-001": "未符合新北市設籍、就學或就業條件",
+  "NEWTAIPEI-115-AID-001": "目前領有其他政府住宅補貼",
+  "TAIPEI-115-REGISTERED-001": "未設籍臺北市",
+  "TAIPEI-115-CENTRAL-001": "中央租金補貼尚未核准",
+};
+
+export function summarizeFailReasons(evaluations: readonly RuleEvaluation[]): string {
+  return [...new Set(evaluations
+    .filter((evaluation) => evaluation.status === "FAIL")
+    .map((evaluation) => (
+      evaluation.reason.includes("不符合規則")
+        ? failReasonCopy[evaluation.ruleId] ?? evaluation.reason
+        : evaluation.reason
+    )))]
+    .join("、");
+}
 
 // Presentation only. Raw state and rule semantics remain owned by the agent.
 export const agentStatusCopy: Record<AgentStatus, BilingualCopy> = {
