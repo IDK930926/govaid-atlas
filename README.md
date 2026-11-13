@@ -86,7 +86,7 @@ Sanitized Agent Trace
 | Unsupported Claims | 30% | 0% |
 | Unsafe Certainty | 40% | 0% |
 
-**Automated regression tests:** 131 / 131 PASS (`npm.cmd test`); TypeScript check and production build also pass.
+**Automated regression tests:** 133 / 133 PASS (`npm.cmd test`); TypeScript check and production build also pass.
 
 > 以上為 10 組 synthetic policy-navigation cases，不代表真實世界整體準確率。比較中的 GovAid Atlas 欄是 deterministic benchmark runner，不是完整 Agent workflow；Gold Standard 為 `PENDING_INDEPENDENT_REVIEW`，Manual baseline 為 pending。
 
@@ -101,11 +101,11 @@ Sanitized Agent Trace
 - Gold Standard 尚待獨立審查（`PENDING_INDEPENDENT_REVIEW`）；Field Validation 與 Manual baseline 均為 `PENDING`。
 - RBAC role switching 是 **synthetic front-end masking demonstration**，不是 production authentication、authorization 或正式 IAM。
 - Rate limiter 為程序記憶體中的 per-IP 限制，服務重啟後重設；不是分散式 production rate limiting。
-- Repository 的提交證據指出公開部署仍需重新部署，未證明與目前 checkout 同步。README 不宣稱該部署正在執行此版本。
+- Vercel Production 已部署來自 `main` 的版本；實際 provider availability 與外部 API 狀態仍以執行時 `/api/health` 為準。
 
 ## Competition Demo Assets
 
-- **Live Product:** 部署記錄見 [docs/napai-submission-readiness.md](docs/napai-submission-readiness.md)；該文件記載需要 operator redeploy，故目前版本一致性未驗證。
+- **Live Product:** https://govaid.torchark.tw/ — Vercel Production，已部署來自 `main` 的版本；執行時 provider 狀態以 `/api/health` 為準。
 - **Competition Showcase:** [demo/govaid-atlas-competition-showcase.html](demo/govaid-atlas-competition-showcase.html)。
 - **Offline / Backup Demo:** 上述單檔 HTML showcase 可離線開啟。此 checkout 未包含 `GovAidAtlas_Final_Backup_Demo.mp4` 或影片 QA record；[docs/backup-demo-video-status.md](docs/backup-demo-video-status.md) 是既有錄影狀態文件，不作為新影片完成的證據。
 
