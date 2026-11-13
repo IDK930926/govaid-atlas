@@ -36,6 +36,7 @@ import {
 
 import {runBenchmark} from "./benchmark";
 import {finalBenchmark} from "./benchmark-final";
+import {RENTAL_SUBSIDY_COMPARISON_METADATA} from "./navigation";
 
 import centralRulesJson from "./policies/central-rent-115.json";
 
@@ -69,6 +70,7 @@ import {
   CASE_PRESETS,
   DEFAULT_GOAL,
   DUAL_CITY_ACTUAL_SCENARIO,
+  extractFactsFromGoal,
   WENSHAN_WHAT_IF_SCENARIO,
   PRESET_HOUSING_APPLICANT,
   FIELD_SPECS,
@@ -1653,7 +1655,17 @@ type ProgramVerdict = {
 };
 
 // Groups the passport's per-scenario programs into one verdict per program (and per status if they differ).
-function buildVerdicts(passport: DecisionPassport): ProgramVerdict[] {
+const NEW_TAIPEI_STUDENT_PENDING_GAP =
+  "新北市就業條件（已偵測戶籍桃園、就讀臺北市學校；若無新北就業事實則不適用新北地方補貼，建議直接申請中央補貼）";
+
+function hasTaipeiStudyWithTaoyuanRegistration(passport: DecisionPassport, goal: string): boolean {
+  const applicant = passport.applicantSnapshot;
+  return applicant.registeredCity === "桃園市"
+    && (applicant.newTaipeiResidenceStudyWork === null || applicant.newTaipeiResidenceStudyWork === undefined)
+    && extractFactsFromGoal(goal, "HOUSING").studyCity === "臺北市";
+}
+
+function buildVerdicts(passport: DecisionPassport, newTaipeiStudentHint = false): ProgramVerdict[] {
   const scenarios = [
     {label: `目前住址 · ${shortPlace(passport.actual)}`, data: passport.actual},
     {label: `搬遷假設 · ${shortPlace(passport.whatIf)}`, data: passport.whatIf},
@@ -1669,7 +1681,9 @@ function buildVerdicts(passport: DecisionPassport): ProgramVerdict[] {
       byPolicy.get(program.policyId)!.push({
         label: scenario.label,
         status: program.status,
-        gap: describeGap(program.ruleResults) ?? program.coverageNote ?? null,
+        gap: newTaipeiStudentHint && program.policyId === "NEW_TAIPEI_RENT_115" && program.status === "UNCERTAIN"
+          ? NEW_TAIPEI_STUDENT_PENDING_GAP
+          : describeGap(program.ruleResults) ?? program.coverageNote ?? null,
       });
     }
   }
@@ -1726,7 +1740,10 @@ function ResultView({
   headingRef: React.Ref<HTMLHeadingElement>;
   onOpenGovernance: () => void;
 }) {
-  const verdicts = buildVerdicts(passport);
+  const dualCityComparison = passport.domain !== "CHILDCARE"
+    && extractFactsFromGoal(run.goal, "HOUSING").dualCityComparison === true;
+  const newTaipeiStudentHint = hasTaipeiStudyWithTaoyuanRegistration(passport, run.goal);
+  const verdicts = buildVerdicts(passport, newTaipeiStudentHint);
   const certain = verdicts.filter((verdict) => verdict.status === "PASS" || verdict.status === "FAIL");
   const pending = verdicts.filter((verdict) => verdict.status !== "PASS" && verdict.status !== "FAIL");
   const resumeIndex = run.auditTrail.findIndex((event) => event.action === "AGENT_RESUMED");
@@ -1804,10 +1821,18 @@ function ResultView({
       {actual && whatIf && passport.domain !== "CHILDCARE" && (
         <section className="compare" aria-labelledby="compare-title">
           <div className="section-head">
-            <h2 id="compare-title">目前住址 vs 搬遷假設</h2>
-            <span className="en-companion" lang="en">Actual vs What-if</span>
+            <h2 id="compare-title">{dualCityComparison ? "候選租屋比較" : "目前住址 vs 搬遷假設"}</h2>
+            <span className="en-companion" lang="en">
+              {dualCityComparison ? "OPTION A VS OPTION B" : "ACTUAL VS WHAT-IF"}
+            </span>
           </div>
-          <CompareTable actual={actual} whatIf={whatIf}/>
+          <CompareTable
+            actual={actual}
+            whatIf={whatIf}
+            dualCityComparison={dualCityComparison}
+            registeredCity={passport.applicantSnapshot.registeredCity}
+            newTaipeiStudentHint={newTaipeiStudentHint}
+          />
         </section>
       )}
 
@@ -1960,7 +1985,15 @@ function policyKind(policyId: string): PolicyKind {
   return policyId === "CENTRAL_RENT_115" ? "central" : "local";
 }
 
-function CompareCell({result, kind}: {result: ScenarioResult; kind: PolicyKind}) {
+function CompareCell({
+  result,
+  kind,
+  newTaipeiStudentHint,
+}: {
+  result: ScenarioResult;
+  kind: PolicyKind;
+  newTaipeiStudentHint: boolean;
+}) {
   const policy = result.policyResults.find((candidate) => policyKind(candidate.policyId) === kind);
   if (!policy) {
     return <span role="cell" className="ct-cell muted">—</span>;
@@ -1972,6 +2005,8 @@ function CompareCell({result, kind}: {result: ScenarioResult; kind: PolicyKind})
       ? "僅完成已編碼條件預審；所得、年齡、家戶等條件待核對"
       : status === "NOT_COVERED"
         ? (policy.coverageNote ?? "目前版本尚未完整涵蓋")
+        : newTaipeiStudentHint && policy.policyId === "NEW_TAIPEI_RENT_115" && status === "UNCERTAIN"
+          ? NEW_TAIPEI_STUDENT_PENDING_GAP
         : (describeGap(policy.evaluations) ?? policy.coverageNote ?? null);
   const prefix = status === "FAIL"
     ? "不符合："
@@ -1989,22 +2024,105 @@ function CompareCell({result, kind}: {result: ScenarioResult; kind: PolicyKind})
   );
 }
 
+function formatNtdRange(minNtd: number, maxNtd: number): string {
+  const min = `NT$${minNtd.toLocaleString()}`;
+  return minNtd === maxNtd ? min : `${min}–NT$${maxNtd.toLocaleString()}`;
+}
+
+function comparisonEstimate(result: ScenarioResult, registeredCity?: string) {
+  const city = result.scenario.city;
+  const metadata = city === "臺北市" || city === "新北市"
+    ? RENTAL_SUBSIDY_COMPARISON_METADATA[city]
+    : undefined;
+  if (!metadata) {
+    return {
+      maxSubsidy: "目前無可用級距估算",
+      outOfPocket: "—",
+      note: "請以當地主管機關公告為準。",
+    };
+  }
+
+  const maxSubsidy = metadata.options
+    .map((option) => `${option.description}最高 ${formatNtdRange(option.minNtd, option.maxNtd)} / 月`)
+    .join("；");
+  const rent = result.scenario.monthlyRent;
+  const outOfPocket = rent > 0
+    ? (() => {
+        const ranges = metadata.options.map((option) => ({
+          min: Math.max(0, rent - option.maxNtd),
+          max: Math.max(0, rent - option.minNtd),
+        }));
+        const min = Math.min(...ranges.map((range) => range.min));
+        const max = Math.max(...ranges.map((range) => range.max));
+        return `約 ${formatNtdRange(min, max)} / 月起`;
+      })()
+    : "填入月租後估算";
+  const note = city === "臺北市" && registeredCity === "臺北市"
+    ? "此估算僅列中央 R1，未估算須依資格核定的北市 R6 加碼。"
+    : metadata.note;
+
+  return {
+    maxSubsidy: `${maxSubsidy}；${note}`,
+    outOfPocket,
+    note: "依月租扣除最高補助試算；實際金額以主管機關核定級距為準。",
+  };
+}
+
+function ComparisonEstimateCell({
+  result,
+  registeredCity,
+  field,
+}: {
+  result: ScenarioResult;
+  registeredCity?: string;
+  field: "maxSubsidy" | "outOfPocket";
+}) {
+  const estimate = comparisonEstimate(result, registeredCity);
+  return (
+    <span role="cell" className="ct-cell ct-estimate-cell">
+      <strong>{estimate[field]}</strong>
+      <small className="ct-estimate-note">{field === "outOfPocket" ? estimate.note : "級距參考，不代表已符合申請資格。"}</small>
+    </span>
+  );
+}
+
 // Aligned comparison: the same question on each row, so the eye only moves left ↔ right.
-function CompareTable({actual, whatIf}: {actual: ScenarioResult; whatIf: ScenarioResult}) {
+function CompareTable({
+  actual,
+  whatIf,
+  dualCityComparison,
+  registeredCity,
+  newTaipeiStudentHint,
+}: {
+  actual: ScenarioResult;
+  whatIf: ScenarioResult;
+  dualCityComparison: boolean;
+  registeredCity?: string;
+  newTaipeiStudentHint: boolean;
+}) {
   const delta = whatIf.scenario.monthlyRent - actual.scenario.monthlyRent;
   const scenarios = [
-    {key: "actual", label: "目前住址", en: "Actual", result: actual},
-    {key: "whatif", label: "搬遷假設", en: "What-if", result: whatIf},
+    {key: "actual", label: dualCityComparison ? "方案 A" : "目前住址", en: dualCityComparison ? "Option A" : "Actual", result: actual},
+    {key: "whatif", label: dualCityComparison ? "方案 B" : "搬遷假設", en: dualCityComparison ? "Option B" : "What-if", result: whatIf},
   ];
   return (
     <div className="compare-wrap">
-      <div className="compare-table" role="table" aria-label="目前住址與搬遷假設比較">
+      <div
+        className="compare-table"
+        role="table"
+        aria-label={dualCityComparison ? "候選租屋方案 A 與方案 B 比較" : "目前住址與搬遷假設比較"}
+      >
         <div className="ct-row ct-head" role="row">
           <span role="columnheader" className="ct-label"><span className="visually-hidden">項目</span></span>
           {scenarios.map((scenario) => (
             <span role="columnheader" key={scenario.key} className={"ct-col ct-col-" + scenario.key}>
-              <span className="ct-kind">{scenario.label} <span lang="en">{scenario.en}</span></span>
-              <strong className="ct-place">{shortPlace(scenario.result.scenario)}</strong>
+              <span className="ct-kind">
+                {dualCityComparison
+                  ? `${scenario.label} · ${shortPlace(scenario.result.scenario)}`
+                  : scenario.label}
+                <span lang="en">{scenario.en}</span>
+              </span>
+              {!dualCityComparison && <strong className="ct-place">{shortPlace(scenario.result.scenario)}</strong>}
             </span>
           ))}
         </div>
@@ -2018,13 +2136,23 @@ function CompareTable({actual, whatIf}: {actual: ScenarioResult; whatIf: Scenari
         </div>
         <div className="ct-row" role="row">
           <span role="rowheader" className="ct-label">中央方案</span>
-          <CompareCell result={actual} kind="central"/>
-          <CompareCell result={whatIf} kind="central"/>
+          <CompareCell result={actual} kind="central" newTaipeiStudentHint={newTaipeiStudentHint}/>
+          <CompareCell result={whatIf} kind="central" newTaipeiStudentHint={newTaipeiStudentHint}/>
         </div>
         <div className="ct-row" role="row">
           <span role="rowheader" className="ct-label">地方方案</span>
-          <CompareCell result={actual} kind="local"/>
-          <CompareCell result={whatIf} kind="local"/>
+          <CompareCell result={actual} kind="local" newTaipeiStudentHint={newTaipeiStudentHint}/>
+          <CompareCell result={whatIf} kind="local" newTaipeiStudentHint={newTaipeiStudentHint}/>
+        </div>
+        <div className="ct-row" role="row">
+          <span role="rowheader" className="ct-label ct-label-estimate">預估最高補助</span>
+          <ComparisonEstimateCell result={actual} registeredCity={registeredCity} field="maxSubsidy"/>
+          <ComparisonEstimateCell result={whatIf} registeredCity={registeredCity} field="maxSubsidy"/>
+        </div>
+        <div className="ct-row" role="row">
+          <span role="rowheader" className="ct-label ct-label-estimate">預估實質自付</span>
+          <ComparisonEstimateCell result={actual} registeredCity={registeredCity} field="outOfPocket"/>
+          <ComparisonEstimateCell result={whatIf} registeredCity={registeredCity} field="outOfPocket"/>
         </div>
       </div>
 

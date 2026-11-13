@@ -15,6 +15,22 @@ export type BuildApplicationGuideOptions = RuleEvaluationOptions & {
   registeredCity?: string;
 };
 
+export const RENTAL_SUBSIDY_COMPARISON_METADATA = {
+  "臺北市": {
+    options: [
+      { description: "中央 R1 第一級單身", minNtd: 3000, maxNtd: 3000 },
+    ],
+    note: "未設籍臺北市者不適用北市 R6。",
+  },
+  "新北市": {
+    options: [
+      { description: "中央 R1 第二／三級單身", minNtd: 2200, maxNtd: 2400 },
+      { description: "新北青年 R7（符合新北設籍／就學／就業條件）", minNtd: 3500, maxNtd: 3500 },
+    ],
+    note: "R7 與中央 R1 擇優，不得重複請領。",
+  },
+} as const;
+
 function sourcesFor(ids: string[]): EvidenceRecord[] {
   return ids
     .map((id) => getEvidence(id))

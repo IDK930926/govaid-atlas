@@ -1739,6 +1739,21 @@ a {
   align-content: center;
 }
 
+.ct-estimate-cell {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.ct-estimate-cell strong {
+  font-size: var(--fs-small);
+}
+
+.ct-estimate-note {
+  color: var(--muted);
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+}
+
 .ct-rent {
   display: flex;
   align-items: baseline;
@@ -2800,6 +2815,10 @@ a {
   .ct-row > .ct-label {
     padding: var(--s3) var(--s2);
     white-space: nowrap;
+  }
+
+  .ct-row > .ct-label-estimate {
+    white-space: normal;
   }
 
   .section-head {

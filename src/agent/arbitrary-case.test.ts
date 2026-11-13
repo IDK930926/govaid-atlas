@@ -73,15 +73,22 @@ test("CUSTOM-HOUSING-01 — Arbitrary 28-year-old Taipei profile is evaluated (n
 test("CUSTOM-HOUSING-01A — Dual-North requests default to Taipei and New Taipei with shared rent", () => {
   const goal = "想比較雙北租屋補助，月租 18,000 元";
   const draft = buildCaseDraft(goal);
+  const facts = extractFactsFromGoal(goal, "HOUSING");
 
+  assert.equal(facts.dualCityComparison, true);
   assert.equal(draft.actualScenario.city, "臺北市");
   assert.equal(draft.whatIfScenario.city, "新北市");
   assert.equal(draft.actualScenario.monthlyRent, 18000);
   assert.equal(draft.whatIfScenario.monthlyRent, 18000);
 
   const explicitCities = buildCaseDraft("目前住新北市、未來搬到臺北市，想比較雙北租屋補助");
+  assert.equal(
+    extractFactsFromGoal("目前住新北市、未來搬到臺北市，想比較雙北租屋補助", "HOUSING").dualCityComparison,
+    undefined
+  );
   assert.equal(explicitCities.actualScenario.city, "新北市");
   assert.equal(explicitCities.whatIfScenario.city, "臺北市");
+  assert.equal(extractFactsFromGoal(DEFAULT_GOAL, "HOUSING").dualCityComparison, undefined);
 
   const manuallyChanged = buildCaseDraft(goal, {
     HOUSING: { whatIfCity: "桃園市" },
@@ -90,6 +97,13 @@ test("CUSTOM-HOUSING-01A — Dual-North requests default to Taipei and New Taipe
   assert.equal(manuallyChanged.actualScenario.city, "臺北市");
   assert.equal(manuallyChanged.whatIfScenario.city, "桃園市");
   assert.equal(manuallyChanged.whatIfScenario.monthlyRent, 18000);
+
+  const taipeiStudentFacts = extractFactsFromGoal(
+    "申請人戶籍在桃園市，目前就讀國立政治大學，想查租屋補助",
+    "HOUSING"
+  );
+  assert.equal(taipeiStudentFacts.registeredCity, "桃園市");
+  assert.equal(taipeiStudentFacts.studyCity, "臺北市");
 });
 
 test("CUSTOM-HOUSING-02 — Taoyuan workflow evaluates user-provided 60000 income (not preset 38000)", () => {

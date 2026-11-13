@@ -334,6 +334,7 @@ export type ExtractedFacts = Partial<Record<CaseField, CaseFieldValue>> & {
   whatIfCity?: string;
   whatIfMonthlyRent?: number;
   dualCityComparison?: boolean;
+  studyCity?: string;
 };
 
 const CITY_TOKENS: string[] = (() => {
@@ -391,6 +392,14 @@ function extractHousingFacts(text: string, facts: ExtractedFacts): void {
   if (registered) {
     const city = toCanonicalCity(registered[1]);
     if (city) facts.registeredCity = city;
+  }
+
+  const studyStatement = /[^，。,；;。？！?！]*(?:就讀|就學|在學|在校|讀書)[^，。,；;。？！?！]*/.exec(text)?.[0] ?? "";
+  if (
+    /(?:國立政治大學|政治大學|政大|NCCU|國立臺灣大學|臺灣大學|台灣大學|台大|國立臺灣師範大學|臺灣師範大學|台灣師範大學|臺師大|師大|國立臺灣科技大學|臺灣科技大學|台灣科技大學|臺科大)/i.test(studyStatement) ||
+    /(?:臺北市|台北市)[^，。,；;。？！?！]{0,12}(?:大專院校|大學|學校)/.test(studyStatement)
+  ) {
+    facts.studyCity = "臺北市";
   }
 
   const move = new RegExp(`(?:搬到|搬去|搬至|搬往)\\s*${CITY_PATTERN}`).exec(text);
