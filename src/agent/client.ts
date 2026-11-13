@@ -1,6 +1,7 @@
 import { getOllamaModel, healthCheckOllama, isOllamaConfigured, callOllamaPlanner } from "./providers/ollama";
 import { getOpenAIModel, healthCheckOpenAI, isOpenAIConfigured, callOpenAIPlanner } from "./providers/openai";
 import { estimateOpenAICostUsd, getOpenAIPricing } from "./providers/pricing";
+import { getProviderChain, getProviderMode, type ChainProvider } from "./providers/mode";
 import type {
   ProviderAttempt,
   ProviderAuditEvent,
@@ -16,26 +17,24 @@ export { getOllamaModel, isOllamaConfigured, callOllamaPlanner };
 export { getOpenAIModel, isOpenAIConfigured, callOpenAIPlanner };
 export type { ProviderHealth, ProviderPlannerInput, ProviderPlannerResult, ProviderName, ProviderMode };
 
-export const DEFAULT_PROVIDER_TIMEOUT_MS = 15_000;
-
-type ChainProvider = Exclude<ProviderName, "UNAVAILABLE">;
-
 /**
- * AGENT_PROVIDER: auto (default) | openai | ollama. Anything else is a configuration error
- * and fails closed to the deterministic workflow rather than guessing a provider.
+ * Timeout hierarchy (all overridable by env):
+ * - AGENT_PLANNER_BUDGET_MS (default 10 s): wall-clock budget for the WHOLE provider chain.
+ *   After it is spent the request takes the deterministic safe path; no 25–30 s dead wait.
+ * - AGENT_PROVIDER_TIMEOUT_MS (default 8 s): cap for ONE provider attempt; each attempt
+ *   gets min(this, remaining budget) and its HTTP call is aborted when it expires.
+ * - Provider-internal caps (OPENAI_TIMEOUT_MS / OLLAMA_TIMEOUT_MS, default 8 s) are a
+ *   defensive ceiling only and never exceed the per-attempt cap by default.
  */
-export function getProviderMode(): ProviderMode | null {
-  const raw = (process.env?.AGENT_PROVIDER ?? "auto").trim().toLowerCase() || "auto";
-  return raw === "auto" || raw === "openai" || raw === "ollama" ? raw : null;
-}
+export const DEFAULT_PROVIDER_TIMEOUT_MS = 8_000;
+export const DEFAULT_PLANNER_BUDGET_MS = 10_000;
+/**
+ * A fallback attempt (never the first) is skipped instead of started when less than
+ * min(this, per-attempt cap / 2) of the planner budget remains.
+ */
+export const MIN_ATTEMPT_BUDGET_MS = 1_000;
 
-/** Ordered provider chain for a mode. Only `auto` contains more than one provider. */
-export function getProviderChain(mode: ProviderMode | null = getProviderMode()): ChainProvider[] {
-  if (mode === "auto") return ["OPENAI", "OLLAMA"];
-  if (mode === "openai") return ["OPENAI"];
-  if (mode === "ollama") return ["OLLAMA"];
-  return [];
-}
+export { getProviderMode, getProviderChain };
 
 /** First provider in the chain; kept for callers that only need the primary. */
 export function getConfiguredProviderName(): ProviderName {
@@ -126,15 +125,22 @@ function estimateCloudCost(attempts: ProviderAttempt[]): { usd: number | null; l
   return { usd: total, label: getOpenAIPricing(openaiAttempts[0].model)?.snapshot ?? null };
 }
 
-function getTimeoutMs(explicitTimeoutMs?: number): number {
+function positiveEnvMs(name: string): number | undefined {
+  const value = Number(process.env?.[name]);
+  return Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+/** Per-attempt cap: explicit input, else AGENT_PROVIDER_TIMEOUT_MS, else default. */
+export function getTimeoutMs(explicitTimeoutMs?: number): number {
   if (typeof explicitTimeoutMs === "number" && Number.isFinite(explicitTimeoutMs) && explicitTimeoutMs > 0) {
     return explicitTimeoutMs;
   }
-  const envTimeout = Number(process.env?.AGENT_PROVIDER_TIMEOUT_MS);
-  if (Number.isFinite(envTimeout) && envTimeout > 0) {
-    return envTimeout;
-  }
-  return DEFAULT_PROVIDER_TIMEOUT_MS;
+  return positiveEnvMs("AGENT_PROVIDER_TIMEOUT_MS") ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+}
+
+/** Whole-chain budget; never smaller than one attempt's cap so a single-provider mode is unaffected. */
+export function getPlannerBudgetMs(attemptTimeoutMs: number): number {
+  return Math.max(attemptTimeoutMs, positiveEnvMs("AGENT_PLANNER_BUDGET_MS") ?? DEFAULT_PLANNER_BUDGET_MS);
 }
 
 async function callProviderWithTimeout(
@@ -144,10 +150,13 @@ async function callProviderWithTimeout(
   input: ProviderPlannerInput,
   timeoutMs: number
 ): Promise<ProviderPlannerResult> {
+  const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const timeoutPromise = new Promise<ProviderPlannerResult>((resolveTimeout) => {
       timer = setTimeout(() => {
+        // Abort the in-flight HTTP request as well, so it cannot keep running after we move on.
+        controller.abort();
         resolveTimeout({
           provider,
           providerStatus: "UNAVAILABLE",
@@ -158,7 +167,7 @@ async function callProviderWithTimeout(
         });
       }, timeoutMs);
     });
-    return await Promise.race([caller(input), timeoutPromise]);
+    return await Promise.race([caller({ ...input, timeoutMs, signal: controller.signal }), timeoutPromise]);
   } finally {
     if (timer !== undefined) {
       clearTimeout(timer);
@@ -187,6 +196,8 @@ export async function callPlanner(input: ProviderPlannerInput, deps: PlannerDepe
   const mode = getProviderMode();
   const chain = getProviderChain(mode);
   const timeoutMs = getTimeoutMs(input.timeoutMs);
+  const budgetMs = getPlannerBudgetMs(timeoutMs);
+  const chainStarted = now();
   const events: ProviderAuditEvent[] = [];
   const attempts: ProviderAttempt[] = [];
   const emit = (action: ProviderAuditEvent["action"], detail: ProviderAuditEvent["detail"]) =>
@@ -220,14 +231,18 @@ export async function callPlanner(input: ProviderPlannerInput, deps: PlannerDepe
     emit("AGENT_PROVIDER_SELECTED", { mode, provider, model });
 
     const started = now();
+    const remainingBudgetMs = budgetMs - Math.max(0, started - chainStarted);
     let result: ProviderPlannerResult;
     if (provider === "OPENAI" && !isOpenAIConfigured()) {
       // Skipped, not called: no request leaves the server without a key.
       result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: false, error: "OPENAI_MISSING_API_KEY", errorClass: "MISSING_API_KEY" };
+    } else if (index > 0 && remainingBudgetMs < Math.min(MIN_ATTEMPT_BUDGET_MS, timeoutMs / 2)) {
+      // Planner budget spent by earlier attempts: skip rather than start a call that cannot finish.
+      result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: false, error: "AGENT_PLANNER_BUDGET_EXHAUSTED", errorClass: "TIMEOUT" };
     } else {
       emit("AGENT_PROVIDER_CALL_STARTED", { provider, model });
       try {
-        result = await callProviderWithTimeout(provider, model, callers[provider], input, timeoutMs);
+        result = await callProviderWithTimeout(provider, model, callers[provider], input, Math.min(timeoutMs, remainingBudgetMs));
       } catch {
         result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: true, errorClass: "NETWORK_ERROR" };
       }

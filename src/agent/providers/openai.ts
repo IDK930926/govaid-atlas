@@ -13,7 +13,8 @@ import {
 } from "./types";
 
 const DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
-const DEFAULT_OPENAI_TIMEOUT_MS = 20_000;
+// Defensive ceiling only; the client aborts each attempt at its own (<=) budget. See client.ts.
+const DEFAULT_OPENAI_TIMEOUT_MS = 8_000;
 const DEFAULT_OPENAI_HEALTH_TIMEOUT_MS = 5_000;
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 
@@ -156,7 +157,9 @@ export async function callOpenAIPlanner(input: ProviderPlannerInput): Promise<Pr
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(getOpenAITimeoutMs()),
+      signal: input.signal
+        ? AbortSignal.any([input.signal, AbortSignal.timeout(getOpenAITimeoutMs())])
+        : AbortSignal.timeout(getOpenAITimeoutMs()),
     });
   } catch (error) {
     return failure(model, classifyThrownError(error), true);

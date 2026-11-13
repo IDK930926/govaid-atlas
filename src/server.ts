@@ -3,7 +3,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { extname, relative, resolve, sep } from "node:path";
 import { URL } from "node:url";
 
-import { callPlanner, getProviderHealth, DEFAULT_PROVIDER_TIMEOUT_MS } from "./agent/client";
+import { callPlanner, getProviderHealth } from "./agent/client";
 import { buildSafePlan } from "./agent/orchestrator";
 import { listAllowedTools } from "./agent/tools";
 import type { AgentDecision } from "./agent/types";
@@ -306,7 +306,17 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       throw error;
     }
 
-    if (body.goal !== undefined && typeof body.goal !== "string") {
+    if (body.goal === undefined) {
+      // No implicit demo goal: a request without a goal must not be answered as a rental query.
+      sendJson(response, 400, {
+        ok: false,
+        errorCode: "MISSING_GOAL",
+        error: "Field 'goal' is required.",
+      });
+      return;
+    }
+
+    if (typeof body.goal !== "string") {
       sendJson(response, 400, {
         ok: false,
         errorCode: "INVALID_GOAL_TYPE",
@@ -315,7 +325,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       return;
     }
 
-    const rawGoal = typeof body.goal === "string" ? body.goal : "Compare rental subsidy options.";
+    const rawGoal = body.goal;
     const trimmedGoal = rawGoal.trim();
     if (!trimmedGoal) {
       sendJson(response, 400, {
@@ -351,16 +361,19 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     const domain = detectBenefitDomain(trimmedGoal);
     const coverage = assessQueryCoverage(trimmedGoal);
     const defaultPlan = buildSafePlan(trimmedGoal, domain);
-    const timeoutMs = Number(process.env.AGENT_PROVIDER_TIMEOUT_MS ?? DEFAULT_PROVIDER_TIMEOUT_MS);
 
+    // Timeout hierarchy (per-attempt cap + whole-chain budget) is owned by callPlanner.
     const plannerStarted = performance.now();
     const llmResult = await callPlanner({
       goal: trimmedGoal,
       availableTools: allowlistedTools,
-      timeoutMs,
     });
     const plannerLatencyMs = performance.now() - plannerStarted;
     const llmCallSucceeded = llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision);
+    // What actually happened: an LLM planner produced the decision, or none did and the
+    // deterministic workflow decides. Health/config alone never makes this "AGENT".
+    const executionMode = llmCallSucceeded ? "AGENT" : "DETERMINISTIC_FALLBACK";
+    const fallbackActive = llmCallSucceeded ? (llmResult.fallbackCount ?? 0) > 0 : true;
 
     const safeErrorCode = llmCallSucceeded
       ? null
@@ -404,6 +417,8 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       decision: llmResult.decision ?? fallbackDecision,
       metadata: {
         mode: llmResult.mode ?? null,
+        executionMode,
+        fallbackActive,
         usage: llmResult.usage ?? null,
         // Safe error class only; raw provider messages never leave the server.
         error: safeErrorCode,

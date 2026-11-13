@@ -114,6 +114,24 @@ var init_types = __esm({
   }
 });
 
+// src/agent/providers/mode.ts
+function getProviderMode() {
+  const raw = (typeof process !== "undefined" ? process.env?.AGENT_PROVIDER : void 0) ?? "auto";
+  const normalized = raw.trim().toLowerCase() || "auto";
+  return normalized === "auto" || normalized === "openai" || normalized === "ollama" ? normalized : null;
+}
+function getProviderChain(mode = getProviderMode()) {
+  if (mode === "auto") return ["OPENAI", "OLLAMA"];
+  if (mode === "openai") return ["OPENAI"];
+  if (mode === "ollama") return ["OLLAMA"];
+  return [];
+}
+var init_mode = __esm({
+  "src/agent/providers/mode.ts"() {
+    "use strict";
+  }
+});
+
 // src/agent/providers/ollama.ts
 function getEnv() {
   if (typeof process === "undefined" || !process.env) {
@@ -127,11 +145,25 @@ function getOllamaBaseUrl() {
 function getOllamaModel() {
   return getEnv().OLLAMA_MODEL ?? DEFAULT_OLLAMA_MODEL;
 }
-async function healthCheckOllama() {
+function positiveInt(raw, fallback) {
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+function getOllamaTimeoutMs() {
+  return positiveInt(getEnv().OLLAMA_TIMEOUT_MS, DEFAULT_OLLAMA_TIMEOUT_MS);
+}
+function getOllamaHealthTimeoutMs() {
+  return positiveInt(getEnv().OLLAMA_HEALTH_TIMEOUT_MS, DEFAULT_OLLAMA_HEALTH_TIMEOUT_MS);
+}
+async function healthCheckOllama(signal) {
   const model = getOllamaModel();
   const baseUrl = getOllamaBaseUrl();
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/tags`, { method: "GET" });
+    const timeout = AbortSignal.timeout(getOllamaHealthTimeoutMs());
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/tags`, {
+      method: "GET",
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout
+    });
     if (!response.ok) {
       return {
         provider: "OLLAMA",
@@ -164,14 +196,14 @@ async function healthCheckOllama() {
       providerStatus: "UNAVAILABLE",
       model,
       error: error instanceof Error ? `OLLAMA_PROVIDER_UNAVAILABLE: ${error.message}` : "OLLAMA_PROVIDER_UNAVAILABLE",
-      errorClass: "PROVIDER_UNAVAILABLE"
+      errorClass: classifyThrownError(error) === "TIMEOUT" ? "TIMEOUT" : "PROVIDER_UNAVAILABLE"
     };
   }
 }
 async function callOllamaPlanner(input) {
   const model = getOllamaModel();
   const baseUrl = getOllamaBaseUrl();
-  const health = await healthCheckOllama();
+  const health = await healthCheckOllama(input.signal);
   if (health.providerStatus !== "AVAILABLE") {
     return {
       provider: "OLLAMA",
@@ -206,7 +238,8 @@ async function callOllamaPlanner(input) {
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(getOllamaTimeoutMs())]) : AbortSignal.timeout(getOllamaTimeoutMs())
     });
     if (!response.ok) {
       const text = await response.text();
@@ -269,13 +302,16 @@ async function callOllamaPlanner(input) {
     };
   }
 }
-var DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL;
+var DEFAULT_OLLAMA_BASE_URL, DEFAULT_OLLAMA_MODEL, DEFAULT_OLLAMA_HEALTH_TIMEOUT_MS, DEFAULT_OLLAMA_TIMEOUT_MS;
 var init_ollama = __esm({
   "src/agent/providers/ollama.ts"() {
     "use strict";
     init_types();
+    init_mode();
     DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
     DEFAULT_OLLAMA_MODEL = "qwen3.5:4b";
+    DEFAULT_OLLAMA_HEALTH_TIMEOUT_MS = 2e3;
+    DEFAULT_OLLAMA_TIMEOUT_MS = 8e3;
   }
 });
 
@@ -286,7 +322,7 @@ function getEnv2() {
   }
   return process.env;
 }
-function positiveInt(raw, fallback) {
+function positiveInt2(raw, fallback) {
   const parsed = Number(raw);
   return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
@@ -294,7 +330,7 @@ function getOpenAIModel() {
   return getEnv2().OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
 }
 function getOpenAITimeoutMs() {
-  return positiveInt(getEnv2().OPENAI_TIMEOUT_MS, DEFAULT_OPENAI_TIMEOUT_MS);
+  return positiveInt2(getEnv2().OPENAI_TIMEOUT_MS, DEFAULT_OPENAI_TIMEOUT_MS);
 }
 function isOpenAIConfigured() {
   return Boolean(getEnv2().OPENAI_API_KEY?.trim());
@@ -323,7 +359,7 @@ async function healthCheckOpenAI() {
     const response = await fetch(`${OPENAI_BASE_URL}/models/${encodeURIComponent(model)}`, {
       method: "GET",
       headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(positiveInt(getEnv2().OPENAI_HEALTH_TIMEOUT_MS, DEFAULT_OPENAI_HEALTH_TIMEOUT_MS))
+      signal: AbortSignal.timeout(positiveInt2(getEnv2().OPENAI_HEALTH_TIMEOUT_MS, DEFAULT_OPENAI_HEALTH_TIMEOUT_MS))
     });
     await response.text().catch(() => void 0);
     if (!response.ok) {
@@ -370,7 +406,7 @@ Return only a valid decision that follows the required schema. Use null for tool
         "Content-Type": "application/json"
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(getOpenAITimeoutMs())
+      signal: input.signal ? AbortSignal.any([input.signal, AbortSignal.timeout(getOpenAITimeoutMs())]) : AbortSignal.timeout(getOpenAITimeoutMs())
     });
   } catch (error) {
     return failure(model, classifyThrownError(error), true);
@@ -430,7 +466,7 @@ var init_openai = __esm({
     "use strict";
     init_types();
     DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
-    DEFAULT_OPENAI_TIMEOUT_MS = 2e4;
+    DEFAULT_OPENAI_TIMEOUT_MS = 8e3;
     DEFAULT_OPENAI_HEALTH_TIMEOUT_MS = 5e3;
     OPENAI_BASE_URL = "https://api.openai.com/v1";
     OPENAI_AGENT_DECISION_SCHEMA = {
@@ -476,16 +512,6 @@ var init_pricing = __esm({
 });
 
 // src/agent/client.ts
-function getProviderMode() {
-  const raw = (process.env?.AGENT_PROVIDER ?? "auto").trim().toLowerCase() || "auto";
-  return raw === "auto" || raw === "openai" || raw === "ollama" ? raw : null;
-}
-function getProviderChain(mode = getProviderMode()) {
-  if (mode === "auto") return ["OPENAI", "OLLAMA"];
-  if (mode === "openai") return ["OPENAI"];
-  if (mode === "ollama") return ["OLLAMA"];
-  return [];
-}
 function modelFor(provider) {
   return provider === "OPENAI" ? getOpenAIModel() : getOllamaModel();
 }
@@ -551,21 +577,26 @@ function estimateCloudCost(attempts) {
   }
   return { usd: total, label: getOpenAIPricing(openaiAttempts[0].model)?.snapshot ?? null };
 }
+function positiveEnvMs(name) {
+  const value = Number(process.env?.[name]);
+  return Number.isFinite(value) && value > 0 ? value : void 0;
+}
 function getTimeoutMs(explicitTimeoutMs) {
   if (typeof explicitTimeoutMs === "number" && Number.isFinite(explicitTimeoutMs) && explicitTimeoutMs > 0) {
     return explicitTimeoutMs;
   }
-  const envTimeout = Number(process.env?.AGENT_PROVIDER_TIMEOUT_MS);
-  if (Number.isFinite(envTimeout) && envTimeout > 0) {
-    return envTimeout;
-  }
-  return DEFAULT_PROVIDER_TIMEOUT_MS;
+  return positiveEnvMs("AGENT_PROVIDER_TIMEOUT_MS") ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+}
+function getPlannerBudgetMs(attemptTimeoutMs) {
+  return Math.max(attemptTimeoutMs, positiveEnvMs("AGENT_PLANNER_BUDGET_MS") ?? DEFAULT_PLANNER_BUDGET_MS);
 }
 async function callProviderWithTimeout(provider, model, caller, input, timeoutMs) {
+  const controller = new AbortController();
   let timer;
   try {
     const timeoutPromise = new Promise((resolveTimeout) => {
       timer = setTimeout(() => {
+        controller.abort();
         resolveTimeout({
           provider,
           providerStatus: "UNAVAILABLE",
@@ -576,7 +607,7 @@ async function callProviderWithTimeout(provider, model, caller, input, timeoutMs
         });
       }, timeoutMs);
     });
-    return await Promise.race([caller(input), timeoutPromise]);
+    return await Promise.race([caller({ ...input, timeoutMs, signal: controller.signal }), timeoutPromise]);
   } finally {
     if (timer !== void 0) {
       clearTimeout(timer);
@@ -592,6 +623,8 @@ async function callPlanner(input, deps = {}) {
   const mode = getProviderMode();
   const chain = getProviderChain(mode);
   const timeoutMs = getTimeoutMs(input.timeoutMs);
+  const budgetMs = getPlannerBudgetMs(timeoutMs);
+  const chainStarted = now();
   const events = [];
   const attempts = [];
   const emit = (action, detail) => events.push({ timestamp: (/* @__PURE__ */ new Date()).toISOString(), action, detail });
@@ -620,13 +653,16 @@ async function callPlanner(input, deps = {}) {
     const model = modelFor(provider);
     emit("AGENT_PROVIDER_SELECTED", { mode, provider, model });
     const started = now();
+    const remainingBudgetMs = budgetMs - Math.max(0, started - chainStarted);
     let result;
     if (provider === "OPENAI" && !isOpenAIConfigured()) {
       result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: false, error: "OPENAI_MISSING_API_KEY", errorClass: "MISSING_API_KEY" };
+    } else if (index > 0 && remainingBudgetMs < Math.min(MIN_ATTEMPT_BUDGET_MS, timeoutMs / 2)) {
+      result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: false, error: "AGENT_PLANNER_BUDGET_EXHAUSTED", errorClass: "TIMEOUT" };
     } else {
       emit("AGENT_PROVIDER_CALL_STARTED", { provider, model });
       try {
-        result = await callProviderWithTimeout(provider, model, callers[provider], input, timeoutMs);
+        result = await callProviderWithTimeout(provider, model, callers[provider], input, Math.min(timeoutMs, remainingBudgetMs));
       } catch {
         result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: true, errorClass: "NETWORK_ERROR" };
       }
@@ -707,14 +743,17 @@ async function callPlanner(input, deps = {}) {
     pricingLabel: cost.label
   };
 }
-var DEFAULT_PROVIDER_TIMEOUT_MS, PROVIDER_LABEL;
+var DEFAULT_PROVIDER_TIMEOUT_MS, DEFAULT_PLANNER_BUDGET_MS, MIN_ATTEMPT_BUDGET_MS, PROVIDER_LABEL;
 var init_client = __esm({
   "src/agent/client.ts"() {
     "use strict";
     init_ollama();
     init_openai();
     init_pricing();
-    DEFAULT_PROVIDER_TIMEOUT_MS = 15e3;
+    init_mode();
+    DEFAULT_PROVIDER_TIMEOUT_MS = 8e3;
+    DEFAULT_PLANNER_BUDGET_MS = 1e4;
+    MIN_ATTEMPT_BUDGET_MS = 1e3;
     PROVIDER_LABEL = {
       OPENAI: "OpenAI cloud",
       OLLAMA: "Ollama local"
@@ -730,6 +769,18 @@ var init_status = __esm({
 });
 
 // src/coverage.ts
+function isHousingQuery(text) {
+  return HOUSING_KEYWORDS.some((keyword) => text.includes(keyword));
+}
+function outsideVerifiedCoverage() {
+  return {
+    status: "NOT_COVERED",
+    domain: "OTHER",
+    reason: "UNSUPPORTED_DOMAIN_NOT_IMPLEMENTED",
+    message: OUTSIDE_VERIFIED_COVERAGE_MESSAGE,
+    officialReferrals: GENERAL_WELFARE_REFERRALS
+  };
+}
 function detectBenefitDomain(goal) {
   const text = goal.toLowerCase();
   if (CHILDCARE_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
@@ -795,8 +846,12 @@ function assessQueryCoverage(goal) {
     };
   }
   const normalizedText = text.replace(/台/g, "\u81FA");
+  const housingQuery = isHousingQuery(normalizedText);
+  if (!housingQuery && UNSUPPORTED_GENERAL_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
+    return outsideVerifiedCoverage();
+  }
   const matchedCity = TAIWAN_CITIES.find((c) => normalizedText.includes(c));
-  if (matchedCity && !ALL_COVERED_HOUSING_CITIES.includes(matchedCity)) {
+  if (housingQuery && matchedCity && !ALL_COVERED_HOUSING_CITIES.includes(matchedCity)) {
     return {
       status: "NOT_COVERED",
       domain: "RENTAL_SUBSIDY",
@@ -834,7 +889,7 @@ function assessQueryCoverage(goal) {
     officialReferrals: []
   };
 }
-var COVERED_LOCAL_CITIES, COVERED_CENTRAL_NAVIGATION_CITIES, ALL_COVERED_HOUSING_CITIES, CHILDCARE_KEYWORDS, UNSUPPORTED_CHILDCARE_KEYWORDS, UNSUPPORTED_HOUSING_KEYWORDS, UNSUPPORTED_GENERAL_KEYWORDS, TAIWAN_CITIES;
+var COVERED_LOCAL_CITIES, COVERED_CENTRAL_NAVIGATION_CITIES, ALL_COVERED_HOUSING_CITIES, CHILDCARE_KEYWORDS, UNSUPPORTED_CHILDCARE_KEYWORDS, UNSUPPORTED_HOUSING_KEYWORDS, UNSUPPORTED_GENERAL_KEYWORDS, HOUSING_KEYWORDS, OUTSIDE_VERIFIED_COVERAGE_MESSAGE, GENERAL_WELFARE_REFERRALS, TAIWAN_CITIES;
 var init_coverage = __esm({
   "src/coverage.ts"() {
     "use strict";
@@ -893,7 +948,23 @@ var init_coverage = __esm({
       "\u5E74\u91D1",
       "\u52DE\u4FDD",
       "\u5065\u4FDD",
-      "\u91CD\u967D"
+      "\u91CD\u967D",
+      "\u656C\u8001",
+      "\u5047\u7259",
+      "\u8FB2\u6C11",
+      "\u6F01\u6C11",
+      "\u5B78\u8CB8",
+      "\u5C31\u5B78\u8CB8\u6B3E",
+      "\u734E\u5B78\u91D1"
+    ];
+    HOUSING_KEYWORDS = ["\u79DF", "\u623F", "\u4F4F\u5B85", "\u4F4F\u5C4B", "\u5C45\u4F4F", "rent", "housing", "lease"];
+    OUTSIDE_VERIFIED_COVERAGE_MESSAGE = "\u60A8\u67E5\u8A62\u7684\u653F\u7B56\uFF0F\u9818\u57DF\u4E0D\u5728\u76EE\u524D\u5DF2\u9A57\u8B49\u7684\u6DB5\u84CB\u7BC4\u570D\u5167\uFF08Requested policy/domain is outside current verified coverage\uFF09\u3002\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u7279\u5B9A\u79DF\u5C4B\u88DC\u8CBC\u8207\u672A\u6EFF2\u6B72\u80B2\u5152\u6D25\u8CBC\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u9805\u88DC\u52A9\u4E4B\u8CC7\u683C\u5224\u5B9A\uFF0C\u4E5F\u4E0D\u6703\u6539\u4EE5\u79DF\u5C4B\u88DC\u8CBC\u56DE\u7B54\u3002\u9019\u4E0D\u4EE3\u8868\u60A8\u7121\u6CD5\u7533\u8ACB\uFF0C\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002";
+    GENERAL_WELFARE_REFERRALS = [
+      {
+        label: "\u885B\u751F\u798F\u5229\u90E8 1957 \u798F\u5229\u8AEE\u8A62\u5C08\u7DDA",
+        agency: "\u885B\u751F\u798F\u5229\u90E8",
+        url: "https://1957.mohw.gov.tw/"
+      }
     ];
     TAIWAN_CITIES = [
       "\u81FA\u5317\u5E02",
@@ -1302,7 +1373,15 @@ async function handleRequest(request, response) {
       }
       throw error;
     }
-    if (body.goal !== void 0 && typeof body.goal !== "string") {
+    if (body.goal === void 0) {
+      sendJson(response, 400, {
+        ok: false,
+        errorCode: "MISSING_GOAL",
+        error: "Field 'goal' is required."
+      });
+      return;
+    }
+    if (typeof body.goal !== "string") {
       sendJson(response, 400, {
         ok: false,
         errorCode: "INVALID_GOAL_TYPE",
@@ -1310,7 +1389,7 @@ async function handleRequest(request, response) {
       });
       return;
     }
-    const rawGoal = typeof body.goal === "string" ? body.goal : "Compare rental subsidy options.";
+    const rawGoal = body.goal;
     const trimmedGoal = rawGoal.trim();
     if (!trimmedGoal) {
       sendJson(response, 400, {
@@ -1340,15 +1419,15 @@ async function handleRequest(request, response) {
     const domain = detectBenefitDomain(trimmedGoal);
     const coverage = assessQueryCoverage(trimmedGoal);
     const defaultPlan = buildSafePlan(trimmedGoal, domain);
-    const timeoutMs = Number(process.env.AGENT_PROVIDER_TIMEOUT_MS ?? DEFAULT_PROVIDER_TIMEOUT_MS);
     const plannerStarted = performance.now();
     const llmResult = await callPlanner({
       goal: trimmedGoal,
-      availableTools: allowlistedTools,
-      timeoutMs
+      availableTools: allowlistedTools
     });
     const plannerLatencyMs = performance.now() - plannerStarted;
     const llmCallSucceeded = llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision);
+    const executionMode = llmCallSucceeded ? "AGENT" : "DETERMINISTIC_FALLBACK";
+    const fallbackActive = llmCallSucceeded ? (llmResult.fallbackCount ?? 0) > 0 : true;
     const safeErrorCode = llmCallSucceeded ? null : llmResult.error === "AGENT_PROVIDER_TIMEOUT" ? "AGENT_PROVIDER_TIMEOUT" : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE";
     const fallbackDecision = coverage.status === "NOT_COVERED" ? {
       reasoningSummary: coverage.message ?? "Request is outside covered policies; safe fallback stops without tool execution.",
@@ -1379,6 +1458,8 @@ async function handleRequest(request, response) {
       decision: llmResult.decision ?? fallbackDecision,
       metadata: {
         mode: llmResult.mode ?? null,
+        executionMode,
+        fallbackActive,
         usage: llmResult.usage ?? null,
         // Safe error class only; raw provider messages never leave the server.
         error: safeErrorCode,

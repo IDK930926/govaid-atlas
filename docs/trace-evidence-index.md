@@ -82,8 +82,8 @@ Every trace file in `artifacts/traces/` has been verified against the following 
 - **File Path:** `artifacts/traces/trace-f-provider-unavailable.json`
 - **Run ID:** `trace-f-provider-unavailable`
 - **Scenario:** Local Ollama service is offline (`providerStatus: "UNAVAILABLE"`, `error: "OLLAMA_PROVIDER_UNAVAILABLE"`) when the user requests `"模型離線時檢查租屋補助"`.
-- **Key Agent Decision:** Orchestrator records the provider outage in step 1, marks `proposalRejected: true` (`rejectionReason: "OLLAMA_PROVIDER_UNAVAILABLE"`), and activates deterministic fallback routing (`fallbackUsed: true`).
-- **Validation:** `validationResult: "REJECTED"`, `proposalRejected: true`, `rejectionReason: "OLLAMA_PROVIDER_UNAVAILABLE"`.
+- **Key Agent Decision:** Orchestrator records the provider outage in step 1 (`rejectionReason: "OLLAMA_PROVIDER_UNAVAILABLE"`) and activates deterministic fallback routing (`fallbackUsed: true`). No planner proposal existed, so none is counted as rejected; the run's audit trail (not part of this trace file) records `AGENT_PLANNER_UNAVAILABLE_FALLBACK` (a timeout records `AGENT_PLANNER_TIMEOUT_FALLBACK`), never `AGENT_PROPOSAL_REJECTED`.
+- **Validation:** `validationResult: "NOT_APPLICABLE"`, `proposalRejected: false`, `rejectionReason: "OLLAMA_PROVIDER_UNAVAILABLE"`.
 - **Tool Execution:** Executes `evaluate_central_rules`, `evaluate_actual_scenario`, `evaluate_what_if_scenario`, `get_policy_evidence`, and `complete` via deterministic fallback.
 - **Final State:** `finalStatus: "COMPLETED"`, `providerStatus: "UNAVAILABLE"`, `finalEligibilityStatus: "PARTIAL_CHECK"`.
 - **Why the Trace Matters to the Competition:** Proves graceful degradation for public-service reliability: even if the local or cloud LLM fails during a live demo or citizen session, the user still receives deterministic preliminary rule checking and official evidence links without UI crashes or fake LLM metrics.

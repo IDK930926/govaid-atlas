@@ -196,5 +196,15 @@ export const auditCopy: Record<string, BilingualCopy> = {
   AGENT_COMPLETED: {zh: "代理執行完成", en: "Agent completed"},
   AGENT_NOT_COVERED: {zh: "超出目前涵蓋範圍", en: "Outside coverage boundary"},
   AGENT_PROPOSAL_REJECTED: {zh: "拒絕不安全規劃提案", en: "Proposal rejected"},
+  // No proposal existed in these two cases, so they must never read as "rejected".
+  AGENT_PLANNER_TIMEOUT_FALLBACK: {zh: "規劃器逾時 — 啟用確定性備援流程", en: "Planner timeout — deterministic fallback activated"},
+  AGENT_PLANNER_UNAVAILABLE_FALLBACK: {zh: "規劃器無法使用 — 啟用確定性備援流程", en: "Planner unavailable — deterministic fallback activated"},
+  DETERMINISTIC_WORKFLOW_COMPLETED: {zh: "確定性流程完成", en: "Deterministic workflow completed"},
+  AGENT_PROVIDER_SELECTED: {zh: "選定模型供應者", en: "Provider selected"},
+  AGENT_PROVIDER_CALL_STARTED: {zh: "開始呼叫模型", en: "Provider call started"},
+  AGENT_PROVIDER_CALL_COMPLETED: {zh: "模型回傳規劃提案", en: "Provider returned a proposal"},
+  AGENT_PROVIDER_CALL_FAILED: {zh: "模型呼叫失敗", en: "Provider call failed"},
+  AGENT_PROVIDER_FALLBACK: {zh: "切換至下一個模型供應者", en: "Falling back to next provider"},
+  AGENT_PROVIDER_UNAVAILABLE: {zh: "所有模型皆無法使用", en: "All providers unavailable"},
   AGENT_HUMAN_INPUT_INVALID: {zh: "人工輸入格式無效", en: "Invalid human input"},
 };
