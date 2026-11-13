@@ -28,8 +28,8 @@ import {
   server,
   setRateLimitMaxRequests,
 } from "../server";
-import healthApiHandler from "../../api/health";
-import plannerApiHandler from "../../api/agent/plan";
+import healthApiHandler from "../vercel-health";
+import plannerApiHandler from "../vercel-agent-plan";
 import vercelApiHandler from "../vercel-handler";
 import type { AddressScenario, ApplicantProfile } from "../types";
 

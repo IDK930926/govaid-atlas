@@ -1,6 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 
-import dispatch from "../../src/vercel-handler";
+import dispatch from "./vercel-handler";
 
 export default function handleAgentPlan(
   request: IncomingMessage,

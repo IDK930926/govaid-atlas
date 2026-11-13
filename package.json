@@ -8,7 +8,7 @@
     "dev": "tsx watch src/server.ts & vite --host 0.0.0.0",
     "dev:server": "tsx watch src/server.ts",
     "dev:client": "vite --host 0.0.0.0",
-    "build": "tsc --noEmit && esbuild src/vercel-handler.ts --bundle --platform=node --format=cjs --target=node22 --outfile=api/[...path].js && vite build",
+    "build": "tsc --noEmit && esbuild src/vercel-handler.ts --bundle --platform=node --format=cjs --target=node22 --outfile=api/[...path].js && esbuild src/vercel-health.ts --bundle --platform=node --format=cjs --target=node22 --outfile=api/health.js && esbuild src/vercel-agent-plan.ts --bundle --platform=node --format=cjs --target=node22 --outfile=api/agent/plan.js && vite build",
     "start": "tsx src/server.ts"
   },
   "keywords": [],

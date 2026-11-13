@@ -10,10 +10,12 @@ import type { AgentDecision } from "./agent/types";
 import { getRuntimeDisplayMode } from "./agent/providers/types";
 import { assessQueryCoverage, detectBenefitDomain } from "./coverage";
 
+const PROJECT_ROOT = process.cwd();
+
 // Secrets such as OPENAI_API_KEY stay server-side: load an optional, gitignored .env into this
 // process only. Values already present in the real environment take precedence.
 try {
-  process.loadEnvFile(resolve(__dirname, "../.env"));
+  process.loadEnvFile(resolve(PROJECT_ROOT, ".env"));
 } catch (error) {
   if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
     throw error;
@@ -22,7 +24,7 @@ try {
 
 const PORT = Number(process.env.PORT ?? 8787);
 const HOST = "127.0.0.1";
-const DIST_DIR = resolve(__dirname, "../dist");
+const DIST_DIR = resolve(PROJECT_ROOT, "dist");
 
 export const MAX_REQUEST_BODY_BYTES = 16 * 1024; // 16 KB
 export const MAX_GOAL_LENGTH = 800; // characters

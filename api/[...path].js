@@ -1576,7 +1576,7 @@ async function handleRequest(request, response) {
   }
   sendJson(response, 404, { ok: false, errorCode: "NOT_FOUND", error: "Not found" });
 }
-var import_promises, import_node_http, import_node_path, import_node_url, PORT, HOST, DIST_DIR, MAX_REQUEST_BODY_BYTES, MAX_GOAL_LENGTH, RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX_REQUESTS, configuredRateLimitMax, rateLimitBuckets, ApiHttpError, MIME_TYPES, server;
+var import_promises, import_node_http, import_node_path, import_node_url, PROJECT_ROOT, PORT, HOST, DIST_DIR, MAX_REQUEST_BODY_BYTES, MAX_GOAL_LENGTH, RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX_REQUESTS, configuredRateLimitMax, rateLimitBuckets, ApiHttpError, MIME_TYPES, server;
 var init_server = __esm({
   "src/server.ts"() {
     "use strict";
@@ -1589,8 +1589,9 @@ var init_server = __esm({
     init_tools();
     init_types();
     init_coverage();
+    PROJECT_ROOT = process.cwd();
     try {
-      process.loadEnvFile((0, import_node_path.resolve)(__dirname, "../.env"));
+      process.loadEnvFile((0, import_node_path.resolve)(PROJECT_ROOT, ".env"));
     } catch (error) {
       if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
         throw error;
@@ -1598,7 +1599,7 @@ var init_server = __esm({
     }
     PORT = Number(process.env.PORT ?? 8787);
     HOST = "127.0.0.1";
-    DIST_DIR = (0, import_node_path.resolve)(__dirname, "../dist");
+    DIST_DIR = (0, import_node_path.resolve)(PROJECT_ROOT, "dist");
     MAX_REQUEST_BODY_BYTES = 16 * 1024;
     MAX_GOAL_LENGTH = 800;
     RATE_LIMIT_WINDOW_MS = 6e4;
