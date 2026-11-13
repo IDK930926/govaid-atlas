@@ -36,7 +36,7 @@ import {
 
 import {runBenchmark} from "./benchmark";
 import {finalBenchmark} from "./benchmark-final";
-import {RENTAL_SUBSIDY_COMPARISON_METADATA} from "./navigation";
+import {estimateRentalSubsidyComparison} from "./navigation";
 
 import centralRulesJson from "./policies/central-rent-115.json";
 
@@ -138,18 +138,36 @@ type AgentPlanResponse = {
   metadata?: {
     usage?: ProviderUsage | null;
     error?: string | null;
+    errorClass?: ProviderPlannerResult["errorClass"] | null;
     llmCallAttempted?: boolean;
     llmCallSucceeded?: boolean;
+    executionMode?: ExecutionMode;
+    fallbackActive?: boolean;
+    fallbackReason?: string | null;
     mode?: ProviderMode | null;
     plannerLatencyMs?: number;
     llmCalls?: number;
     fallbackCount?: number;
-    fallbackReason?: string | null;
     lastLlmFailureReason?: string | null;
     estimatedCloudCostUsd?: number | null;
     pricingLabel?: string | null;
   };
 };
+
+// What actually produced the decision in the last run (never inferred from health alone).
+type ExecutionMode = "AGENT" | "DETERMINISTIC_FALLBACK";
+type ExecutionInfo = {
+  mode: ExecutionMode;
+  provider: ProviderName;
+  fallbackActive: boolean;
+  fallbackReason: string | null;
+};
+
+export function describeExecution(execution: ExecutionInfo | null): string | null {
+  if (!execution) return null;
+  if (execution.mode === "DETERMINISTIC_FALLBACK") return "DETERMINISTIC_FALLBACK";
+  return `AGENT · ${execution.provider}`;
+}
 
 const RUNTIME_INFERENCE_STORAGE_KEY = "govaid-atlas.latest-inference.v1";
 
@@ -249,6 +267,7 @@ function App() {
   const [runtimeInference, setRuntimeInference] = useState<RuntimeInference | null>(() => storedInference.record);
   const [runtimeStorageUnavailable, setRuntimeStorageUnavailable] = useState(storedInference.storageUnavailable);
   const [providerError, setProviderError] = useState<string | null>(null);
+  const [execution, setExecution] = useState<ExecutionInfo | null>(null);
   const [centralEvaluation, setCentralEvaluation] = useState<RuleEvaluation[]>([]);
   const [actualResult, setActualResult] = useState<ScenarioResult | null>(null);
   const [whatIfResult, setWhatIfResult] = useState<ScenarioResult | null>(null);
@@ -497,6 +516,7 @@ function App() {
     setPassport(null);
     setCentralEvaluation([]);
     setAgentRun({...createAgentRun(goal), status: "PLANNING"});
+    setExecution(null);
     setAuditTrail([{
       timestamp: new Date().toISOString(),
       actor: "USER",
@@ -536,6 +556,8 @@ function App() {
         usage: usage ?? undefined,
         callAttempted: payload.metadata?.llmCallAttempted ?? false,
         error: payload.metadata?.error ?? undefined,
+        // Needed so a planner timeout is logged as a timeout fallback, not a generic outage.
+        errorClass: payload.metadata?.errorClass ?? undefined,
       };
       setProviderInfo({
         provider: payload.provider,
@@ -546,6 +568,12 @@ function App() {
         providerMode: payload.metadata?.mode ?? null,
       });
       setProviderError(payload.metadata?.error ?? null);
+      setExecution({
+        mode: succeeded ? "AGENT" : "DETERMINISTIC_FALLBACK",
+        provider: payload.provider,
+        fallbackActive: payload.metadata?.fallbackActive ?? !succeeded,
+        fallbackReason: payload.metadata?.fallbackReason ?? null,
+      });
       inferenceRecord = {
         provider: payload.provider,
         model: payload.model,
@@ -577,6 +605,7 @@ function App() {
         mode: "fallback",
       }));
       setProviderError(message);
+      setExecution({mode: "DETERMINISTIC_FALLBACK", provider: "UNAVAILABLE", fallbackActive: true, fallbackReason: message});
       inferenceRecord = {
         provider: providerInfo.provider,
         model: providerInfo.model,
@@ -686,6 +715,7 @@ function App() {
     setProviderError(null);
     setGateError(null);
     setLastInferenceSeconds(null);
+    setExecution(null);
   }
 
   function runConflictTest() {
@@ -749,11 +779,14 @@ function App() {
     }
   }, [focusKey, phase, status]);
 
+  // With no usable provider the decision comes from the deterministic workflow: never label it "AGENT".
   const providerKind = providerInfo.provider === "OPENAI"
     ? "CLOUD AGENT"
     : providerInfo.provider === "OLLAMA"
       ? "LOCAL AGENT"
-      : "AGENT";
+      : providerInfo.providerStatus === "UNKNOWN"
+        ? "AGENT"
+        : "DETERMINISTIC";
   const providerReady = providerInfo.available;
   const modelStatusState = providerInfo.providerStatus === "UNKNOWN"
     ? "checking"
@@ -907,6 +940,8 @@ function App() {
               <RuntimePanel
                 metrics={runtimeMetrics}
                 providerInfo={providerInfo}
+                execution={execution}
+                lastInferenceSeconds={lastInferenceSeconds}
                 healthError={providerError}
                 inference={runtimeInference}
                 storageUnavailable={runtimeStorageUnavailable}
@@ -1604,7 +1639,8 @@ function CurrentAction({
         </p>
         <dl className="action-facts">
           <div><dt>模型</dt><dd><code>{providerInfo.model}</code></dd></div>
-          <div><dt>下一個工具</dt><dd><code>{run.domain === "CHILDCARE" ? "evaluate_childcare_rules" : "evaluate_central_rules"}</code></dd></div>
+          {/* No proposal exists yet: never show a tool as if the planner had already chosen it. */}
+          <div><dt>下一個工具</dt><dd>等待規劃器提案（尚未選定）</dd></div>
         </dl>
       </article>
     );
@@ -1820,6 +1856,15 @@ function policyName(policyId: string): string {
 }
 
 // Summarizes failed rules or surfaces the first unresolved rule for display.
+/**
+ * For a FAIL with no failed rule of its own (an upstream dependency FAIL), the truthful
+ * reason is the dependency note, never a still-pending question about the program.
+ */
+export function failGap(status: string, evaluations: RuleEvaluation[], failedConditions: string[] = []): string | null {
+  if (status !== "FAIL" || summarizeFailReasons(evaluations)) return null;
+  return failedConditions[0] ?? null;
+}
+
 function describeGap(evaluations: RuleEvaluation[]): string | null {
   const failures = summarizeFailReasons(evaluations);
   if (failures) {
@@ -1880,7 +1925,8 @@ function buildVerdicts(
         status: program.status,
         gap: newTaipeiStudentHint && program.policyId === "NEW_TAIPEI_RENT_115" && program.status === "UNCERTAIN"
           ? NEW_TAIPEI_STUDENT_PENDING_GAP
-          : describeGap(program.ruleResults) ?? program.coverageNote ?? null,
+          : failGap(program.status, program.ruleResults, program.failedConditions)
+            ?? describeGap(program.ruleResults) ?? program.coverageNote ?? null,
       });
     }
   }
@@ -2072,7 +2118,8 @@ function ResultView({
                   ?? programs.find((program) => program.status === "UNCERTAIN")
                   ?? programs.find((program) => program.status === "PARTIAL_CHECK")
                   ?? programs[0];
-                const failReason = summarizeFailReasons(programs.flatMap((program) => program.ruleResults));
+                const failReason = summarizeFailReasons(programs.flatMap((program) => program.ruleResults))
+                  || (verdict?.status === "FAIL" ? verdict.failedConditions[0] ?? "" : "");
                 const ineligible = verdict?.status === "FAIL";
                 return (
                   <details className="gov-card" key={guide.policyId} open={!ineligible}>
@@ -2104,7 +2151,7 @@ function ResultView({
                       )}
                       <div><dt>臨櫃／郵寄資訊</dt><dd>{guide.officeInformation}</dd></div>
                       <div><dt>諮詢電話</dt><dd>{guide.contactInformation}</dd></div>
-                      {guide.onlineApplicationUrl && (
+                      {guide.onlineApplicationUrl && !ineligible && (
                         <div>
                           <dt>官方線上申辦</dt>
                           <dd>
@@ -2115,21 +2162,30 @@ function ResultView({
                         </div>
                       )}
                     </dl>
-                    <p><strong>應備文件清單：</strong></p>
-                    <ul className="checklist">
-                      {guide.requiredDocuments.map((doc) => (
-                        <li key={doc.documentId}>
-                          {doc.title}
-                          {!doc.required && doc.conditionNote ? `（選備：${doc.conditionNote}）` : ""}
-                        </li>
-                      ))}
-                    </ul>
-                    <p><strong>申請方式：</strong></p>
-                    <ul className="steps">
-                      {guide.applicationMethods.map((method) => (
-                        <li key={method}>{method}</li>
-                      ))}
-                    </ul>
+                    {ineligible ? (
+                      // FAIL: explain why the path stopped; no documents checklist or submission methods.
+                      <ul className="steps">
+                        {guide.nextSteps.map((step) => <li key={step}>{step}</li>)}
+                      </ul>
+                    ) : (
+                      <>
+                        <p><strong>應備文件清單：</strong></p>
+                        <ul className="checklist">
+                          {guide.requiredDocuments.map((doc) => (
+                            <li key={doc.documentId}>
+                              {doc.title}
+                              {!doc.required && doc.conditionNote ? `（選備：${doc.conditionNote}）` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                        <p><strong>申請方式：</strong></p>
+                        <ul className="steps">
+                          {guide.applicationMethods.map((method) => (
+                            <li key={method}>{method}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
                   </details>
                 );
               })}
@@ -2206,7 +2262,9 @@ function CompareCell({
         ? (policy.coverageNote ?? "目前版本尚未完整涵蓋")
         : newTaipeiStudentHint && policy.policyId === "NEW_TAIPEI_RENT_115" && status === "UNCERTAIN"
           ? NEW_TAIPEI_STUDENT_PENDING_GAP
-        : (describeGap(policy.evaluations) ?? policy.coverageNote ?? null);
+        : status === "FAIL" && policy.blockedByPolicyId
+          ? (policy.coverageNote ?? null)
+          : (describeGap(policy.evaluations) ?? policy.coverageNote ?? null);
   const prefix = status === "FAIL"
     ? "不符合："
     : status === "NOT_COVERED"
@@ -2223,50 +2281,6 @@ function CompareCell({
   );
 }
 
-function formatNtdRange(minNtd: number, maxNtd: number): string {
-  const min = `NT$${minNtd.toLocaleString()}`;
-  return minNtd === maxNtd ? min : `${min}–NT$${maxNtd.toLocaleString()}`;
-}
-
-function comparisonEstimate(result: ScenarioResult, registeredCity?: string) {
-  const city = result.scenario.city;
-  const metadata = city === "臺北市" || city === "新北市"
-    ? RENTAL_SUBSIDY_COMPARISON_METADATA[city]
-    : undefined;
-  if (!metadata) {
-    return {
-      maxSubsidy: "目前無可用級距估算",
-      outOfPocket: "—",
-      note: "請以當地主管機關公告為準。",
-    };
-  }
-
-  const maxSubsidy = metadata.options
-    .map((option) => `${option.description}最高 ${formatNtdRange(option.minNtd, option.maxNtd)} / 月`)
-    .join("；");
-  const rent = result.scenario.monthlyRent;
-  const outOfPocket = rent > 0
-    ? (() => {
-        const ranges = metadata.options.map((option) => ({
-          min: Math.max(0, rent - option.maxNtd),
-          max: Math.max(0, rent - option.minNtd),
-        }));
-        const min = Math.min(...ranges.map((range) => range.min));
-        const max = Math.max(...ranges.map((range) => range.max));
-        return `約 ${formatNtdRange(min, max)} / 月起`;
-      })()
-    : "填入月租後估算";
-  const note = city === "臺北市" && registeredCity === "臺北市"
-    ? "此估算僅列中央 R1，未估算須依資格核定的北市 R6 加碼。"
-    : metadata.note;
-
-  return {
-    maxSubsidy: `${maxSubsidy}；${note}`,
-    outOfPocket,
-    note: "依月租扣除最高補助試算；實際金額以主管機關核定級距為準。",
-  };
-}
-
 function ComparisonEstimateCell({
   result,
   registeredCity,
@@ -2276,7 +2290,7 @@ function ComparisonEstimateCell({
   registeredCity?: string;
   field: "maxSubsidy" | "outOfPocket";
 }) {
-  const estimate = comparisonEstimate(result, registeredCity);
+  const estimate = estimateRentalSubsidyComparison(result, registeredCity);
   return (
     <span role="cell" className="ct-cell ct-estimate-cell">
       <strong>{estimate[field]}</strong>
@@ -2556,16 +2570,27 @@ function AuditPanel({
 function RuntimePanel({
   metrics,
   providerInfo,
+  execution,
+  lastInferenceSeconds,
   healthError,
   inference,
   storageUnavailable,
 }: {
   metrics: RuntimeMetrics;
   providerInfo: ProviderInfo;
+  execution: ExecutionInfo | null;
+  lastInferenceSeconds: number | null;
   healthError: string | null;
   inference: RuntimeInference | null;
   storageUnavailable: boolean;
 }) {
+  const known = providerInfo.providerStatus !== "UNKNOWN";
+  // Fallback = a different path than the primary provider produced the decision.
+  const fallback = execution === null
+    ? null
+    : execution.fallbackActive
+      ? `true${execution.fallbackReason ? ` (${execution.fallbackReason})` : ""}`
+      : "false";
   const cost = metrics.estimatedCostUsd === null
     ? null
     : metrics.estimatedCostUsd === 0 ? "$0" : `$${metrics.estimatedCostUsd.toFixed(2)}`;
@@ -2623,6 +2648,10 @@ function RuntimePanel({
         )}
         <h4 className="runtime-subtitle">累計執行指標</h4>
         <div className="metric-grid">
+          <Metric label="Provider" value={known && providerInfo.provider !== "UNAVAILABLE" ? providerInfo.provider : null}/>
+          <Metric label="Model" value={known ? providerInfo.model : null}/>
+          <Metric label="Execution" value={describeExecution(execution)}/>
+          <Metric label="Fallback" value={fallback}/>
           <Metric label="LLM Calls" value={metrics.llmCalls}/>
           <Metric label="Input Tokens" value={metrics.inputTokens}/>
           <Metric label="Output Tokens" value={metrics.outputTokens}/>

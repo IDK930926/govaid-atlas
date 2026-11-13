@@ -102,6 +102,8 @@ export type ProviderPlannerInput = {
   availableTools: string[];
   structuredSchema?: unknown;
   timeoutMs?: number;
+  /** Aborted by the client when this attempt's time budget expires, so the HTTP call stops too. */
+  signal?: AbortSignal;
 };
 
 export type ProviderPlannerResult = {

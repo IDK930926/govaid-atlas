@@ -10,9 +10,14 @@ import {
   classifyHttpStatus,
   classifyThrownError,
 } from "./types";
+import { getProviderChain } from "./mode";
 
 const DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434";
 const DEFAULT_OLLAMA_MODEL = "qwen3.5:4b";
+// Local daemon: a reachable /api/tags answers in milliseconds, so a short health cap is safe.
+const DEFAULT_OLLAMA_HEALTH_TIMEOUT_MS = 2_000;
+// Defensive ceiling only; the client aborts each attempt at its own (<=) budget. See client.ts.
+const DEFAULT_OLLAMA_TIMEOUT_MS = 8_000;
 
 function getEnv(): Record<string, string | undefined> {
   if (typeof process === "undefined" || !process.env) {
@@ -30,16 +35,34 @@ export function getOllamaModel(): string {
   return getEnv().OLLAMA_MODEL ?? DEFAULT_OLLAMA_MODEL;
 }
 
-export function isOllamaConfigured(): boolean {
-  return (getEnv().AGENT_PROVIDER ?? "ollama").toLowerCase() === "ollama" || Boolean(getEnv().OLLAMA_MODEL);
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
-export async function healthCheckOllama(): Promise<ProviderHealth> {
+export function getOllamaTimeoutMs(): number {
+  return positiveInt(getEnv().OLLAMA_TIMEOUT_MS, DEFAULT_OLLAMA_TIMEOUT_MS);
+}
+
+export function getOllamaHealthTimeoutMs(): number {
+  return positiveInt(getEnv().OLLAMA_HEALTH_TIMEOUT_MS, DEFAULT_OLLAMA_HEALTH_TIMEOUT_MS);
+}
+
+/** True when the configured AGENT_PROVIDER chain (mode.ts, default auto) includes Ollama. */
+export function isOllamaConfigured(): boolean {
+  return getProviderChain().includes("OLLAMA");
+}
+
+export async function healthCheckOllama(signal?: AbortSignal): Promise<ProviderHealth> {
   const model = getOllamaModel();
   const baseUrl = getOllamaBaseUrl();
 
   try {
-    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/tags`, { method: "GET" });
+    const timeout = AbortSignal.timeout(getOllamaHealthTimeoutMs());
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/api/tags`, {
+      method: "GET",
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+    });
     if (!response.ok) {
       return {
         provider: "OLLAMA",
@@ -75,7 +98,7 @@ export async function healthCheckOllama(): Promise<ProviderHealth> {
       providerStatus: "UNAVAILABLE",
       model,
       error: error instanceof Error ? `OLLAMA_PROVIDER_UNAVAILABLE: ${error.message}` : "OLLAMA_PROVIDER_UNAVAILABLE",
-      errorClass: "PROVIDER_UNAVAILABLE",
+      errorClass: classifyThrownError(error) === "TIMEOUT" ? "TIMEOUT" : "PROVIDER_UNAVAILABLE",
     };
   }
 }
@@ -84,7 +107,7 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
   const model = getOllamaModel();
   const baseUrl = getOllamaBaseUrl();
 
-  const health = await healthCheckOllama();
+  const health = await healthCheckOllama(input.signal);
   if (health.providerStatus !== "AVAILABLE") {
     return {
       provider: "OLLAMA",
@@ -122,6 +145,9 @@ export async function callOllamaPlanner(input: ProviderPlannerInput): Promise<Pr
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal: input.signal
+        ? AbortSignal.any([input.signal, AbortSignal.timeout(getOllamaTimeoutMs())])
+        : AbortSignal.timeout(getOllamaTimeoutMs()),
     });
 
     if (!response.ok) {

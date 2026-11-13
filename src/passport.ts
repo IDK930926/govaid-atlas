@@ -136,6 +136,13 @@ function missingMessage(
   }
 }
 
+export function stopStep(programTitle: string, failedConditions: string[]): string {
+  const reason = failedConditions.length
+    ? failedConditions.map((condition) => condition.replace(/。$/, "")).join("；")
+    : "已編碼條件未通過";
+  return `「${programTitle}」流程已停止：${reason}。本情境不建議送件申請此方案；如對判定有疑義，請洽受理機關確認。`;
+}
+
 function buildProgram(
   policy: PolicyResult,
   options?: RuleEvaluationOptions & { registeredCity?: string }
@@ -162,25 +169,42 @@ function buildProgram(
   const passedConditions = policy.evaluations
     .filter((ev) => ev.status === "PASS")
     .map((ev) => ev.reason);
-  const failedConditions = policy.evaluations
-    .filter((ev) => ev.status === "FAIL")
-    .map((ev) => ev.reason);
-  const missingConditions = policy.evaluations
-    .map(missingMessage)
-    .filter((item): item is string => item !== null);
+  const failedConditions = [
+    ...policy.evaluations
+      .filter((ev) => ev.status === "FAIL")
+      .map((ev) => ev.reason),
+    // Upstream dependency FAIL (e.g. local program requiring central approval).
+    ...(policy.blockedByPolicyId && policy.coverageNote ? [policy.coverageNote] : []),
+  ];
+  const ineligible = status === "FAIL";
+  // A failed program has nothing left to fill in: never ask for data to "complete" it.
+  const missingConditions = ineligible
+    ? []
+    : policy.evaluations
+        .map(missingMessage)
+        .filter((item): item is string => item !== null);
 
-  const applicationGuide =
+  const baseGuide =
     getApplicationGuide(policy.policyId, {
       ...options,
       status,
       missingItems: missingConditions,
     }) ?? undefined;
 
+  // FAIL: keep agency/contact/evidence for reference, but no submission steps.
+  const applicationGuide = baseGuide && ineligible
+    ? {
+        ...baseGuide,
+        estimatedMonthlyBenefitNtd: null,
+        nextSteps: [stopStep(baseGuide.programTitle, failedConditions)],
+      }
+    : baseGuide;
+
   return {
     policyId: policy.policyId,
     programTitle: applicationGuide?.programTitle ?? policy.policyId,
     status,
-    estimatedMonthlyBenefitNtd: applicationGuide?.estimatedMonthlyBenefitNtd ?? null,
+    estimatedMonthlyBenefitNtd: ineligible ? null : applicationGuide?.estimatedMonthlyBenefitNtd ?? null,
     benefitSummary: applicationGuide?.benefitAmountFormula,
     ruleResults: policy.evaluations,
     passedConditions,
@@ -223,15 +247,13 @@ function collectMissingItems(
   actual: ScenarioResult,
   whatIf: ScenarioResult
 ): string[] {
+  // Missing data for a program that already FAILed can never make it claimable.
   const evaluations = [
-    ...actual.policyResults.flatMap(
-      (policy) => policy.evaluations
-    ),
-
-    ...whatIf.policyResults.flatMap(
-      (policy) => policy.evaluations
-    ),
-  ];
+    ...actual.policyResults,
+    ...whatIf.policyResults,
+  ]
+    .filter((policy) => policy.eligibilityStatus !== "FAIL")
+    .flatMap((policy) => policy.evaluations);
 
   // 缺少縣市等無規則可評估的必要資訊（例如 LOCAL_COVERAGE_BOUNDARY）
   const unresolvedCoverage = [
@@ -344,17 +366,51 @@ export function buildDecisionPassport(
     )
     .filter((g): g is ApplicationGuide => g !== undefined);
 
-  const guideActionSteps = unique(
-    applicationGuides.flatMap((guide) => guide.nextSteps)
+  const allPrograms = [...actual.programs, ...whatIf.programs];
+  const failedPrograms = allPrograms.filter((program) => program.status === "FAIL");
+  // A program is still worth pursuing only if it is neither FAIL nor outside coverage.
+  const pursuablePrograms = allPrograms.filter(
+    (program) =>
+      program.status !== "FAIL" &&
+      program.status !== "NOT_COVERED" &&
+      program.policyId !== "LOCAL_COVERAGE_BOUNDARY"
+  );
+  const pursuablePolicyIds = new Set(pursuablePrograms.map((program) => program.policyId));
+
+  // Why the path stopped comes first, once per failed program.
+  const stopSteps = unique(
+    failedPrograms.map((program) => stopStep(program.programTitle ?? program.policyId, program.failedConditions))
   );
 
-  const nextSteps = unique([
-    ...missingItems,
-    ...guideActionSteps,
-    "確認所有使用者自述資料與租賃契約書載明事項",
-    "依各方案應備文件清單備妥租約影本、存摺封面及戶籍／就學就業證明",
-    "送件前再次查核受理機關最新官方公告版本",
-  ]);
+  // Submission steps only for programs that can still be pursued in some scenario.
+  const guideActionSteps = unique(
+    applicationGuides
+      .filter((guide) => pursuablePolicyIds.has(guide.policyId))
+      .flatMap((guide) => guide.nextSteps)
+  );
+
+  const upstreamNotes = unique(
+    [...actualResult.policyResults, ...whatIfResult.policyResults]
+      .filter((policy) => policy.blockedByPolicyId && typeof policy.coverageNote === "string")
+      .map((policy) => policy.coverageNote as string)
+  );
+  risks.push(...upstreamNotes);
+
+  const nextSteps = unique(
+    pursuablePrograms.length > 0
+      ? [
+          ...stopSteps,
+          ...missingItems,
+          ...guideActionSteps,
+          "確認所有使用者自述資料與租賃契約書載明事項",
+          "依各方案應備文件清單備妥租約影本、存摺封面及戶籍／就學就業證明",
+          "送件前再次查核受理機關最新官方公告版本",
+        ]
+      : [
+          ...stopSteps,
+          "目前情境下沒有可繼續申辦的已涵蓋方案；若實際條件與本次輸入不同，請更正資料後重新分析",
+        ]
+  );
 
   return {
     caseId,

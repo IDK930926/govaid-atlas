@@ -415,9 +415,14 @@ test("TRACE-F — Provider unavailable triggers safe deterministic fallback and 
   run.runId = "trace-f-provider-unavailable";
 
   assert.equal(run.status, "COMPLETED");
-  assert.equal(run.trace[0]?.proposalRejected, true);
+  // No proposal existed, so nothing was rejected: the outage is a fallback, not a rejection.
+  assert.equal(run.trace[0]?.proposalRejected, false);
+  assert.equal(run.trace[0]?.validationResult, "NOT_APPLICABLE", "no proposal existed, so none was validated");
   assert.equal(run.trace[0]?.rejectionReason, "OLLAMA_PROVIDER_UNAVAILABLE");
   assert.equal(run.trace[0]?.fallbackUsed, true);
+  const actions = run.auditTrail.map((event) => event.action);
+  assert.ok(actions.includes("AGENT_PLANNER_UNAVAILABLE_FALLBACK"));
+  assert.ok(!actions.includes("AGENT_PROPOSAL_REJECTED"), "an outage must not be logged as a rejected proposal");
   assert.notEqual(run.state?.overallEligibilityStatus, "PASS");
   assert.equal(run.state?.overallEligibilityStatus, "PARTIAL_CHECK");
 

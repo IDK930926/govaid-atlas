@@ -7,6 +7,7 @@ import type {
 } from "./types";
 import { getEvidence } from "./evidence";
 import { evaluatePolicyValidity, type RuleEvaluationOptions } from "./rules";
+import type { ScenarioResult } from "./scenario";
 
 export type BuildApplicationGuideOptions = RuleEvaluationOptions & {
   status?: EligibilityStatus;
@@ -18,18 +19,92 @@ export type BuildApplicationGuideOptions = RuleEvaluationOptions & {
 export const RENTAL_SUBSIDY_COMPARISON_METADATA = {
   "臺北市": {
     options: [
-      { description: "中央 R1 第一級單身", minNtd: 3000, maxNtd: 3000 },
+      { policyId: "CENTRAL_RENT_115", description: "中央 R1 第一級單身", minNtd: 3000, maxNtd: 3000 },
     ],
     note: "未設籍臺北市者不適用北市 R6。",
   },
   "新北市": {
     options: [
-      { description: "中央 R1 第二／三級單身", minNtd: 2200, maxNtd: 2400 },
-      { description: "新北青年 R7（符合新北設籍／就學／就業條件）", minNtd: 3500, maxNtd: 3500 },
+      { policyId: "CENTRAL_RENT_115", description: "中央 R1 第二／三級單身", minNtd: 2200, maxNtd: 2400 },
+      { policyId: "NEW_TAIPEI_RENT_115", description: "新北青年 R7（符合新北設籍／就學／就業條件）", minNtd: 3500, maxNtd: 3500 },
     ],
     note: "R7 與中央 R1 擇優，不得重複請領。",
   },
 } as const;
+
+export type RentalSubsidyComparisonEstimate = {
+  maxSubsidy: string;
+  outOfPocket: string;
+  note: string;
+};
+
+function formatNtdRange(minNtd: number, maxNtd: number): string {
+  const min = `NT$${minNtd.toLocaleString()}`;
+  return minNtd === maxNtd ? min : `${min}–NT$${maxNtd.toLocaleString()}`;
+}
+
+/**
+ * Bracket-based rent estimate for the comparison table. A subsidy option is only used
+ * when its program did not FAIL (or fall outside coverage) in this scenario, so a failed
+ * scheme can never produce a "rent after subsidy" figure.
+ */
+export function estimateRentalSubsidyComparison(
+  result: ScenarioResult,
+  registeredCity?: string
+): RentalSubsidyComparisonEstimate {
+  const city = result.scenario.city;
+  const metadata = city === "臺北市" || city === "新北市"
+    ? RENTAL_SUBSIDY_COMPARISON_METADATA[city]
+    : undefined;
+  if (!metadata) {
+    return {
+      maxSubsidy: "目前無可用級距估算",
+      outOfPocket: "—",
+      note: "請以當地主管機關公告為準。",
+    };
+  }
+
+  const statusOf = (policyId: string) =>
+    result.policyResults.find((policy) => policy.policyId === policyId)?.eligibilityStatus;
+  const options = metadata.options.filter((option) => {
+    const status = statusOf(option.policyId);
+    return status !== "FAIL" && status !== "NOT_COVERED";
+  });
+  if (options.length === 0) {
+    return {
+      maxSubsidy: "不適用：本情境已涵蓋之補助方案資格皆未通過",
+      outOfPocket: "不適用（無可估算之補助）",
+      note: "資格未通過之方案不列入補助後租金試算。",
+    };
+  }
+
+  const maxSubsidy = options
+    .map((option) => `${option.description}最高 ${formatNtdRange(option.minNtd, option.maxNtd)} / 月`)
+    .join("；");
+  const rent = result.scenario.monthlyRent;
+  const outOfPocket = rent > 0
+    ? (() => {
+        const ranges = options.map((option) => ({
+          min: Math.max(0, rent - option.maxNtd),
+          max: Math.max(0, rent - option.minNtd),
+        }));
+        const min = Math.min(...ranges.map((range) => range.min));
+        const max = Math.max(...ranges.map((range) => range.max));
+        return `約 ${formatNtdRange(min, max)} / 月起`;
+      })()
+    : "填入月租後估算";
+  const note = city === "臺北市" && registeredCity === "臺北市"
+    ? "此估算僅列中央 R1，未估算須依資格核定的北市 R6 加碼。"
+    : options.length < metadata.options.length
+      ? "已排除本情境資格未通過之方案。"
+      : metadata.note;
+
+  return {
+    maxSubsidy: `${maxSubsidy}；${note}`,
+    outOfPocket,
+    note: "依月租扣除最高補助試算；實際金額以主管機關核定級距為準。",
+  };
+}
 
 function sourcesFor(ids: string[]): EvidenceRecord[] {
   return ids

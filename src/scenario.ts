@@ -39,6 +39,10 @@ export type PolicyResult = {
   // User-facing claim: never PASS unless the policy is completely encoded.
   eligibilityStatus: EligibilityStatus;
   coverageNote?: string;
+  // Upstream program this one requires (derived from its encoded rules), if any.
+  requiresPolicyId?: string;
+  // Set when that upstream program has FAILed in the same scenario.
+  blockedByPolicyId?: string;
 };
 
 export type ScenarioResult = {
@@ -55,6 +59,10 @@ export type PolicySets = {
   newTaipei: PolicyRule[];
   taoyuan?: PolicyRule[];
 };
+
+// Encoded rule field meaning "this program requires an approved central rental subsidy".
+const CENTRAL_APPROVAL_FIELD = "centralRentApproved";
+const CENTRAL_POLICY_ID = "CENTRAL_RENT_115";
 
 function evaluatePolicy(
   policyId: string,
@@ -83,6 +91,9 @@ function evaluatePolicy(
       eligibilityStatus === "PARTIAL_CHECK"
         ? PARTIAL_CHECK_NOTE
         : undefined,
+    ...(policyId !== CENTRAL_POLICY_ID && rules.some((rule) => rule.field === CENTRAL_APPROVAL_FIELD)
+      ? { requiresPolicyId: CENTRAL_POLICY_ID }
+      : {}),
   };
 }
 
@@ -99,6 +110,28 @@ function coverageBoundaryResult(
         : "UNCERTAIN",
     coverageNote: coverage.message,
   };
+}
+
+export const UPSTREAM_CENTRAL_FAIL_NOTE =
+  "此方案須先取得中央租金補貼核定；本情境中央租金補貼資格未通過，因此無法申請此方案。";
+
+/**
+ * A local program whose encoded rules require central approval cannot remain "possibly
+ * claimable" when the central program FAILs in the same scenario. Only the user-facing
+ * eligibilityStatus changes; the rule-level overallStatus (benchmark input) is untouched.
+ */
+function applyUpstreamCentralDependency(policyResults: PolicyResult[]): void {
+  const central = policyResults.find((policy) => policy.policyId === CENTRAL_POLICY_ID);
+  if (central?.eligibilityStatus !== "FAIL") {
+    return;
+  }
+  for (const policy of policyResults) {
+    if (policy !== central && policy.requiresPolicyId === CENTRAL_POLICY_ID && policy.eligibilityStatus !== "FAIL") {
+      policy.eligibilityStatus = "FAIL";
+      policy.coverageNote = UPSTREAM_CENTRAL_FAIL_NOTE;
+      policy.blockedByPolicyId = CENTRAL_POLICY_ID;
+    }
+  }
 }
 
 export function evaluateScenario(
@@ -164,6 +197,8 @@ export function evaluateScenario(
       coverageBoundaryResult(coverage)
     );
   }
+
+  applyUpstreamCentralDependency(policyResults);
 
   return {
     scenario,

@@ -5,7 +5,8 @@ import type { BenefitDomain } from "./types";
 // Anything outside this boundary must be reported as NOT_COVERED (or missing
 // information), never silently routed to another rule set and never as PASS.
 
-export type CoverageDomain = "RENTAL_SUBSIDY" | "CHILDCARE";
+// OTHER: a recognized request for a domain the product does not cover (never rental).
+export type CoverageDomain = "RENTAL_SUBSIDY" | "CHILDCARE" | "OTHER";
 
 export type OfficialReferral = {
   label: string;
@@ -95,7 +96,42 @@ const UNSUPPORTED_GENERAL_KEYWORDS = [
   "勞保",
   "健保",
   "重陽",
+  "敬老",
+  "假牙",
+  "農民",
+  "漁民",
+  "學貸",
+  "就學貸款",
+  "獎學金",
 ];
+
+// Words that make a request a housing / rental request.
+const HOUSING_KEYWORDS = ["租", "房", "住宅", "住屋", "居住", "rent", "housing", "lease"];
+
+function isHousingQuery(text: string): boolean {
+  return HOUSING_KEYWORDS.some((keyword) => text.includes(keyword));
+}
+
+const OUTSIDE_VERIFIED_COVERAGE_MESSAGE =
+  "您查詢的政策／領域不在目前已驗證的涵蓋範圍內（Requested policy/domain is outside current verified coverage）。目前版本僅涵蓋特定租屋補貼與未滿2歲育兒津貼，因此無法作成該項補助之資格判定，也不會改以租屋補貼回答。這不代表您無法申請，請以主管機關官方公告為準。";
+
+const GENERAL_WELFARE_REFERRALS: OfficialReferral[] = [
+  {
+    label: "衛生福利部 1957 福利諮詢專線",
+    agency: "衛生福利部",
+    url: "https://1957.mohw.gov.tw/",
+  },
+];
+
+function outsideVerifiedCoverage(): CoverageAssessment {
+  return {
+    status: "NOT_COVERED",
+    domain: "OTHER",
+    reason: "UNSUPPORTED_DOMAIN_NOT_IMPLEMENTED",
+    message: OUTSIDE_VERIFIED_COVERAGE_MESSAGE,
+    officialReferrals: GENERAL_WELFARE_REFERRALS,
+  };
+}
 
 export function isLocalOnlyHousingQuery(goal: string): boolean {
   const text = goal.toLowerCase();
@@ -214,10 +250,22 @@ export function assessQueryCoverage(goal: string): CoverageAssessment {
     };
   }
 
-  // Check if query explicitly targets an unsupported city for housing / rental subsidy
   const normalizedText = text.replace(/台/g, "臺");
+  const housingQuery = isHousingQuery(normalizedText);
+
+  // Another domain (e.g. "花蓮縣老人假牙補助", "農民津貼") is never reinterpreted as a
+  // rental-subsidy request and never sent to rental-subsidy resources.
+  // Generic requests without a domain keyword (e.g. "檢查補助資格") keep the existing default.
+  if (
+    !housingQuery &&
+    UNSUPPORTED_GENERAL_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))
+  ) {
+    return outsideVerifiedCoverage();
+  }
+
+  // Check if query explicitly targets an unsupported city for housing / rental subsidy
   const matchedCity = TAIWAN_CITIES.find((c) => normalizedText.includes(c));
-  if (matchedCity && !(ALL_COVERED_HOUSING_CITIES as readonly string[]).includes(matchedCity)) {
+  if (housingQuery && matchedCity && !(ALL_COVERED_HOUSING_CITIES as readonly string[]).includes(matchedCity)) {
     return {
       status: "NOT_COVERED",
       domain: "RENTAL_SUBSIDY",

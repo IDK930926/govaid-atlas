@@ -674,6 +674,16 @@ export function decideNextStep(context: {
   };
 }
 
+/**
+ * Trace validation label. A provider outage produced no proposal, so nothing was
+ * validated: it is NOT_APPLICABLE, never "VALID" and never "REJECTED".
+ */
+function traceValidationResult(validation: ProposalValidationResult, rawEntry: unknown): "VALID" | "REJECTED" | "NOT_APPLICABLE" {
+  if (validation.proposalRejected) return "REJECTED";
+  if (!rawEntry || validation.validationStage === "PROVIDER_UNAVAILABLE") return "NOT_APPLICABLE";
+  return "VALID";
+}
+
 function selectDeterministicToolDecision(state: InternalExecutionState): AgentDecision {
   if (state.domain === "CHILDCARE") {
     if (!state.completedTools.includes("evaluate_childcare_rules")) {
@@ -1043,18 +1053,26 @@ function executeBoundedSteps(
 
     if (rawEntry !== undefined && rawEntry !== null) {
       if (providerResult && providerResult.providerStatus === "UNAVAILABLE" && !rawDecision) {
+        // No proposal exists, so nothing was "rejected": the planner timed out or was
+        // unavailable and the deterministic workflow takes over. Label exactly that.
+        const plannerTimedOut =
+          providerResult.errorClass === "TIMEOUT" || providerResult.error === "AGENT_PROVIDER_TIMEOUT";
         validation = {
           valid: false,
           validationStage: "PROVIDER_UNAVAILABLE",
-          proposalRejected: true,
+          proposalRejected: false,
           rejectionReason: providerResult.error ?? "AGENT_PROVIDER_UNAVAILABLE",
         };
         fallbackUsed = true;
         selectedDecision = selectDeterministicToolDecision(state);
         currentRun = appendAuditTrail(
           currentRun,
-          "AGENT_PROPOSAL_REJECTED",
-          { step: currentRun.stepsTaken + 1, reason: validation.rejectionReason },
+          plannerTimedOut ? "AGENT_PLANNER_TIMEOUT_FALLBACK" : "AGENT_PLANNER_UNAVAILABLE_FALLBACK",
+          {
+            step: currentRun.stepsTaken + 1,
+            reason: validation.rejectionReason,
+            errorClass: providerResult.errorClass ?? null,
+          },
           { fallbackDecision: selectedDecision },
           "AGENTIC-ROUTER",
           "SYSTEM"
@@ -1141,7 +1159,7 @@ function executeBoundedSteps(
         plannerReasoningSummary,
         selectedTool: null,
         toolArgumentsSafeSummary: null,
-        validationResult: validation.proposalRejected ? "REJECTED" : rawEntry ? "VALID" : "NOT_APPLICABLE",
+        validationResult: traceValidationResult(validation, rawEntry),
         proposalRejected: validation.proposalRejected,
         rejectionReason: validation.rejectionReason,
         toolResultSummary: "HUMAN_REVIEW_REQUIRED",
@@ -1204,7 +1222,7 @@ function executeBoundedSteps(
         plannerReasoningSummary,
         selectedTool: "request_missing_field",
         toolArgumentsSafeSummary: { field: missingField },
-        validationResult: validation.proposalRejected ? "REJECTED" : rawEntry ? "VALID" : "NOT_APPLICABLE",
+        validationResult: traceValidationResult(validation, rawEntry),
         proposalRejected: validation.proposalRejected,
         rejectionReason: validation.rejectionReason,
         toolResultSummary: `Missing field requested: ${missingField}`,
@@ -1263,7 +1281,7 @@ function executeBoundedSteps(
         plannerReasoningSummary,
         selectedTool: "complete",
         toolArgumentsSafeSummary: {},
-        validationResult: validation.proposalRejected ? "REJECTED" : rawEntry ? "VALID" : "NOT_APPLICABLE",
+        validationResult: traceValidationResult(validation, rawEntry),
         proposalRejected: validation.proposalRejected,
         rejectionReason: validation.rejectionReason,
         toolResultSummary: `Workflow completed with eligibilityStatus=${String(state.overallEligibilityStatus ?? "PARTIAL_CHECK")}`,
@@ -1342,7 +1360,7 @@ function executeBoundedSteps(
         plannerReasoningSummary,
         selectedTool: toolName,
         toolArgumentsSafeSummary: safeSummary,
-        validationResult: validation.proposalRejected ? "REJECTED" : rawEntry ? "VALID" : "NOT_APPLICABLE",
+        validationResult: traceValidationResult(validation, rawEntry),
         proposalRejected: validation.proposalRejected,
         rejectionReason: validation.rejectionReason,
         toolResultSummary: toolResult.summary,
@@ -1421,7 +1439,7 @@ function executeBoundedSteps(
         plannerReasoningSummary,
         selectedTool: toolName,
         toolArgumentsSafeSummary: safeSummary,
-        validationResult: validation.proposalRejected ? "REJECTED" : rawEntry ? "VALID" : "NOT_APPLICABLE",
+        validationResult: traceValidationResult(validation, rawEntry),
         proposalRejected: validation.proposalRejected,
         rejectionReason: validation.rejectionReason,
         toolResultSummary: toolResult.summary,
@@ -1466,7 +1484,7 @@ function executeBoundedSteps(
       plannerReasoningSummary,
       selectedTool: toolName,
       toolArgumentsSafeSummary: safeSummary,
-      validationResult: validation.proposalRejected ? "REJECTED" : rawEntry ? "VALID" : "NOT_APPLICABLE",
+      validationResult: traceValidationResult(validation, rawEntry),
       proposalRejected: validation.proposalRejected,
       rejectionReason: validation.rejectionReason,
       toolResultSummary: toolResult.summary,

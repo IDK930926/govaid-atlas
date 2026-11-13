@@ -1,7 +1,7 @@
 {
   "schemaVersion": "wave2-trace-v1",
   "runId": "trace-f-provider-unavailable",
-  "exportedAt": "2026-11-11T03:03:59.816Z",
+  "exportedAt": "2026-11-13T07:51:53.820Z",
   "goalSummary": "模型離線時檢查租屋補助",
   "maxSteps": 8,
   "stepsTaken": 1,
@@ -10,8 +10,8 @@
   "coverageStatus": "COVERED",
   "events": [
     {
-      "timestamp": "2026-11-11T03:03:59.816Z",
-      "runId": "agent-1794366239816-7ac510",
+      "timestamp": "2026-11-13T07:51:53.816Z",
+      "runId": "agent-1794556313806-65db7b",
       "step": 1,
       "currentStateSummary": {
         "status": "RUNNING_TOOL",
@@ -51,8 +51,8 @@
           "newTaipeiResidenceStudyWork"
         ]
       },
-      "validationResult": "REJECTED",
-      "proposalRejected": true,
+      "validationResult": "NOT_APPLICABLE",
+      "proposalRejected": false,
       "rejectionReason": "OLLAMA_PROVIDER_UNAVAILABLE",
       "toolResultSummary": "Central rules evaluated: PARTIAL_CHECK",
       "coverageStatus": "COVERED",
@@ -60,12 +60,12 @@
       "humanGate": null,
       "fallbackUsed": true,
       "provider": "OLLAMA",
-      "latencyMs": 0.194,
+      "latencyMs": 3.459,
       "finalStatus": "RUNNING_TOOL"
     },
     {
-      "timestamp": "2026-11-11T03:03:59.816Z",
-      "runId": "agent-1794366239816-7ac510",
+      "timestamp": "2026-11-13T07:51:53.818Z",
+      "runId": "agent-1794556313806-65db7b",
       "step": 2,
       "currentStateSummary": {
         "status": "RUNNING_TOOL",
@@ -104,12 +104,12 @@
       "humanGate": null,
       "fallbackUsed": false,
       "provider": "DETERMINISTIC",
-      "latencyMs": 0.103,
+      "latencyMs": 1.148,
       "finalStatus": "RUNNING_TOOL"
     },
     {
-      "timestamp": "2026-11-11T03:03:59.816Z",
-      "runId": "agent-1794366239816-7ac510",
+      "timestamp": "2026-11-13T07:51:53.819Z",
+      "runId": "agent-1794556313806-65db7b",
       "step": 3,
       "currentStateSummary": {
         "status": "RUNNING_TOOL",
@@ -149,12 +149,12 @@
       "humanGate": null,
       "fallbackUsed": false,
       "provider": "DETERMINISTIC",
-      "latencyMs": 0.086,
+      "latencyMs": 0.459,
       "finalStatus": "RUNNING_TOOL"
     },
     {
-      "timestamp": "2026-11-11T03:03:59.816Z",
-      "runId": "agent-1794366239816-7ac510",
+      "timestamp": "2026-11-13T07:51:53.819Z",
+      "runId": "agent-1794556313806-65db7b",
       "step": 4,
       "currentStateSummary": {
         "status": "RUNNING_TOOL",
@@ -194,12 +194,12 @@
       "humanGate": null,
       "fallbackUsed": false,
       "provider": "DETERMINISTIC",
-      "latencyMs": 0.051,
+      "latencyMs": 0.45,
       "finalStatus": "RUNNING_TOOL"
     },
     {
-      "timestamp": "2026-11-11T03:03:59.816Z",
-      "runId": "agent-1794366239816-7ac510",
+      "timestamp": "2026-11-13T07:51:53.819Z",
+      "runId": "agent-1794556313806-65db7b",
       "step": 1,
       "currentStateSummary": {
         "status": "COMPLETED",
@@ -237,7 +237,7 @@
       "humanGate": null,
       "fallbackUsed": false,
       "provider": "DETERMINISTIC",
-      "latencyMs": 0.016,
+      "latencyMs": 0.086,
       "finalStatus": "COMPLETED"
     }
   ]
