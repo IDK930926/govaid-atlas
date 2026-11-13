@@ -54,6 +54,9 @@ export type PassportProgram = {
   coverageNote?: string;
 };
 
+export const WHAT_IF_RISK_NOTE =
+  "WHAT-IF 為假設搬遷情境，不代表目前已取得該地址之補助資格";
+
 export type PassportScenario = {
   type: "ACTUAL" | "WHAT_IF";
   address: string;
@@ -349,9 +352,7 @@ export function buildDecisionPassport(
     risks.push(PARTIAL_CHECK_NOTE);
   }
 
-  risks.push(
-    "WHAT-IF 為假設搬遷情境，不代表目前已取得該地址之補助資格"
-  );
+  risks.push(WHAT_IF_RISK_NOTE);
 
   const applicationGuides = unique(
     [...actual.programs, ...whatIf.programs]

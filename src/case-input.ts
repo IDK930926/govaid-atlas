@@ -284,7 +284,12 @@ export type CasePreset = {
   domain: BenefitDomain;
   applicant: ApplicantProfile;
   actualScenario: AddressScenario;
-  whatIfScenario: AddressScenario;
+  /**
+   * Relocation / option-B scenario. Only presets whose goal explicitly asks for a
+   * comparison define one; when absent the case has NO what-if (no comparison UI,
+   * no what-if-city local program is evaluated).
+   */
+  whatIfScenario?: AddressScenario;
 };
 
 export const DEFAULT_GOAL =
@@ -307,7 +312,7 @@ export const CASE_PRESETS: readonly CasePreset[] = [
     domain: "HOUSING",
     applicant: PRESET_TAOYUAN_APPLICANT,
     actualScenario: TAOYUAN_ACTUAL_SCENARIO,
-    whatIfScenario: WENSHAN_WHAT_IF_SCENARIO,
+    // Navigation-only preset: the goal never asks for a relocation comparison.
   },
   {
     id: "childcare-under2",
@@ -681,9 +686,9 @@ function buildHousingCase(
       city: whatIfCityOverride,
       monthlyRent: extracted.dualCityComparison
         ? monthlyRent
-        : preset?.whatIfScenario.monthlyRent ?? (extracted.whatIfCity ? extracted.whatIfMonthlyRent ?? 0 : monthlyRent),
+        : preset?.whatIfScenario?.monthlyRent ?? (extracted.whatIfCity ? extracted.whatIfMonthlyRent ?? 0 : monthlyRent),
     };
-  } else if (preset) {
+  } else if (preset?.whatIfScenario) {
     whatIfScenario = { ...preset.whatIfScenario };
   } else if (extracted.whatIfCity) {
     whatIfScenario = {
