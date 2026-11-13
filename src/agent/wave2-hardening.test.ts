@@ -28,6 +28,7 @@ import {
   server,
   setRateLimitMaxRequests,
 } from "../server";
+import plannerApiHandler from "../../api/agent/plan";
 import vercelApiHandler from "../vercel-handler";
 import type { AddressScenario, ApplicantProfile } from "../types";
 
@@ -107,6 +108,7 @@ function invokeServer(options: {
   parsedBody?: unknown;
   serverless?: boolean;
   bundled?: boolean;
+  plannerEndpoint?: boolean;
   headers?: Record<string, string>;
   remoteAddress?: string;
 }): Promise<{ statusCode: number; headers: Record<string, string>; json: Record<string, unknown> }> {
@@ -155,7 +157,9 @@ function invokeServer(options: {
       },
     } as unknown as ServerResponse;
 
-    const handler = options.bundled
+    const handler = options.plannerEndpoint
+      ? plannerApiHandler
+      : options.bundled
       ? bundledVercelApiHandler
       : options.serverless
         ? vercelApiHandler
@@ -627,6 +631,36 @@ test("Vercel API — planning response reports OpenAI cloud runtime information"
   assert.equal(response.json.available, true);
   assert.equal(response.json.mode, "cloud");
   assert.equal(typeof response.json.model, "string");
+});
+
+test("Vercel API — dedicated planner route normalizes stripped function paths", async () => {
+  process.env.AGENT_PROVIDER = "ollama";
+  process.env.OLLAMA_MODEL = "qwen3.5:4b";
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) =>
+    init?.method === "POST"
+      ? new Response(JSON.stringify({
+          message: {
+            content: JSON.stringify({
+              reasoningSummary: "Use the deterministic housing rules.",
+              nextAction: "CALL_TOOL",
+              toolName: "evaluate_central_rules",
+            }),
+          },
+          prompt_eval_count: 11,
+          eval_count: 5,
+        }), { status: 200 })
+      : new Response(JSON.stringify({ models: [{ name: "qwen3.5:4b" }] }), { status: 200 })) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "POST",
+    url: "/agent/plan",
+    parsedBody: { goal: "Check rent subsidy" },
+    plannerEndpoint: true,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json.provider, "OLLAMA");
+  assert.equal(response.json.model, "qwen3.5:4b");
+  assert.equal(response.json.available, true, JSON.stringify(response.json));
 });
 
 test("Vercel API — planning response exposes a safe OpenAI model failure reason", async () => {

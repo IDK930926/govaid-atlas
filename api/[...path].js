@@ -1322,6 +1322,7 @@ function getClientIp(request) {
 }
 async function handleRequest(request, response) {
   const url = new import_node_url.URL(request.url ?? "/", "http://localhost");
+  const pathname = url.pathname === "/agent/plan" ? "/api/agent/plan" : url.pathname;
   if (request.method === "GET" && url.pathname === "/api/health") {
     const health = await getProviderHealth();
     const available = health.providerStatus === "AVAILABLE";
@@ -1342,7 +1343,7 @@ async function handleRequest(request, response) {
     });
     return;
   }
-  if (request.method === "POST" && url.pathname === "/api/agent/plan") {
+  if (request.method === "POST" && pathname === "/api/agent/plan") {
     const clientIp = getClientIp(request);
     const rateStatus = checkRateLimit(clientIp);
     if (!rateStatus.allowed) {

@@ -1850,10 +1850,20 @@ function hasTaipeiStudyWithTaoyuanRegistration(passport: DecisionPassport, goal:
     && extractFactsFromGoal(goal, "HOUSING").studyCity === "臺北市";
 }
 
-function buildVerdicts(passport: DecisionPassport, newTaipeiStudentHint = false): ProgramVerdict[] {
+function buildVerdicts(
+  passport: DecisionPassport,
+  newTaipeiStudentHint = false,
+  dualCityComparison = false,
+): ProgramVerdict[] {
   const scenarios = [
-    {label: `目前住址 · ${shortPlace(passport.actual)}`, data: passport.actual},
-    {label: `搬遷假設 · ${shortPlace(passport.whatIf)}`, data: passport.whatIf},
+    {
+      label: `${dualCityComparison ? "方案 A" : "目前住址"} · ${shortPlace(passport.actual)}`,
+      data: passport.actual,
+    },
+    {
+      label: `${dualCityComparison ? "方案 B" : "搬遷假設"} · ${shortPlace(passport.whatIf)}`,
+      data: passport.whatIf,
+    },
   ];
   const order: string[] = [];
   const byPolicy = new Map<string, {label: string; status: ResultStatus; gap: string | null}[]>();
@@ -1880,7 +1890,9 @@ function buildVerdicts(passport: DecisionPassport, newTaipeiStudentHint = false)
       return [{
         policyId,
         status: entries[0].status,
-        scope: entries.length > 1 ? "兩個地址皆適用" : entries[0].label,
+        scope: entries.length > 1
+          ? dualCityComparison ? "方案 A、B 皆適用" : "兩個地址皆適用"
+          : entries[0].label,
         gap: entries.find((entry) => entry.gap)?.gap ?? null,
       }];
     }
@@ -1928,7 +1940,7 @@ function ResultView({
   const dualCityComparison = passport.domain !== "CHILDCARE"
     && extractFactsFromGoal(run.goal, "HOUSING").dualCityComparison === true;
   const newTaipeiStudentHint = hasTaipeiStudyWithTaoyuanRegistration(passport, run.goal);
-  const verdicts = buildVerdicts(passport, newTaipeiStudentHint);
+  const verdicts = buildVerdicts(passport, newTaipeiStudentHint, dualCityComparison);
   const certain = verdicts.filter((verdict) => verdict.status === "PASS" || verdict.status === "FAIL");
   const pending = verdicts.filter((verdict) => verdict.status !== "PASS" && verdict.status !== "FAIL");
   const resumeIndex = run.auditTrail.findIndex((event) => event.action === "AGENT_RESUMED");

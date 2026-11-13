@@ -255,6 +255,7 @@ function getClientIp(request: IncomingMessage): string {
 
 export async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
+  const pathname = url.pathname === "/agent/plan" ? "/api/agent/plan" : url.pathname;
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     const health = await getProviderHealth();
@@ -277,7 +278,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     return;
   }
 
-  if (request.method === "POST" && url.pathname === "/api/agent/plan") {
+  if (request.method === "POST" && pathname === "/api/agent/plan") {
     const clientIp = getClientIp(request);
     const rateStatus = checkRateLimit(clientIp);
     if (!rateStatus.allowed) {
