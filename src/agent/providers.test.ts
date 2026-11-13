@@ -111,7 +111,7 @@ test("P1 — auto + valid OpenAI selects OpenAI with strict Responses API struct
 
   assert.equal(result.provider, "OPENAI");
   assert.equal(result.providerStatus, "AVAILABLE");
-  assert.equal(result.model, "gpt-5.4-mini");
+  assert.equal(result.model, "gpt-4o-mini");
   assert.equal(result.decision?.toolName, "evaluate_central_rules");
   assert.equal(result.decision?.humanQuestion, undefined, "null normalised to undefined");
   assert.equal(result.fallbackCount, 0);
@@ -125,7 +125,49 @@ test("P1 — auto + valid OpenAI selects OpenAI with strict Responses API struct
   assert.deepEqual([...body.text.format.schema.required].sort(), Object.keys(body.text.format.schema.properties).sort());
   assert.equal(body.response_format, undefined, "legacy Chat Completions param must not be sent");
   assert.equal(body.tools, undefined, "no function tools: orchestrator executes allowlisted tools itself");
+  assert.equal(body.reasoning, undefined, "GPT-4o models do not receive reasoning-only parameters");
   assert.equal(body.store, false);
+});
+
+test("P1A — unavailable configured OpenAI model retries once with gpt-4o-mini", async () => {
+  auto();
+  process.env.OPENAI_MODEL = "gpt-5.4-mini";
+  const calls = installFetch({
+    openai: async () => calls.openai === 1
+      ? new Response('{"error":{"message":"model unavailable"}}', { status: 404 })
+      : openaiOk(),
+  });
+  const result = await callPlanner({ goal: GOLDEN_GOAL, availableTools: ["evaluate_central_rules"] });
+
+  assert.equal(result.provider, "OPENAI");
+  assert.equal(result.providerStatus, "AVAILABLE");
+  assert.equal(result.model, "gpt-4o-mini");
+  assert.deepEqual(calls.bodies.map((body) => body.model), ["gpt-5.4-mini", "gpt-4o-mini"]);
+  assert.deepEqual(calls.bodies[0].reasoning, { effort: "low" });
+  assert.equal(calls.bodies[1].reasoning, undefined);
+  assert.deepEqual(result.attempts?.map((attempt) => [attempt.model, attempt.outcome, attempt.errorClass]), [
+    ["gpt-5.4-mini", "FAILED", "MODEL_NOT_AVAILABLE"],
+    ["gpt-4o-mini", "COMPLETED", undefined],
+  ]);
+  assert.ok(actions(result).includes("AGENT_MODEL_FALLBACK"));
+  assert.equal(calls.ollamaChat, 0);
+});
+
+test("P1B — invalid model and fallback model failures both return unavailable", async () => {
+  auto();
+  process.env.AGENT_PROVIDER = "openai";
+  process.env.OPENAI_MODEL = "gpt-5.4-mini";
+  const calls = installFetch({
+    openai: async () => new Response('{"error":{"message":"unsupported parameter"}}', { status: 400 }),
+  });
+  const result = await callPlanner({ goal: GOLDEN_GOAL, availableTools: ["evaluate_central_rules"] });
+
+  assert.equal(calls.openai, 2);
+  assert.deepEqual(calls.bodies.map((body) => body.model), ["gpt-5.4-mini", "gpt-4o-mini"]);
+  assert.equal(result.providerStatus, "UNAVAILABLE");
+  assert.equal(result.errorClass, "BAD_REQUEST");
+  assert.deepEqual(result.attempts?.map((attempt) => attempt.outcome), ["FAILED", "FAILED"]);
+  assert.equal(result.decision, undefined);
 });
 
 test("P2 — auto + missing OpenAI key + Ollama available falls back to Ollama without calling OpenAI", async () => {
@@ -286,6 +328,7 @@ test("P10 — unknown tool remains denied; openai mode never silently switches p
 
 test("P11 — real OpenAI usage maps into Runtime Metrics with estimated cloud cost", async () => {
   auto();
+  process.env.OPENAI_MODEL = "gpt-5.4-mini";
   installFetch({ openai: async () => openaiOk() });
   const result = await callPlanner({ goal: GOLDEN_GOAL, availableTools: ["evaluate_central_rules"] });
 

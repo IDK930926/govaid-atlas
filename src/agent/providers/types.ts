@@ -80,12 +80,15 @@ export type ProviderAuditEvent = {
     | "AGENT_PROVIDER_CALL_STARTED"
     | "AGENT_PROVIDER_CALL_COMPLETED"
     | "AGENT_PROVIDER_CALL_FAILED"
+    | "AGENT_MODEL_FALLBACK"
     | "AGENT_PROVIDER_FALLBACK"
     | "AGENT_PROVIDER_UNAVAILABLE";
   detail: {
     mode?: ProviderMode;
     provider?: ProviderName;
     model?: string;
+    fromModel?: string;
+    toModel?: string;
     from?: ProviderName;
     to?: ProviderName;
     latencyMs?: number;

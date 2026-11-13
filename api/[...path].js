@@ -299,6 +299,9 @@ function positiveInt(raw, fallback) {
 function getOpenAIModel() {
   return getEnv2().OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
 }
+function supportsReasoningEffort(model) {
+  return /^gpt-5(?:[.-]|$)/i.test(model);
+}
 function getOpenAITimeoutMs() {
   return positiveInt(getEnv2().OPENAI_TIMEOUT_MS, DEFAULT_OPENAI_TIMEOUT_MS);
 }
@@ -340,9 +343,9 @@ async function healthCheckOpenAI() {
     return healthFailure(model, classifyThrownError(error));
   }
 }
-async function callOpenAIPlanner(input) {
+async function callOpenAIPlanner(input, modelOverride = getOpenAIModel()) {
   const apiKey = getEnv2().OPENAI_API_KEY?.trim();
-  const model = getOpenAIModel();
+  const model = modelOverride;
   if (!apiKey) {
     return failure(model, "MISSING_API_KEY", false);
   }
@@ -363,7 +366,7 @@ Return only a valid decision that follows the required schema. Use null for tool
         schema: OPENAI_AGENT_DECISION_SCHEMA
       }
     },
-    reasoning: { effort: getEnv2().OPENAI_REASONING_EFFORT?.trim() || "low" },
+    ...supportsReasoningEffort(model) ? { reasoning: { effort: getEnv2().OPENAI_REASONING_EFFORT?.trim() || "low" } } : {},
     max_output_tokens: 2048,
     store: false
   };
@@ -430,12 +433,13 @@ Return only a valid decision that follows the required schema. Use null for tool
     usage
   };
 }
-var DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_TIMEOUT_MS, DEFAULT_OPENAI_HEALTH_TIMEOUT_MS, OPENAI_BASE_URL, OPENAI_AGENT_DECISION_SCHEMA;
+var DEFAULT_OPENAI_MODEL, OPENAI_FALLBACK_MODEL, DEFAULT_OPENAI_TIMEOUT_MS, DEFAULT_OPENAI_HEALTH_TIMEOUT_MS, OPENAI_BASE_URL, OPENAI_AGENT_DECISION_SCHEMA;
 var init_openai = __esm({
   "src/agent/providers/openai.ts"() {
     "use strict";
     init_types();
-    DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
+    DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+    OPENAI_FALLBACK_MODEL = DEFAULT_OPENAI_MODEL;
     DEFAULT_OPENAI_TIMEOUT_MS = 2e4;
     DEFAULT_OPENAI_HEALTH_TIMEOUT_MS = 5e3;
     OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -497,6 +501,9 @@ function modelFor(provider) {
 }
 function safeReason(provider, errorClass) {
   return `${PROVIDER_LABEL[provider]} unavailable (${errorClass ?? "PROVIDER_UNAVAILABLE"})`;
+}
+function shouldRetryOpenAIModel(errorClass) {
+  return errorClass === "MODEL_NOT_AVAILABLE" || errorClass === "BAD_REQUEST";
 }
 async function getProviderHealth() {
   const mode = getProviderMode();
@@ -582,7 +589,8 @@ async function callProviderWithTimeout(provider, model, caller, input, timeoutMs
         });
       }, timeoutMs);
     });
-    return await Promise.race([caller(input), timeoutPromise]);
+    const request = provider === "OPENAI" ? caller(input, model) : caller(input);
+    return await Promise.race([request, timeoutPromise]);
   } finally {
     if (timer !== void 0) {
       clearTimeout(timer);
@@ -625,37 +633,90 @@ async function callPlanner(input, deps = {}) {
     const provider = chain[index];
     const model = modelFor(provider);
     emit("AGENT_PROVIDER_SELECTED", { mode, provider, model });
-    const started = now();
-    let result;
+    const providerResults = [];
     if (provider === "OPENAI" && !isOpenAIConfigured()) {
-      result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: false, error: "OPENAI_MISSING_API_KEY", errorClass: "MISSING_API_KEY" };
+      providerResults.push({
+        model,
+        result: {
+          provider,
+          providerStatus: "UNAVAILABLE",
+          model,
+          callAttempted: false,
+          error: "OPENAI_MISSING_API_KEY",
+          errorClass: "MISSING_API_KEY"
+        },
+        latencyMs: 0
+      });
     } else {
-      emit("AGENT_PROVIDER_CALL_STARTED", { provider, model });
-      try {
-        result = await callProviderWithTimeout(provider, model, callers[provider], input, timeoutMs);
-      } catch {
-        result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: true, errorClass: "NETWORK_ERROR" };
+      const callModel = async (attemptModel) => {
+        emit("AGENT_PROVIDER_CALL_STARTED", { provider, model: attemptModel });
+        const started = now();
+        let result2;
+        try {
+          result2 = await callProviderWithTimeout(provider, attemptModel, callers[provider], input, timeoutMs);
+        } catch {
+          result2 = {
+            provider,
+            providerStatus: "UNAVAILABLE",
+            model: attemptModel,
+            callAttempted: true,
+            errorClass: "NETWORK_ERROR"
+          };
+        }
+        providerResults.push({
+          model: attemptModel,
+          result: result2,
+          latencyMs: Math.max(0, now() - started)
+        });
+        return result2;
+      };
+      let result = await callModel(model);
+      if (provider === "OPENAI" && model !== OPENAI_FALLBACK_MODEL && result.callAttempted !== false && result.providerStatus !== "AVAILABLE" && shouldRetryOpenAIModel(result.errorClass)) {
+        const errorClass2 = result.errorClass ?? "PROVIDER_UNAVAILABLE";
+        emit("AGENT_MODEL_FALLBACK", {
+          provider,
+          fromModel: model,
+          toModel: OPENAI_FALLBACK_MODEL,
+          model: OPENAI_FALLBACK_MODEL,
+          errorClass: errorClass2,
+          reason: `Retrying with ${OPENAI_FALLBACK_MODEL} after ${errorClass2}`
+        });
+        result = await callModel(OPENAI_FALLBACK_MODEL);
       }
     }
-    lastResult = result;
-    const latencyMs = Math.max(0, now() - started);
-    const succeeded = result.providerStatus === "AVAILABLE" && Boolean(result.decision);
-    const errorClass = succeeded ? void 0 : result.errorClass ?? "PROVIDER_UNAVAILABLE";
-    attempts.push({
-      provider,
-      model: result.model || model,
-      callAttempted: result.callAttempted ?? false,
-      outcome: succeeded ? "COMPLETED" : "FAILED",
-      latencyMs,
-      errorClass,
-      usage: result.usage
-    });
-    if (succeeded) {
-      emit("AGENT_PROVIDER_CALL_COMPLETED", {
+    let successfulResult;
+    for (const providerResult of providerResults) {
+      const result = providerResult.result;
+      lastResult = result;
+      const succeeded = result.providerStatus === "AVAILABLE" && Boolean(result.decision);
+      const errorClass2 = succeeded ? void 0 : result.errorClass ?? "PROVIDER_UNAVAILABLE";
+      attempts.push({
         provider,
-        model: result.model,
-        latencyMs: Math.round(latencyMs)
+        model: result.model || providerResult.model,
+        callAttempted: result.callAttempted ?? false,
+        outcome: succeeded ? "COMPLETED" : "FAILED",
+        latencyMs: providerResult.latencyMs,
+        errorClass: errorClass2,
+        usage: result.usage
       });
+      if (succeeded) {
+        successfulResult = result;
+        emit("AGENT_PROVIDER_CALL_COMPLETED", {
+          provider,
+          model: result.model || providerResult.model,
+          latencyMs: Math.round(providerResult.latencyMs)
+        });
+        break;
+      }
+      emit("AGENT_PROVIDER_CALL_FAILED", {
+        provider,
+        model: result.model || providerResult.model,
+        latencyMs: Math.round(providerResult.latencyMs),
+        errorClass: errorClass2
+      });
+    }
+    if (successfulResult) {
+      const result = successfulResult;
       const cost2 = estimateCloudCost(attempts);
       return {
         ...result,
@@ -677,7 +738,8 @@ async function callPlanner(input, deps = {}) {
         pricingLabel: cost2.label
       };
     }
-    emit("AGENT_PROVIDER_CALL_FAILED", { provider, model, latencyMs: Math.round(latencyMs), errorClass });
+    const lastAttempt = attempts[attempts.length - 1];
+    const errorClass = lastAttempt?.errorClass ?? "PROVIDER_UNAVAILABLE";
     const next = chain[index + 1];
     if (next) {
       fallbackCount += 1;
@@ -1359,6 +1421,8 @@ async function handleRequest(request, response) {
     const plannerLatencyMs = performance.now() - plannerStarted;
     const llmCallSucceeded = llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision);
     const lastAttempt = llmResult.attempts?.[llmResult.attempts.length - 1];
+    const lastFailedAttempt = [...llmResult.attempts ?? []].reverse().find((attempt) => attempt.outcome === "FAILED" && attempt.callAttempted);
+    const lastLlmFailureReason = lastFailedAttempt ? `${lastFailedAttempt.provider} \xB7 ${lastFailedAttempt.errorClass ?? "PROVIDER_UNAVAILABLE"}` : null;
     const responseProvider = llmResult.provider !== "UNAVAILABLE" ? llmResult.provider : lastAttempt?.provider ?? (llmResult.mode === "openai" ? "OPENAI" : llmResult.mode === "ollama" ? "OLLAMA" : "UNAVAILABLE");
     const responseModel = llmResult.model !== "N/A" ? llmResult.model : lastAttempt?.model ?? "N/A";
     const safeErrorCode = llmCallSucceeded ? null : llmResult.error === "AGENT_PROVIDER_TIMEOUT" ? "AGENT_PROVIDER_TIMEOUT" : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE";
@@ -1401,6 +1465,7 @@ async function handleRequest(request, response) {
         // Safe error class only; raw provider messages never leave the server.
         error: safeErrorCode,
         errorClass: llmCallSucceeded ? null : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE",
+        lastLlmFailureReason,
         llmCallAttempted: llmResult.callAttempted ?? false,
         llmCallSucceeded,
         llmCalls: (llmResult.attempts ?? []).filter((attempt) => attempt.callAttempted).length,

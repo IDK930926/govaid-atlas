@@ -2388,6 +2388,12 @@ a {
   font-size: var(--fs-caption);
 }
 
+.runtime-error-reason {
+  margin-top: var(--s2);
+  color: var(--warn);
+  font-size: var(--fs-caption);
+}
+
 .metric {
   display: grid;
   gap: 2px;

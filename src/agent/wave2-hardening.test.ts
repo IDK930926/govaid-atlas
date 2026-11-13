@@ -75,6 +75,7 @@ const taoyuanScenario: AddressScenario = {
 
 const originalFetch = globalThis.fetch;
 const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+const originalOpenAiModel = process.env.OPENAI_MODEL;
 const originalOllamaModel = process.env.OLLAMA_MODEL;
 
 test.afterEach(() => {
@@ -86,6 +87,11 @@ test.afterEach(() => {
     delete process.env.OPENAI_API_KEY;
   } else {
     process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+  }
+  if (originalOpenAiModel === undefined) {
+    delete process.env.OPENAI_MODEL;
+  } else {
+    process.env.OPENAI_MODEL = originalOpenAiModel;
   }
   if (originalOllamaModel === undefined) {
     delete process.env.OLLAMA_MODEL;
@@ -621,6 +627,33 @@ test("Vercel API — planning response reports OpenAI cloud runtime information"
   assert.equal(response.json.available, true);
   assert.equal(response.json.mode, "cloud");
   assert.equal(typeof response.json.model, "string");
+});
+
+test("Vercel API — planning response exposes a safe OpenAI model failure reason", async () => {
+  process.env.AGENT_PROVIDER = "openai";
+  process.env.OPENAI_API_KEY = "test-key-not-for-commit";
+  process.env.OPENAI_MODEL = "missing-model";
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response(JSON.stringify({
+      error: { message: `Invalid model request with key ${process.env.OPENAI_API_KEY}` },
+    }), { status: 400 });
+  }) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "POST",
+    url: "/api/agent/plan",
+    parsedBody: { goal: "Check rent subsidy" },
+    bundled: true,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(calls, 2, "configured model and gpt-4o-mini fallback were each attempted once");
+  assert.equal(response.json.providerStatus, "UNAVAILABLE");
+  const metadata = response.json.metadata as Record<string, unknown>;
+  assert.equal(metadata.lastLlmFailureReason, "OPENAI · BAD_REQUEST");
+  assert.equal(JSON.stringify(response.json).includes(process.env.OPENAI_API_KEY), false);
+  assert.equal(JSON.stringify(response.json).includes("Invalid model request"), false);
 });
 
 test("Vercel API — planning response reports Ollama local runtime information", async () => {

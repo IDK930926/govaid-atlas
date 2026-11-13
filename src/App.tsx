@@ -124,6 +124,7 @@ type RuntimeInference = {
   latencyMs: number | null;
   ruleFallbackUsed: boolean;
   providerFallbackCount: number;
+  lastLlmFailureReason?: string | null;
   recordedAt: string;
 };
 
@@ -144,6 +145,7 @@ type AgentPlanResponse = {
     llmCalls?: number;
     fallbackCount?: number;
     fallbackReason?: string | null;
+    lastLlmFailureReason?: string | null;
     estimatedCloudCostUsd?: number | null;
     pricingLabel?: string | null;
   };
@@ -163,6 +165,7 @@ function isRuntimeInference(value: unknown): value is RuntimeInference {
     typeof record.ruleFallbackUsed === "boolean" &&
     typeof record.providerFallbackCount === "number" &&
     Number.isFinite(record.providerFallbackCount) &&
+    (record.lastLlmFailureReason === undefined || record.lastLlmFailureReason === null || typeof record.lastLlmFailureReason === "string") &&
     typeof record.recordedAt === "string"
   );
 }
@@ -550,6 +553,7 @@ function App() {
         latencyMs: payload.metadata?.plannerLatencyMs ?? performance.now() - plannerRequestStartedAt,
         ruleFallbackUsed: !succeeded,
         providerFallbackCount,
+        lastLlmFailureReason: payload.metadata?.lastLlmFailureReason ?? null,
         recordedAt: new Date().toISOString(),
       };
       if (plannerResult.callAttempted || providerFallbackCount > 0) {
@@ -2569,15 +2573,22 @@ function RuntimePanel({
         </div>
         <h4 className="runtime-subtitle">最近案件推論</h4>
         {inference ? (
-          <div className="metric-grid">
-            <Metric label="Provider" value={providerDisplayName(inference.provider)}/>
-            <Metric label="Model" value={inference.model}/>
-            <Metric label="Connection" value={inference.available ? "可用" : "未連線"}/>
-            <Metric label="Runtime Mode" value={runtimeModeLabel(inference.mode)}/>
-            <Metric label="Planner latency" value={inference.latencyMs === null ? null : `${inference.latencyMs.toFixed(0)} ms`}/>
-            <Metric label="Rule-based Fallback" value={inference.ruleFallbackUsed ? "已使用" : "未使用"}/>
-            <Metric label="Provider failovers" value={inference.providerFallbackCount}/>
-          </div>
+          <>
+            <div className="metric-grid">
+              <Metric label="Provider" value={providerDisplayName(inference.provider)}/>
+              <Metric label="Model" value={inference.model}/>
+              <Metric label="Connection" value={inference.available ? "可用" : "未連線"}/>
+              <Metric label="Runtime Mode" value={runtimeModeLabel(inference.mode)}/>
+              <Metric label="Planner latency" value={inference.latencyMs === null ? null : `${inference.latencyMs.toFixed(0)} ms`}/>
+              <Metric label="Rule-based Fallback" value={inference.ruleFallbackUsed ? "已使用" : "未使用"}/>
+              <Metric label="Provider failovers" value={inference.providerFallbackCount}/>
+            </div>
+            {inference.lastLlmFailureReason && (
+              <p className="runtime-error-reason" role="status">
+                最近模型失敗原因：{inference.lastLlmFailureReason}
+              </p>
+            )}
+          </>
         ) : (
           <p className="muted">尚無已保存的案件推論紀錄；完成一次分析後會顯示最近的 Provider、模型、連線、延遲與規則式 Fallback 狀態。</p>
         )}

@@ -12,7 +12,8 @@ import {
   validateStructuredAgentDecision,
 } from "./types";
 
-const DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+export const OPENAI_FALLBACK_MODEL = DEFAULT_OPENAI_MODEL;
 const DEFAULT_OPENAI_TIMEOUT_MS = 20_000;
 const DEFAULT_OPENAI_HEALTH_TIMEOUT_MS = 5_000;
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
@@ -54,6 +55,10 @@ function positiveInt(raw: string | undefined, fallback: number): number {
 
 export function getOpenAIModel(): string {
   return getEnv().OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
+}
+
+function supportsReasoningEffort(model: string): boolean {
+  return /^gpt-5(?:[.-]|$)/i.test(model);
 }
 
 export function getOpenAITimeoutMs(): number {
@@ -116,9 +121,12 @@ type ResponsesApiBody = {
   usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
 };
 
-export async function callOpenAIPlanner(input: ProviderPlannerInput): Promise<ProviderPlannerResult> {
+export async function callOpenAIPlanner(
+  input: ProviderPlannerInput,
+  modelOverride = getOpenAIModel()
+): Promise<ProviderPlannerResult> {
   const apiKey = getEnv().OPENAI_API_KEY?.trim();
-  const model = getOpenAIModel();
+  const model = modelOverride;
 
   if (!apiKey) {
     return failure(model, "MISSING_API_KEY", false);
@@ -142,7 +150,9 @@ export async function callOpenAIPlanner(input: ProviderPlannerInput): Promise<Pr
         schema: OPENAI_AGENT_DECISION_SCHEMA,
       },
     },
-    reasoning: { effort: getEnv().OPENAI_REASONING_EFFORT?.trim() || "low" },
+    ...(supportsReasoningEffort(model)
+      ? { reasoning: { effort: getEnv().OPENAI_REASONING_EFFORT?.trim() || "low" } }
+      : {}),
     max_output_tokens: 2048,
     store: false,
   };

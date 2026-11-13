@@ -366,6 +366,12 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     const plannerLatencyMs = performance.now() - plannerStarted;
     const llmCallSucceeded = llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision);
     const lastAttempt = llmResult.attempts?.[llmResult.attempts.length - 1];
+    const lastFailedAttempt = [...(llmResult.attempts ?? [])]
+      .reverse()
+      .find((attempt) => attempt.outcome === "FAILED" && attempt.callAttempted);
+    const lastLlmFailureReason = lastFailedAttempt
+      ? `${lastFailedAttempt.provider} · ${lastFailedAttempt.errorClass ?? "PROVIDER_UNAVAILABLE"}`
+      : null;
     const responseProvider = llmResult.provider !== "UNAVAILABLE"
       ? llmResult.provider
       : lastAttempt?.provider ?? (llmResult.mode === "openai"
@@ -429,6 +435,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         // Safe error class only; raw provider messages never leave the server.
         error: safeErrorCode,
         errorClass: llmCallSucceeded ? null : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE",
+        lastLlmFailureReason,
         llmCallAttempted: llmResult.callAttempted ?? false,
         llmCallSucceeded,
         llmCalls: (llmResult.attempts ?? []).filter((attempt) => attempt.callAttempted).length,
