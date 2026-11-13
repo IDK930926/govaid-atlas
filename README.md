@@ -1,167 +1,159 @@
 # GovAid Atlas
 
-GovAid Atlas 是政府補助資格預審與申辦導航系統（NAPAI 2026 決賽作品）。目前涵蓋兩大福利領域共 5 項官方方案：**115 年度中央擴大租金補貼（R1）、桃園市受理之中央擴大租金補貼與申辦導航（R9）、臺北市住宅租金加碼補貼（R6）、新北市青年租金補貼（R7）**，以及全國適用之 **衛生福利部育有未滿2歲兒童育兒津貼（R8）**。系統以 deterministic Rules Engine 執行明確的資格條件與政策有效期間（`validFrom` / `validTo`）檢核，並結合受邊界約束（bounded）的 Agent tool-routing、跨領域隔離（`HOUSING` vs `CHILDCARE`）、動態缺漏欄位詢問（Human Gate）、完整申辦導航（`ApplicationGuide`）與可匯出的去識別化執行軌跡（Agent Trace）。
+GovAid Atlas 是一個以規則引擎為核心的政府補助資格預審與申辦導航原型。它支援特定租屋補貼，以及全國適用的未滿 2 歲兒童育兒津貼；Agent 協助理解需求、安排檢查步驟並詢問缺漏資料，資格規則由 deterministic engine 評估。系統不會代替主管機關核定或自動送件。
 
----
+## What It Does
 
-## Current Implemented Scope (Wave 1 – Wave 4 & Gates A–C)
+- 依明確的政策與城市邊界檢查支援範圍；範圍外回傳 `NOT_COVERED` 並提供官方轉介。
+- 對租屋政策已編碼條件回報 `PARTIAL_CHECK`、`FAIL` 或 `UNCERTAIN`，避免把部分檢查說成完整資格核准。
+- 支援 `CHILDCARE_ALLOWANCE_UNDER_2_115`，檢查月齡、出生／初設戶籍登記、公費安置、公共化／準公共托育及出生胎次。
+- 透過 Human Gate 詢問缺漏事實，產生 `ApplicationGuide` 和 Decision Passport；指南含應備文件、申辦方式、官方連結、受理機關與電話、期間與狀態、排除條件、下一步及免責聲明。
+- 提供有界限的 Agent tool routing、政策來源、有效期間檢查及去識別化 trace。
 
-- **Multi-Domain Coverage & Deterministic Eligibility Statuses (`src/status.ts`, `src/coverage.ts`, `src/childcare.ts`, `src/scenario.ts`)**：
-  - 狀態優先序：`FAIL > NOT_COVERED > UNCERTAIN > PARTIAL_CHECK > PASS`
-  - **育兒津貼領域（`CHILDCARE` — `CHILDCARE_ALLOWANCE_UNDER_2_115`）**：完整實作《育有未滿二歲兒童育兒津貼申領作業要點》（R8）之核心全國資格規則（未滿 24 個月、完成出生或初設戶籍登記、未經政府公費安置、未接受公共化或準公共托育服務、出生胎次排序），通過時判定為 `PASS` 並試算每月津貼金額（第 1 胎 NT$5,000、第 2 胎 NT$6,000、第 3 胎以上 NT$7,000）。查詢尚未實作之其他育兒方案（如托育補助、生育獎勵金、就學補助、育嬰留職停薪津貼）時明確回傳 `NOT_COVERED`，並附帶衛福部官方查證入口。
-  - **租屋補助領域（`HOUSING` — 雙北與桃園市）**：支援中央 300 億元擴大租金補貼（`CENTRAL_RENT_115`）、新北市青年租金補貼（`NEW_TAIPEI_RENT_115`）、臺北市臺北幸福租加碼補貼（`TAIPEI_RENT_115`）及桃園市協辦受理之中央擴大租金補貼與桃園所得門檻檢核（`TAOYUAN_CENTRAL_RENT_115`，每人每月平均所得上限 NT$50,304）。因租屋方案僅編碼部分核心條件，已編碼規則通過時明確標示為 `PARTIAL_CHECK`（不宣稱完整 `PASS`）。查詢桃園市獨立通用地方租屋補助、原住民族專案租金補貼、包租代管或未涵蓋縣市（如臺中市、高雄市）時明確回傳 `NOT_COVERED`，並附帶內政部國土署或地方局處官方連結。
-  - **政策有效期間強制檢核（`evaluatePolicyValidity` in `src/rules.ts`）**：所有規則均檢查 `validFrom` 與 `validTo`；過期政策絕不回傳現行 `PASS`（回傳 `FAIL` 並將 `ApplicationGuide` 標示為 `CLOSED`，或於 `allowHistorical: true` 時明確標記 `[歷史政策模式 / HISTORICAL_MODE]`）。
-- **Arbitrary Scenario Intake & Custom Case Support (Gate A/B)**：
-  - 支援使用者於介面自訂任意申請情境（年齡、月所得、名下房產、其他住宅補貼、戶籍與租屋縣市行政區、幼兒月齡、托育狀態、胎次等），系統動態解析並執行合規檢核，不再侷限於單一 Golden Persona。
-- **Actionable Application Navigation & Upgraded Decision Passport (`src/navigation.ts`, `src/passport.ts`)**：
-  - 每個支援方案均附帶結構化 `ApplicationGuide`：包含應備文件清單（對應官方來源 `R1`, `R6`, `R7`, `R8`, `R9`）、申辦方式（線上／臨櫃／郵寄）、官方線上申辦連結（`https://twbaby.sfaa.gov.tw/`、`https://has.nlma.gov.tw/subsidyOnline/` 等）、受理機關與聯絡電話、受理期間與開放狀態（`OPEN` / `ROLLING` / `CLOSED`）、排除條件、具體下一步與「最終核定以政府主管機關審查為準」免責聲明。
-- **Bounded Stateful Agent Tool Routing (`src/agent/orchestrator.ts`)**：
-  - LLM Planner 支援三層級串接架構（`AGENT_PROVIDER=auto`）：OpenAI `gpt-5.4-mini` 雲端主用（`/v1/responses`，約 5 秒延遲）→ 本機 Ollama `qwen3.5:4b` 離線備援 → 確定性規則引擎安全備援（< 0.2 秒）。
-  - LLM 提出下一步動作提案（`AgentDecision`），並真正影響允許工具（11 項 allowlisted tools）的呼叫順序。
-  - **三層提案驗證與跨領域隔離（`validatePlannerProposal`）**：依序檢查 Schema 結構、Tool Allowlist、跨領域工具隔離（育兒案件禁止呼叫租屋工具，租屋案件禁止呼叫育兒工具）與狀態安全不變量。
-- **Dynamic Missing-Field Handling & 14-Field Human Gate (`src/agent/missing-fields.ts`)**：
-  - 支援租屋欄位（`city`、`ownsHome`、`receivesOtherHousingAid`、`monthlyIncome`、`age`、`centralRentApproved`、`newTaipeiResidenceStudyWork`、`registeredCity`）與育兒津貼欄位（`childAgeMonths`、`childHasBirthOrInitialHouseholdRegistration`、`receivesPublicOrQuasiPublicChildcare`、`isGovernmentPlaced`、`birthOrder`）共 14 項缺漏欄位之動態提問、資料驗證、前後狀態記錄與安全接續執行。
-- **Domain-Aware Fallback & NOT_COVERED Official Referrals (Gate B)**：
-  - 當模型離線或遭遇非預期輸入時，fallback proposal 具備福利領域感知能力（租屋提議 `evaluate_central_rules`，育兒提議 `evaluate_childcare_rules`），絕不產生跨領域工具衝突。
-  - 遭遇 `NOT_COVERED` 查詢時，介面呈現清晰之官方轉介卡片與安全外部連結（`run.coverage.officialReferrals`）。
-- **Sanitized Trace Export (`src/agent/trace.ts`, `artifacts/traces/`)**：
-  - 完整記錄 12 項代表性 Agent Trace（`TRACE-A` 至 `TRACE-L`），涵蓋有效提案、缺漏補正、非法工具拒絕、非涵蓋範圍轉介、狀態竄改攔截、離線備援、育兒津貼、桃園受理、自訂情境等。
-  - 匯出時全面自動過濾 API Keys、Bearer tokens、系統提示詞、思考過程（chain-of-thought）與個人敏感資料。
-- **API Hardening (`src/server.ts`, `src/agent/client.ts`)**：
-  - Request body 上限 `16 KB`（超過回傳 HTTP `413 PAYLOAD_TOO_LARGE`）。
-  - User goal 長度上限 `800` 字元（超過回傳 HTTP `400 GOAL_TOO_LONG`）。
-  - 單一 IP 速率限制預設 `20 requests / 60s`（超過回傳 HTTP `429 RATE_LIMIT_EXCEEDED` 與 `Retry-After`）。
-  - Provider 呼叫逾時保護預設 `15,000 ms`（逾時回傳受控之 `AGENT_PROVIDER_TIMEOUT` fallback）。
-  - 全套自動化回歸測試：**92 / 92 PASS**（9 套測試套件）。
+## Supported Policies
 
----
+目前有 **5 個政策 ID**，分屬 HOUSING 與 CHILDCARE 兩個領域。租屋城市支援限於臺北市、新北市及桃園市的下表方案；不代表其他縣市的中央補貼或地方方案均已涵蓋。
 
-## Golden Case (Synthetic Persona)
+| Domain | Policy ID | 支援範圍與政策來源 |
+|---|---|---|
+| HOUSING | `CENTRAL_RENT_115` | 115 年度中央擴大租金補貼；臺北、新北及桃園受理情境提供部分條件預審。R1：內政部國土管理署，《三百億元中央擴大租金補貼專案計畫作業規定（115年度）》。 |
+| HOUSING | `TAIPEI_RENT_115` | 臺北市加碼補貼。R6：臺北市政府都市發展局，《115年度臺北幸福租－民間租屋租金加碼補貼》。 |
+| HOUSING | `NEW_TAIPEI_RENT_115` | 新北市青年租金補貼。R7：新北市政府城鄉發展局，《115年度新北市青年租金補貼》。 |
+| HOUSING | `TAOYUAN_CENTRAL_RENT_115` | 桃園市受理之中央擴大租金補貼導航及部分條件檢查，包含政策檔所列每人每月平均所得 NT$50,304 門檻。R9：桃園市政府住宅發展處／內政部國土管理署，《300億元中央擴大租金補貼專案計畫－桃園市受理與申辦規定（115年度）》。 |
+| CHILDCARE | `CHILDCARE_ALLOWANCE_UNDER_2_115` | 全國育有未滿 2 歲兒童育兒津貼；包括未滿 24 個月、出生或初設戶籍登記、未經政府公費安置、未接受公共化／準公共托育及胎次。R8：衛生福利部社會及家庭署，《育有未滿二歲兒童育兒津貼申領作業要點（115年度適用）》。第 1 胎每月 NT$5,000、第 2 胎 NT$6,000、第 3 胎以上 NT$7,000。 |
 
-- **20 歲、單身**
-- **戶籍：** 臺北市
-- **目前住址（ACTUAL）：** 新北市永和區（合成測試地址，月租 NT$13,500）
-- **搬遷假設（WHAT_IF）：** 臺北市文山區（合成測試地址，月租 NT$15,500）
-- **資料性質：** 全部使用合成資料（Synthetic Persona），非真實個人或家庭個案。
+托育補助、生育獎勵金、2–4 歲就學補助及其他未列方案不在目前支援範圍。
 
----
-
-## Architecture
+## How It Works
 
 ```text
 USER GOAL
   ↓
-COVERAGE BOUNDARY CHECK (Covered Rental Scope vs. NOT_COVERED Childcare / Uncovered Cities)
+DOMAIN & COVERAGE BOUNDARY CHECK
+  ├─ HOUSING
+  ├─ CHILDCARE
+  └─ Unsupported policy / city / program → NOT_COVERED + Official Referral
   ↓
-CURRENT STRUCTURED STATE (ApplicantProfile + Scenarios + CompletedTools)
+Agent Planner → schema / allowlist / state & domain validation
   ↓
-PLANNER PROPOSAL (Local Ollama qwen3.5:4b / OpenAI / Deterministic Planner)
+Deterministic policy rules + validity checks
   ↓
-3-LAYER VALIDATION (Schema → Allowlist → State & Safety Invariants)
-  ├─ [Invalid / Timeout / Unavailable] → Log Rejection + Safe Deterministic Fallback
-  └─ [Valid] → Route to Allowlisted Tool
+Human Gate (when facts are missing) → Decision Passport / ApplicationGuide
   ↓
-EXECUTE ALLOWLISTED TOOL (Deterministic Rules Engine / Scenario / Conflict / Evidence / Passport)
-  ↓
-OBSERVATION & STATE UPDATE (FAIL > NOT_COVERED > UNCERTAIN > PARTIAL_CHECK > PASS)
-  ↓
-WAITING_FOR_HUMAN (Dynamic Missing-Field Question → Input Validation → Resume)
-  ↓
-COMPLETED / NOT_COVERED / HUMAN_REVIEW_REQUIRED / FAILED (Sanitized JSON Trace Export)
+Sanitized Agent Trace
 ```
 
----
+### Housing Status Semantics
 
-## Policy Sources & Coverage Boundaries
+租屋政策目前只編碼官方資格條件的子集。已編碼規則通過會顯示 `PARTIAL_CHECK`，不等於完整法定資格核准；已編碼條件不符為 `FAIL`，必要資料缺漏為 `UNCERTAIN`，未涵蓋的政策或城市為 `NOT_COVERED`。聚合優先序為 `FAIL > NOT_COVERED > UNCERTAIN > PARTIAL_CHECK > PASS`。**最終核定以主管機關審查為準。** `PASS` 僅供完整編碼政策的規則結果使用；不會用來宣稱租屋方案已完整核准。
 
-目前實作的政策來源索引（詳見 `docs/wave4-policy-evidence.md`、`src/evidence.ts` 與 `src/policies/`）：
+## Safety by Design
 
-- **R1**：內政部國土管理署 — 三百億元中央擴大租金補貼專案計畫作業規定（115年度）
-- **R6**：臺北市政府都市發展局 — 115年度臺北幸福租－民間租屋租金加碼補貼
-- **R7**：新北市政府城鄉發展局 — 115年度新北市青年租金補貼
-- **R8**：衛生福利部社會及家庭署 — 育有未滿二歲兒童育兒津貼申領作業要點（115年度適用）
-- **R9**：桃園市政府住宅發展處／內政部國土管理署 — 300億元中央擴大租金補貼專案計畫－桃園市受理與申辦規定（115年度）
+- **Deterministic Rules：** 最終資格規則、狀態聚合與政策有效期間檢核由程式規則執行，不由 LLM 判定。
+- **Human Gate：** 必要事實缺漏時暫停詢問，不以猜測補值；輸入驗證後才接續流程。
+- **Bounded Tool Routing：** 僅可選用 11 個 allowlisted tools；另檢查 schema、跨領域工具及狀態轉移，並設有步數上限。
+- **Coverage Boundary：** 不支援的方案或城市回報 `NOT_COVERED`，並提供適用的官方查詢入口。
+- **Policy Validity：** 依政策有效日期判斷；過期政策不會作為現行通過依據。
+- **Sanitized Trace：** trace 匯出會過濾敏感欄位、憑證樣式、系統提示詞與個人資料。
+- **Safe Fallback：** Provider 不可用或提案無效時，流程使用 deterministic 安全路徑；不以 fallback 偽裝 LLM 成功。
+- **API Input Limits：** Request body 上限 16 KB、goal 上限 800 字元；預設 in-memory per-IP rate limit 為 20 requests / 60 s。
 
-### Explicit Coverage Limitations (What GovAid Atlas Does NOT Claim)
-1. **桃園市邊界說明**：桃園市目前已支援「300億元中央擴大租金補貼（桃園市政府住宅發展處協辦受理與桃園所得門檻檢核）」之預審與申辦導航（`PARTIAL_CHECK`）；桃園市無另設全市通用地方租金加碼，若查詢桃園市獨立地方租屋補助、原住民族租金補貼、包租代管或其他未實作縣市（如臺中市、高雄市），系統明確回傳 `NOT_COVERED`。
-2. **育兒補助邊界說明**：目前育兒領域僅涵蓋「育有未滿2歲兒童育兒津貼（`CHILDCARE_ALLOWANCE_UNDER_2_115`）」；若查詢準公共托育補助、各縣市生育獎勵金、2–4歲就學補助或育嬰留職停薪津貼，系統明確回傳 `NOT_COVERED` 並提供衛福部社家署官方入口，絕不混用租屋規則工具。
-3. **不代表完整法定資格核准或政府認證**：已實作規則通過時僅代表 `PARTIAL_CHECK`（初步條件通過），實際核定仍須檢核家庭年所得、每人每月平均所得、家庭成員房產及租約規定。
-4. **未串接任何政府系統或自動申辦 API**：系統僅產生申辦決策護照（Decision Passport）供民眾自行查核備件，不具備自動送件功能。
-5. **Benchmark Gold Standard 與真人場域驗證狀態**：
-   - `benchmark/cases.json`（`B01`–`B10`）之 Gold Answers 源自專案規則子集，目前狀態為 **`PENDING_INDEPENDENT_REVIEW`**（詳見 `docs/gold-standard-review-status.md`）。
-   - 外部真人使用者場域測試（Field Validation）已完成實驗設計與空白紀錄表（`docs/field-validation-protocol.md`、`docs/field-validation-results-template.md`），目前狀態為 **`PENDING`**（尚未宣稱已完成真人受測數據）。
-6. **RBAC 角色切換僅為合成展示**：介面中之角色切換（申請人／承辦員／稽核員）為前端欄位遮罩概念展示，非正式環境之身分驗證與權限控管系統（詳見 `docs/security-self-assessment.md`）。
+## Agent Provider Architecture
 
----
+`AGENT_PROVIDER=auto` 的順序為 **OpenAI → Ollama → Deterministic Safety Fallback**。設定範例指定 OpenAI `gpt-5.4-mini` 與 Ollama `qwen3.5:4b`；若未設定 `OPENAI_MODEL`，provider implementation 的程式預設值為 `gpt-4o-mini`。
 
-## Local Setup & Commands
+- **Planner（OpenAI／Ollama）：** intent understanding、planning、tool routing；只提出下一步提案。
+- **Deterministic Engine：** 執行最終規則評估、政策有效性判斷及狀態安全不變量；LLM 不可覆寫結果。
 
-### 1. Environment Configuration
-複製 `.env.example` 為 `.env`：
+> The model plans. The rules decide. The human confirms.
 
-```sh
-AGENT_PROVIDER=ollama
+預設單次 provider attempt timeout 為 8,000 ms、整條 provider chain 預算為 10,000 ms，可由環境設定覆寫；不是 15 秒固定 timeout。
+
+## Golden Demo
+
+合成測試人物：20 歲、單身、戶籍臺北市；比較新北市永和區（實際情境）與臺北市文山區（假設搬遷情境）。地址及家庭資料為 synthetic persona，不是真實個案。Housing 結果仍依輸入與已編碼子集呈現 `PARTIAL_CHECK`／`UNCERTAIN` 等狀態。
+
+## Evaluation
+
+`benchmark/results.csv` 中的 deterministic GovAid Atlas runner 與 `LLM_CONTEXT` 比較：
+
+| Metric | LLM + Policy Context | GovAid Atlas |
+|---|---:|---:|
+| Status Accuracy | 70% | 100% |
+| Evidence Coverage | 77.8% | 100% |
+| Unsupported Claims | 30% | 0% |
+| Unsafe Certainty | 40% | 0% |
+
+**Automated regression tests:** 131 / 131 PASS (`npm.cmd test`); TypeScript check and production build also pass.
+
+> 以上為 10 組 synthetic policy-navigation cases，不代表真實世界整體準確率。比較中的 GovAid Atlas 欄是 deterministic benchmark runner，不是完整 Agent workflow；Gold Standard 為 `PENDING_INDEPENDENT_REVIEW`，Manual baseline 為 pending。
+
+**Measured competition-preparation runs — OpenAI:** Golden Path 5 / 5 completed，median planner latency 約 5.1 s、平均約 5.22 s、fallback 0 / 5，估算總成本 USD 0.009343（平均約 USD 0.001869 / run）。這些特定準備賽事量測**不是 SLA、uptime 保證或一般化 production benchmark**；成本為 token 用量估算，非帳單。詳見 [docs/openai-live-validation.md](docs/openai-live-validation.md)。
+
+**Ollama:** 歷史 demo reliability 紀錄為 5 / 5 completed；暖機後 runs 的 planner latency median 約 63 秒，為本機 CPU 實測，不是延遲保證。詳見 [docs/demo-reliability-wave3.md](docs/demo-reliability-wave3.md)。
+
+## Known Limitations
+
+- Housing 僅檢查已編碼的核心條件；`PARTIAL_CHECK` 不等同完整法定資格核准，最終核定以主管機關審查為準。
+- 未列方案與未涵蓋城市不作資格判定；沒有政府系統整合或自動申辦 API。
+- Gold Standard 尚待獨立審查（`PENDING_INDEPENDENT_REVIEW`）；Field Validation 與 Manual baseline 均為 `PENDING`。
+- RBAC role switching 是 **synthetic front-end masking demonstration**，不是 production authentication、authorization 或正式 IAM。
+- Rate limiter 為程序記憶體中的 per-IP 限制，服務重啟後重設；不是分散式 production rate limiting。
+- Repository 的提交證據指出公開部署仍需重新部署，未證明與目前 checkout 同步。README 不宣稱該部署正在執行此版本。
+
+## Competition Demo Assets
+
+- **Live Product:** 部署記錄見 [docs/napai-submission-readiness.md](docs/napai-submission-readiness.md)；該文件記載需要 operator redeploy，故目前版本一致性未驗證。
+- **Competition Showcase:** [demo/govaid-atlas-competition-showcase.html](demo/govaid-atlas-competition-showcase.html)。
+- **Offline / Backup Demo:** 上述單檔 HTML showcase 可離線開啟。此 checkout 未包含 `GovAidAtlas_Final_Backup_Demo.mp4` 或影片 QA record；[docs/backup-demo-video-status.md](docs/backup-demo-video-status.md) 是既有錄影狀態文件，不作為新影片完成的證據。
+
+## Local Setup
+
+需要 Node.js 22。`.env.example` 提供以下設定範例；將它複製為 `.env`，並只在本機設定有效 API key，不要提交 `.env`：
+
+```dotenv
+AGENT_PROVIDER=auto
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.4-mini
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_MODEL=qwen3.5:4b
-OPENAI_API_KEY=
-OPENAI_MODEL=
 ```
-
-（若未啟動本機 Ollama 或未設定 `OPENAI_API_KEY`，系統仍會透過 safe deterministic fallback 完整執行規則預審流程。）
-
-### 2. Vercel Deployment
-
-Vercel deploys the Vite frontend from `dist` and serves `/api/*` through the
-Node 22 CommonJS bundle in `api/[...path].js`. `npm run build` bundles the API
-handler and backend dependencies with esbuild; policy JSON is included in that
-bundle. The source handler dynamically initializes `src/server.ts` inside its
-error boundary. Production requests do not use the local port `8787`.
-Set `AGENT_PROVIDER=openai` and `OPENAI_API_KEY` in the Vercel project's
-Environment Variables, then redeploy. Optionally set `OPENAI_MODEL` there as well.
-The API key is read only by the serverless backend and must not use a `VITE_`
-prefix or be added to client-side code.
-
-### 3. Install, Test, Typecheck & Build
-
-```sh
-npm install
-npm test
-npx tsc --noEmit
-npm run build
-```
-
-Windows PowerShell 若遇到 `npm.ps1` 執行原則限制，可改用：
 
 ```powershell
+Copy-Item .env.example .env
 npm.cmd install
+npm.cmd run dev
+```
+
+測試、型別檢查與 production build：
+
+```powershell
 npm.cmd test
 npx.cmd tsc --noEmit
 npm.cmd run build
 ```
 
-### 3. Run Local Dev or Production Preview
+## Vercel Deployment
 
-```sh
-# Development mode (API server + Vite client)
-npm run dev
+Vercel 設定使用 Vite，前端輸出至 `dist`；`npm run build` 會以 esbuild 將 backend handler 打包成 Node 22 CommonJS API functions，包括 `api/[...path].js`，再建置 Vite 前端。此架構由 [vercel.json](vercel.json)、[package.json](package.json)、[api/](api) 及 handler 實作確認。
 
-# Single-origin production preview on http://127.0.0.1:8787
-npm run build
-npm run start
+在 Vercel 專案的 server-side Environment Variables 設定 provider。Serverless 環境中的 `http://127.0.0.1:11434` 不會連到開發者電腦的 Ollama；若需 LLM planner，設定 OpenAI API key/model。未設定可用 provider 時，系統會使用 deterministic fallback。
+
+```dotenv
+AGENT_PROVIDER=auto
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5.4-mini
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen3.5:4b
 ```
 
----
+## Repository Evidence
 
-## Evaluation & Submission Evidence Docs
-
-- `docs/napai-evaluation-report.md` — Wave 3 完整量化評測、延遲、成本、穩定性與安全性報告
-- `docs/benchmark-methodology.md` — 五種評測方法（Deterministic / Bounded Agent / Raw LLM / Fixed-flow / Manual）方法論
-- `docs/gold-standard-review-status.md` — Gold Standard 完整性與 `PENDING_INDEPENDENT_REVIEW` 狀態聲明
-- `docs/gold-standard-independent-review-template.md` — `B01`–`B10` 獨立第三方審查表單
-- `docs/trace-evidence-index.md` — `artifacts/traces/trace-a..l.json`（共 12 份）執行軌跡索引與去識別化驗證
-- `docs/backup-demo-video-status.md` — 預錄備援影片狀態評估（`OUTDATED`）與重新錄製規範
-- `docs/field-validation-protocol.md` & `docs/field-validation-results-template.md` — 真人交叉實驗設計與空白結果表（`PENDING`）
-- `docs/security-self-assessment.md` — 14 項資安、可控性與治理自我評估
-- `docs/third-party-resources.md` — 第三方模型、套件、雲端服務與政策來源揭露
-- `docs/anonymization-audit.md` — 匿名化提交稽核報告
-- `docs/napai-submission-readiness.md` & `docs/competition-evidence-matrix.md` — 決賽提交準備度與評分項目證據矩陣
+- [docs/napai-evaluation-report.md](docs/napai-evaluation-report.md) — benchmark、Agent evaluation 與技術回歸結果。
+- [docs/benchmark-methodology.md](docs/benchmark-methodology.md) — benchmark 方法、樣本及結果分類。
+- [docs/gold-standard-review-status.md](docs/gold-standard-review-status.md) — Gold Standard 審查狀態與限制。
+- [docs/field-validation-protocol.md](docs/field-validation-protocol.md) — Field Validation 設計與待完成狀態。
+- [docs/security-self-assessment.md](docs/security-self-assessment.md) — 安全控制、API 限制與 synthetic RBAC 揭露。
+- [docs/anonymization-audit.md](docs/anonymization-audit.md) — 匿名化與憑證稽核紀錄。
+- [docs/competition-evidence-matrix.md](docs/competition-evidence-matrix.md) — 評審項目與 evidence 對照。
+- [src/evidence.ts](src/evidence.ts) 與 [src/policies/](src/policies/) — 政策來源索引與規則資料。
