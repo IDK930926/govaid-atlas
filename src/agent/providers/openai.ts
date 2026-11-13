@@ -12,10 +12,10 @@ import {
   validateStructuredAgentDecision,
 } from "./types";
 
-const DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
+const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+export const OPENAI_FALLBACK_MODEL = DEFAULT_OPENAI_MODEL;
 // Defensive ceiling only; the client aborts each attempt at its own (<=) budget. See client.ts.
 const DEFAULT_OPENAI_TIMEOUT_MS = 8_000;
-const DEFAULT_OPENAI_HEALTH_TIMEOUT_MS = 5_000;
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 
 /**
@@ -57,6 +57,10 @@ export function getOpenAIModel(): string {
   return getEnv().OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
 }
 
+function supportsReasoningEffort(model: string): boolean {
+  return /^gpt-5(?:[.-]|$)/i.test(model);
+}
+
 export function getOpenAITimeoutMs(): number {
   return positiveInt(getEnv().OPENAI_TIMEOUT_MS, DEFAULT_OPENAI_TIMEOUT_MS);
 }
@@ -87,7 +91,7 @@ function healthFailure(model: string, errorClass: ProviderErrorClass): ProviderH
   return { provider: "OPENAI", providerStatus: "UNAVAILABLE", model, error: `OPENAI_${errorClass}`, errorClass };
 }
 
-/** Reachability + key + model-access check (GET /models/{model}); bills no tokens. */
+/** Health reports whether the cloud provider is configured; request failures are reported per run. */
 export async function healthCheckOpenAI(): Promise<ProviderHealth> {
   const model = getOpenAIModel();
   const apiKey = getEnv().OPENAI_API_KEY?.trim();
@@ -95,20 +99,7 @@ export async function healthCheckOpenAI(): Promise<ProviderHealth> {
     return healthFailure(model, "MISSING_API_KEY");
   }
 
-  try {
-    const response = await fetch(`${OPENAI_BASE_URL}/models/${encodeURIComponent(model)}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(positiveInt(getEnv().OPENAI_HEALTH_TIMEOUT_MS, DEFAULT_OPENAI_HEALTH_TIMEOUT_MS)),
-    });
-    await response.text().catch(() => undefined);
-    if (!response.ok) {
-      return healthFailure(model, classifyHttpStatus(response.status));
-    }
-    return { provider: "OPENAI", providerStatus: "AVAILABLE", model };
-  } catch (error) {
-    return healthFailure(model, classifyThrownError(error));
-  }
+  return { provider: "OPENAI", providerStatus: "AVAILABLE", model };
 }
 
 type ResponsesApiBody = {
@@ -117,9 +108,12 @@ type ResponsesApiBody = {
   usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
 };
 
-export async function callOpenAIPlanner(input: ProviderPlannerInput): Promise<ProviderPlannerResult> {
+export async function callOpenAIPlanner(
+  input: ProviderPlannerInput,
+  modelOverride = getOpenAIModel()
+): Promise<ProviderPlannerResult> {
   const apiKey = getEnv().OPENAI_API_KEY?.trim();
-  const model = getOpenAIModel();
+  const model = modelOverride;
 
   if (!apiKey) {
     return failure(model, "MISSING_API_KEY", false);
@@ -143,7 +137,9 @@ export async function callOpenAIPlanner(input: ProviderPlannerInput): Promise<Pr
         schema: OPENAI_AGENT_DECISION_SCHEMA,
       },
     },
-    reasoning: { effort: getEnv().OPENAI_REASONING_EFFORT?.trim() || "low" },
+    ...(supportsReasoningEffort(model)
+      ? { reasoning: { effort: getEnv().OPENAI_REASONING_EFFORT?.trim() || "low" } }
+      : {}),
     max_output_tokens: 2048,
     store: false,
   };

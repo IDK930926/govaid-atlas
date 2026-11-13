@@ -1,5 +1,11 @@
 import { getOllamaModel, healthCheckOllama, isOllamaConfigured, callOllamaPlanner } from "./providers/ollama";
-import { getOpenAIModel, healthCheckOpenAI, isOpenAIConfigured, callOpenAIPlanner } from "./providers/openai";
+import {
+  getOpenAIModel,
+  healthCheckOpenAI,
+  isOpenAIConfigured,
+  callOpenAIPlanner,
+  OPENAI_FALLBACK_MODEL,
+} from "./providers/openai";
 import { estimateOpenAICostUsd, getOpenAIPricing } from "./providers/pricing";
 import { getProviderChain, getProviderMode, type ChainProvider } from "./providers/mode";
 import type {
@@ -52,6 +58,10 @@ const PROVIDER_LABEL: Record<ChainProvider, string> = {
 
 function safeReason(provider: ChainProvider, errorClass: ProviderErrorClass | undefined): string {
   return `${PROVIDER_LABEL[provider]} unavailable (${errorClass ?? "PROVIDER_UNAVAILABLE"})`;
+}
+
+function shouldRetryOpenAIModel(errorClass: ProviderErrorClass | undefined): boolean {
+  return errorClass === "MODEL_NOT_AVAILABLE" || errorClass === "BAD_REQUEST";
 }
 
 export async function getProviderHealth(): Promise<ProviderHealth> {
@@ -167,7 +177,9 @@ async function callProviderWithTimeout(
         });
       }, timeoutMs);
     });
-    return await Promise.race([caller({ ...input, timeoutMs, signal: controller.signal }), timeoutPromise]);
+    const requestInput = { ...input, timeoutMs, signal: controller.signal };
+    const request = provider === "OPENAI" ? caller(requestInput, model) : caller(requestInput);
+    return await Promise.race([request, timeoutPromise]);
   } finally {
     if (timer !== undefined) {
       clearTimeout(timer);
@@ -230,44 +242,117 @@ export async function callPlanner(input: ProviderPlannerInput, deps: PlannerDepe
     const model = modelFor(provider);
     emit("AGENT_PROVIDER_SELECTED", { mode, provider, model });
 
-    const started = now();
-    const remainingBudgetMs = budgetMs - Math.max(0, started - chainStarted);
-    let result: ProviderPlannerResult;
+    const providerResults: Array<{ model: string; result: ProviderPlannerResult; latencyMs: number }> = [];
     if (provider === "OPENAI" && !isOpenAIConfigured()) {
       // Skipped, not called: no request leaves the server without a key.
-      result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: false, error: "OPENAI_MISSING_API_KEY", errorClass: "MISSING_API_KEY" };
-    } else if (index > 0 && remainingBudgetMs < Math.min(MIN_ATTEMPT_BUDGET_MS, timeoutMs / 2)) {
-      // Planner budget spent by earlier attempts: skip rather than start a call that cannot finish.
-      result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: false, error: "AGENT_PLANNER_BUDGET_EXHAUSTED", errorClass: "TIMEOUT" };
+      providerResults.push({
+        model,
+        result: { provider, providerStatus: "UNAVAILABLE", model, callAttempted: false, error: "OPENAI_MISSING_API_KEY", errorClass: "MISSING_API_KEY" },
+        latencyMs: 0,
+      });
     } else {
-      emit("AGENT_PROVIDER_CALL_STARTED", { provider, model });
-      try {
-        result = await callProviderWithTimeout(provider, model, callers[provider], input, Math.min(timeoutMs, remainingBudgetMs));
-      } catch {
-        result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: true, errorClass: "NETWORK_ERROR" };
+      const callModel = async (attemptModel: string): Promise<ProviderPlannerResult> => {
+        const remainingBudgetMs = budgetMs - Math.max(0, now() - chainStarted);
+        const minimumBudgetMs = Math.min(MIN_ATTEMPT_BUDGET_MS, timeoutMs / 2);
+        if (remainingBudgetMs < (index > 0 || providerResults.length > 0 ? minimumBudgetMs : 1)) {
+          const skipped: ProviderPlannerResult = {
+          provider,
+          providerStatus: "UNAVAILABLE",
+          model: attemptModel,
+          callAttempted: false,
+            error: "AGENT_PLANNER_BUDGET_EXHAUSTED",
+            errorClass: "TIMEOUT",
+          };
+          providerResults.push({ model: attemptModel, result: skipped, latencyMs: 0 });
+          return skipped;
+        }
+
+        emit("AGENT_PROVIDER_CALL_STARTED", { provider, model: attemptModel });
+        const started = now();
+        let result: ProviderPlannerResult;
+        try {
+          result = await callProviderWithTimeout(
+            provider,
+            attemptModel,
+            callers[provider],
+            input,
+            Math.min(timeoutMs, remainingBudgetMs)
+          );
+        } catch {
+          result = {
+            provider,
+            providerStatus: "UNAVAILABLE",
+            model: attemptModel,
+            callAttempted: true,
+            errorClass: "NETWORK_ERROR",
+          };
+        }
+        providerResults.push({
+          model: attemptModel,
+          result,
+          latencyMs: Math.max(0, now() - started),
+        });
+        return result;
+      };
+
+      let result = await callModel(model);
+      if (
+        provider === "OPENAI" &&
+        model !== OPENAI_FALLBACK_MODEL &&
+        result.callAttempted !== false &&
+        result.providerStatus !== "AVAILABLE" &&
+        shouldRetryOpenAIModel(result.errorClass)
+      ) {
+        const errorClass = result.errorClass ?? "PROVIDER_UNAVAILABLE";
+        emit("AGENT_MODEL_FALLBACK", {
+          provider,
+          fromModel: model,
+          toModel: OPENAI_FALLBACK_MODEL,
+          model: OPENAI_FALLBACK_MODEL,
+          errorClass,
+          reason: `Retrying with ${OPENAI_FALLBACK_MODEL} after ${errorClass}`,
+        });
+        result = await callModel(OPENAI_FALLBACK_MODEL);
       }
     }
-    lastResult = result;
-    const latencyMs = Math.max(0, now() - started);
-    const succeeded = result.providerStatus === "AVAILABLE" && Boolean(result.decision);
-    const errorClass: ProviderErrorClass | undefined = succeeded ? undefined : result.errorClass ?? "PROVIDER_UNAVAILABLE";
 
-    attempts.push({
-      provider,
-      model: result.model || model,
-      callAttempted: result.callAttempted ?? false,
-      outcome: succeeded ? "COMPLETED" : "FAILED",
-      latencyMs,
-      errorClass,
-      usage: result.usage,
-    });
+    let successfulResult: ProviderPlannerResult | undefined;
+    for (const providerResult of providerResults) {
+      const result = providerResult.result;
+      lastResult = result;
+      const succeeded = result.providerStatus === "AVAILABLE" && Boolean(result.decision);
+      const errorClass: ProviderErrorClass | undefined = succeeded ? undefined : result.errorClass ?? "PROVIDER_UNAVAILABLE";
 
-    if (succeeded) {
-      emit("AGENT_PROVIDER_CALL_COMPLETED", {
+      attempts.push({
         provider,
-        model: result.model,
-        latencyMs: Math.round(latencyMs),
+        model: result.model || providerResult.model,
+        callAttempted: result.callAttempted ?? false,
+        outcome: succeeded ? "COMPLETED" : "FAILED",
+        latencyMs: providerResult.latencyMs,
+        errorClass,
+        usage: result.usage,
       });
+
+      if (succeeded) {
+        successfulResult = result;
+        emit("AGENT_PROVIDER_CALL_COMPLETED", {
+          provider,
+          model: result.model || providerResult.model,
+          latencyMs: Math.round(providerResult.latencyMs),
+        });
+        break;
+      }
+
+      emit("AGENT_PROVIDER_CALL_FAILED", {
+        provider,
+        model: result.model || providerResult.model,
+        latencyMs: Math.round(providerResult.latencyMs),
+        errorClass,
+      });
+    }
+
+    if (successfulResult) {
+      const result = successfulResult;
       const cost = estimateCloudCost(attempts);
       return {
         ...result,
@@ -290,8 +375,8 @@ export async function callPlanner(input: ProviderPlannerInput, deps: PlannerDepe
       };
     }
 
-    emit("AGENT_PROVIDER_CALL_FAILED", { provider, model, latencyMs: Math.round(latencyMs), errorClass });
-
+    const lastAttempt = attempts[attempts.length - 1];
+    const errorClass = lastAttempt?.errorClass ?? "PROVIDER_UNAVAILABLE";
     const next = chain[index + 1];
     if (next) {
       fallbackCount += 1;

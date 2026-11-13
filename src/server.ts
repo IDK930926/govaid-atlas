@@ -7,6 +7,7 @@ import { callPlanner, getProviderHealth } from "./agent/client";
 import { buildSafePlan } from "./agent/orchestrator";
 import { listAllowedTools } from "./agent/tools";
 import type { AgentDecision } from "./agent/types";
+import { getRuntimeDisplayMode } from "./agent/providers/types";
 import { assessQueryCoverage, detectBenefitDomain } from "./coverage";
 
 // Secrets such as OPENAI_API_KEY stay server-side: load an optional, gitignored .env into this
@@ -254,26 +255,35 @@ function getClientIp(request: IncomingMessage): string {
 
 export async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
+  const pathname = url.pathname === "/health"
+    ? "/api/health"
+    : url.pathname === "/agent/plan"
+      ? "/api/agent/plan"
+      : url.pathname;
 
-  if (request.method === "GET" && url.pathname === "/api/health") {
+  if (request.method === "GET" && pathname === "/api/health") {
     const health = await getProviderHealth();
+    const available = health.providerStatus === "AVAILABLE";
     sendJson(response, 200, {
-      ok: health.providerStatus === "AVAILABLE",
+      ok: available,
       provider: health.provider,
       providerStatus: health.providerStatus,
       model: health.model,
-      mode: health.mode ?? null,
+      available,
+      mode: getRuntimeDisplayMode(health.provider, available, health.fallbackActive),
+      providerMode: health.mode ?? null,
       fallbackActive: health.fallbackActive ?? false,
       fallbackReason: health.fallbackReason ?? null,
       status: health.providerStatus === "AVAILABLE" ? "configured" : "provider_unavailable",
       // Safe error class only; raw provider messages never leave the server.
       error: health.errorClass ?? (health.providerStatus === "AVAILABLE" ? null : "PROVIDER_UNAVAILABLE"),
+      lastError: health.errorClass ?? null,
       timestamp: new Date().toISOString(),
     });
     return;
   }
 
-  if (request.method === "POST" && url.pathname === "/api/agent/plan") {
+  if (request.method === "POST" && pathname === "/api/agent/plan") {
     const clientIp = getClientIp(request);
     const rateStatus = checkRateLimit(clientIp);
     if (!rateStatus.allowed) {
@@ -374,6 +384,23 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     // deterministic workflow decides. Health/config alone never makes this "AGENT".
     const executionMode = llmCallSucceeded ? "AGENT" : "DETERMINISTIC_FALLBACK";
     const fallbackActive = llmCallSucceeded ? (llmResult.fallbackCount ?? 0) > 0 : true;
+    const lastAttempt = llmResult.attempts?.[llmResult.attempts.length - 1];
+    const lastFailedAttempt = [...(llmResult.attempts ?? [])]
+      .reverse()
+      .find((attempt) => attempt.outcome === "FAILED" && attempt.callAttempted);
+    const lastLlmFailureReason = lastFailedAttempt
+      ? `${lastFailedAttempt.provider} · ${lastFailedAttempt.errorClass ?? "PROVIDER_UNAVAILABLE"}`
+      : null;
+    const responseProvider = llmResult.provider !== "UNAVAILABLE"
+      ? llmResult.provider
+      : lastAttempt?.provider ?? (llmResult.mode === "openai"
+        ? "OPENAI"
+        : llmResult.mode === "ollama"
+          ? "OLLAMA"
+          : "UNAVAILABLE");
+    const responseModel = llmResult.model !== "N/A"
+      ? llmResult.model
+      : lastAttempt?.model ?? "N/A";
 
     const safeErrorCode = llmCallSucceeded
       ? null
@@ -408,9 +435,15 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     const responseBody = {
       ok: true,
-      provider: llmResult.provider,
+      provider: responseProvider,
       providerStatus: llmResult.providerStatus,
-      model: llmResult.model,
+      model: responseModel,
+      available: llmCallSucceeded,
+      mode: getRuntimeDisplayMode(
+        responseProvider,
+        llmCallSucceeded,
+        !llmCallSucceeded || (llmResult.fallbackCount ?? 0) > 0
+      ),
       goal: trimmedGoal,
       plan: defaultPlan,
       allowedTools: allowlistedTools,
@@ -423,6 +456,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
         // Safe error class only; raw provider messages never leave the server.
         error: safeErrorCode,
         errorClass: llmCallSucceeded ? null : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE",
+        lastLlmFailureReason,
         llmCallAttempted: llmResult.callAttempted ?? false,
         llmCallSucceeded,
         llmCalls: (llmResult.attempts ?? []).filter((attempt) => attempt.callAttempted).length,

@@ -26,6 +26,12 @@ var __copyProps = (to, from, except, desc) => {
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/agent/providers/types.ts
+function getRuntimeDisplayMode(provider, available, fallbackActive = false) {
+  if (!available || fallbackActive || provider === "UNAVAILABLE") {
+    return "fallback";
+  }
+  return provider === "OPENAI" ? "cloud" : "local";
+}
 function classifyHttpStatus(status) {
   if (status === 401 || status === 403) return "AUTH_ERROR";
   if (status === 429) return "RATE_LIMITED";
@@ -329,6 +335,9 @@ function positiveInt2(raw, fallback) {
 function getOpenAIModel() {
   return getEnv2().OPENAI_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
 }
+function supportsReasoningEffort(model) {
+  return /^gpt-5(?:[.-]|$)/i.test(model);
+}
 function getOpenAITimeoutMs() {
   return positiveInt2(getEnv2().OPENAI_TIMEOUT_MS, DEFAULT_OPENAI_TIMEOUT_MS);
 }
@@ -355,24 +364,11 @@ async function healthCheckOpenAI() {
   if (!apiKey) {
     return healthFailure(model, "MISSING_API_KEY");
   }
-  try {
-    const response = await fetch(`${OPENAI_BASE_URL}/models/${encodeURIComponent(model)}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(positiveInt2(getEnv2().OPENAI_HEALTH_TIMEOUT_MS, DEFAULT_OPENAI_HEALTH_TIMEOUT_MS))
-    });
-    await response.text().catch(() => void 0);
-    if (!response.ok) {
-      return healthFailure(model, classifyHttpStatus(response.status));
-    }
-    return { provider: "OPENAI", providerStatus: "AVAILABLE", model };
-  } catch (error) {
-    return healthFailure(model, classifyThrownError(error));
-  }
+  return { provider: "OPENAI", providerStatus: "AVAILABLE", model };
 }
-async function callOpenAIPlanner(input) {
+async function callOpenAIPlanner(input, modelOverride = getOpenAIModel()) {
   const apiKey = getEnv2().OPENAI_API_KEY?.trim();
-  const model = getOpenAIModel();
+  const model = modelOverride;
   if (!apiKey) {
     return failure(model, "MISSING_API_KEY", false);
   }
@@ -393,7 +389,7 @@ Return only a valid decision that follows the required schema. Use null for tool
         schema: OPENAI_AGENT_DECISION_SCHEMA
       }
     },
-    reasoning: { effort: getEnv2().OPENAI_REASONING_EFFORT?.trim() || "low" },
+    ...supportsReasoningEffort(model) ? { reasoning: { effort: getEnv2().OPENAI_REASONING_EFFORT?.trim() || "low" } } : {},
     max_output_tokens: 2048,
     store: false
   };
@@ -460,14 +456,14 @@ Return only a valid decision that follows the required schema. Use null for tool
     usage
   };
 }
-var DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_TIMEOUT_MS, DEFAULT_OPENAI_HEALTH_TIMEOUT_MS, OPENAI_BASE_URL, OPENAI_AGENT_DECISION_SCHEMA;
+var DEFAULT_OPENAI_MODEL, OPENAI_FALLBACK_MODEL, DEFAULT_OPENAI_TIMEOUT_MS, OPENAI_BASE_URL, OPENAI_AGENT_DECISION_SCHEMA;
 var init_openai = __esm({
   "src/agent/providers/openai.ts"() {
     "use strict";
     init_types();
-    DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
+    DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
+    OPENAI_FALLBACK_MODEL = DEFAULT_OPENAI_MODEL;
     DEFAULT_OPENAI_TIMEOUT_MS = 8e3;
-    DEFAULT_OPENAI_HEALTH_TIMEOUT_MS = 5e3;
     OPENAI_BASE_URL = "https://api.openai.com/v1";
     OPENAI_AGENT_DECISION_SCHEMA = {
       type: "object",
@@ -517,6 +513,9 @@ function modelFor(provider) {
 }
 function safeReason(provider, errorClass) {
   return `${PROVIDER_LABEL[provider]} unavailable (${errorClass ?? "PROVIDER_UNAVAILABLE"})`;
+}
+function shouldRetryOpenAIModel(errorClass) {
+  return errorClass === "MODEL_NOT_AVAILABLE" || errorClass === "BAD_REQUEST";
 }
 async function getProviderHealth() {
   const mode = getProviderMode();
@@ -607,7 +606,9 @@ async function callProviderWithTimeout(provider, model, caller, input, timeoutMs
         });
       }, timeoutMs);
     });
-    return await Promise.race([caller({ ...input, timeoutMs, signal: controller.signal }), timeoutPromise]);
+    const requestInput = { ...input, timeoutMs, signal: controller.signal };
+    const request = provider === "OPENAI" ? caller(requestInput, model) : caller(requestInput);
+    return await Promise.race([request, timeoutPromise]);
   } finally {
     if (timer !== void 0) {
       clearTimeout(timer);
@@ -652,40 +653,103 @@ async function callPlanner(input, deps = {}) {
     const provider = chain[index];
     const model = modelFor(provider);
     emit("AGENT_PROVIDER_SELECTED", { mode, provider, model });
-    const started = now();
-    const remainingBudgetMs = budgetMs - Math.max(0, started - chainStarted);
-    let result;
+    const providerResults = [];
     if (provider === "OPENAI" && !isOpenAIConfigured()) {
-      result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: false, error: "OPENAI_MISSING_API_KEY", errorClass: "MISSING_API_KEY" };
-    } else if (index > 0 && remainingBudgetMs < Math.min(MIN_ATTEMPT_BUDGET_MS, timeoutMs / 2)) {
-      result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: false, error: "AGENT_PLANNER_BUDGET_EXHAUSTED", errorClass: "TIMEOUT" };
+      providerResults.push({
+        model,
+        result: { provider, providerStatus: "UNAVAILABLE", model, callAttempted: false, error: "OPENAI_MISSING_API_KEY", errorClass: "MISSING_API_KEY" },
+        latencyMs: 0
+      });
     } else {
-      emit("AGENT_PROVIDER_CALL_STARTED", { provider, model });
-      try {
-        result = await callProviderWithTimeout(provider, model, callers[provider], input, Math.min(timeoutMs, remainingBudgetMs));
-      } catch {
-        result = { provider, providerStatus: "UNAVAILABLE", model, callAttempted: true, errorClass: "NETWORK_ERROR" };
+      const callModel = async (attemptModel) => {
+        const remainingBudgetMs = budgetMs - Math.max(0, now() - chainStarted);
+        const minimumBudgetMs = Math.min(MIN_ATTEMPT_BUDGET_MS, timeoutMs / 2);
+        if (remainingBudgetMs < (index > 0 || providerResults.length > 0 ? minimumBudgetMs : 1)) {
+          const skipped = {
+            provider,
+            providerStatus: "UNAVAILABLE",
+            model: attemptModel,
+            callAttempted: false,
+            error: "AGENT_PLANNER_BUDGET_EXHAUSTED",
+            errorClass: "TIMEOUT"
+          };
+          providerResults.push({ model: attemptModel, result: skipped, latencyMs: 0 });
+          return skipped;
+        }
+        emit("AGENT_PROVIDER_CALL_STARTED", { provider, model: attemptModel });
+        const started = now();
+        let result2;
+        try {
+          result2 = await callProviderWithTimeout(
+            provider,
+            attemptModel,
+            callers[provider],
+            input,
+            Math.min(timeoutMs, remainingBudgetMs)
+          );
+        } catch {
+          result2 = {
+            provider,
+            providerStatus: "UNAVAILABLE",
+            model: attemptModel,
+            callAttempted: true,
+            errorClass: "NETWORK_ERROR"
+          };
+        }
+        providerResults.push({
+          model: attemptModel,
+          result: result2,
+          latencyMs: Math.max(0, now() - started)
+        });
+        return result2;
+      };
+      let result = await callModel(model);
+      if (provider === "OPENAI" && model !== OPENAI_FALLBACK_MODEL && result.callAttempted !== false && result.providerStatus !== "AVAILABLE" && shouldRetryOpenAIModel(result.errorClass)) {
+        const errorClass2 = result.errorClass ?? "PROVIDER_UNAVAILABLE";
+        emit("AGENT_MODEL_FALLBACK", {
+          provider,
+          fromModel: model,
+          toModel: OPENAI_FALLBACK_MODEL,
+          model: OPENAI_FALLBACK_MODEL,
+          errorClass: errorClass2,
+          reason: `Retrying with ${OPENAI_FALLBACK_MODEL} after ${errorClass2}`
+        });
+        result = await callModel(OPENAI_FALLBACK_MODEL);
       }
     }
-    lastResult = result;
-    const latencyMs = Math.max(0, now() - started);
-    const succeeded = result.providerStatus === "AVAILABLE" && Boolean(result.decision);
-    const errorClass = succeeded ? void 0 : result.errorClass ?? "PROVIDER_UNAVAILABLE";
-    attempts.push({
-      provider,
-      model: result.model || model,
-      callAttempted: result.callAttempted ?? false,
-      outcome: succeeded ? "COMPLETED" : "FAILED",
-      latencyMs,
-      errorClass,
-      usage: result.usage
-    });
-    if (succeeded) {
-      emit("AGENT_PROVIDER_CALL_COMPLETED", {
+    let successfulResult;
+    for (const providerResult of providerResults) {
+      const result = providerResult.result;
+      lastResult = result;
+      const succeeded = result.providerStatus === "AVAILABLE" && Boolean(result.decision);
+      const errorClass2 = succeeded ? void 0 : result.errorClass ?? "PROVIDER_UNAVAILABLE";
+      attempts.push({
         provider,
-        model: result.model,
-        latencyMs: Math.round(latencyMs)
+        model: result.model || providerResult.model,
+        callAttempted: result.callAttempted ?? false,
+        outcome: succeeded ? "COMPLETED" : "FAILED",
+        latencyMs: providerResult.latencyMs,
+        errorClass: errorClass2,
+        usage: result.usage
       });
+      if (succeeded) {
+        successfulResult = result;
+        emit("AGENT_PROVIDER_CALL_COMPLETED", {
+          provider,
+          model: result.model || providerResult.model,
+          latencyMs: Math.round(providerResult.latencyMs)
+        });
+        break;
+      }
+      emit("AGENT_PROVIDER_CALL_FAILED", {
+        provider,
+        model: result.model || providerResult.model,
+        latencyMs: Math.round(providerResult.latencyMs),
+        errorClass: errorClass2
+      });
+    }
+    if (successfulResult) {
+      const result = successfulResult;
       const cost2 = estimateCloudCost(attempts);
       return {
         ...result,
@@ -707,7 +771,8 @@ async function callPlanner(input, deps = {}) {
         pricingLabel: cost2.label
       };
     }
-    emit("AGENT_PROVIDER_CALL_FAILED", { provider, model, latencyMs: Math.round(latencyMs), errorClass });
+    const lastAttempt = attempts[attempts.length - 1];
+    const errorClass = lastAttempt?.errorClass ?? "PROVIDER_UNAVAILABLE";
     const next = chain[index + 1];
     if (next) {
       fallbackCount += 1;
@@ -1325,24 +1390,29 @@ function getClientIp(request) {
 }
 async function handleRequest(request, response) {
   const url = new import_node_url.URL(request.url ?? "/", "http://localhost");
-  if (request.method === "GET" && url.pathname === "/api/health") {
+  const pathname = url.pathname === "/health" ? "/api/health" : url.pathname === "/agent/plan" ? "/api/agent/plan" : url.pathname;
+  if (request.method === "GET" && pathname === "/api/health") {
     const health = await getProviderHealth();
+    const available = health.providerStatus === "AVAILABLE";
     sendJson(response, 200, {
-      ok: health.providerStatus === "AVAILABLE",
+      ok: available,
       provider: health.provider,
       providerStatus: health.providerStatus,
       model: health.model,
-      mode: health.mode ?? null,
+      available,
+      mode: getRuntimeDisplayMode(health.provider, available, health.fallbackActive),
+      providerMode: health.mode ?? null,
       fallbackActive: health.fallbackActive ?? false,
       fallbackReason: health.fallbackReason ?? null,
       status: health.providerStatus === "AVAILABLE" ? "configured" : "provider_unavailable",
       // Safe error class only; raw provider messages never leave the server.
       error: health.errorClass ?? (health.providerStatus === "AVAILABLE" ? null : "PROVIDER_UNAVAILABLE"),
+      lastError: health.errorClass ?? null,
       timestamp: (/* @__PURE__ */ new Date()).toISOString()
     });
     return;
   }
-  if (request.method === "POST" && url.pathname === "/api/agent/plan") {
+  if (request.method === "POST" && pathname === "/api/agent/plan") {
     const clientIp = getClientIp(request);
     const rateStatus = checkRateLimit(clientIp);
     if (!rateStatus.allowed) {
@@ -1428,6 +1498,11 @@ async function handleRequest(request, response) {
     const llmCallSucceeded = llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision);
     const executionMode = llmCallSucceeded ? "AGENT" : "DETERMINISTIC_FALLBACK";
     const fallbackActive = llmCallSucceeded ? (llmResult.fallbackCount ?? 0) > 0 : true;
+    const lastAttempt = llmResult.attempts?.[llmResult.attempts.length - 1];
+    const lastFailedAttempt = [...llmResult.attempts ?? []].reverse().find((attempt) => attempt.outcome === "FAILED" && attempt.callAttempted);
+    const lastLlmFailureReason = lastFailedAttempt ? `${lastFailedAttempt.provider} \xB7 ${lastFailedAttempt.errorClass ?? "PROVIDER_UNAVAILABLE"}` : null;
+    const responseProvider = llmResult.provider !== "UNAVAILABLE" ? llmResult.provider : lastAttempt?.provider ?? (llmResult.mode === "openai" ? "OPENAI" : llmResult.mode === "ollama" ? "OLLAMA" : "UNAVAILABLE");
+    const responseModel = llmResult.model !== "N/A" ? llmResult.model : lastAttempt?.model ?? "N/A";
     const safeErrorCode = llmCallSucceeded ? null : llmResult.error === "AGENT_PROVIDER_TIMEOUT" ? "AGENT_PROVIDER_TIMEOUT" : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE";
     const fallbackDecision = coverage.status === "NOT_COVERED" ? {
       reasoningSummary: coverage.message ?? "Request is outside covered policies; safe fallback stops without tool execution.",
@@ -1449,9 +1524,15 @@ async function handleRequest(request, response) {
     };
     const responseBody = {
       ok: true,
-      provider: llmResult.provider,
+      provider: responseProvider,
       providerStatus: llmResult.providerStatus,
-      model: llmResult.model,
+      model: responseModel,
+      available: llmCallSucceeded,
+      mode: getRuntimeDisplayMode(
+        responseProvider,
+        llmCallSucceeded,
+        !llmCallSucceeded || (llmResult.fallbackCount ?? 0) > 0
+      ),
       goal: trimmedGoal,
       plan: defaultPlan,
       allowedTools: allowlistedTools,
@@ -1464,6 +1545,7 @@ async function handleRequest(request, response) {
         // Safe error class only; raw provider messages never leave the server.
         error: safeErrorCode,
         errorClass: llmCallSucceeded ? null : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE",
+        lastLlmFailureReason,
         llmCallAttempted: llmResult.callAttempted ?? false,
         llmCallSucceeded,
         llmCalls: (llmResult.attempts ?? []).filter((attempt) => attempt.callAttempted).length,
@@ -1505,6 +1587,7 @@ var init_server = __esm({
     init_client();
     init_orchestrator();
     init_tools();
+    init_types();
     init_coverage();
     try {
       process.loadEnvFile((0, import_node_path.resolve)(__dirname, "../.env"));

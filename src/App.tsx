@@ -27,7 +27,7 @@ import {
 import {
   createRuntimeMetrics,
   measureSync,
-  recordLlmCall,
+  recordProviderRun,
   recordRuntimeCall,
   recordRuntimeOperation,
   type RuntimeCounterKey,
@@ -62,7 +62,14 @@ import {
 import {listAllowedTools} from "./agent/tools";
 
 import type {AgentRun, AgentStatus} from "./agent/types";
-import type {ProviderName, ProviderPlannerResult, ProviderUsage} from "./agent/providers/types";
+import {
+  getRuntimeDisplayMode,
+  type ProviderMode,
+  type ProviderName,
+  type ProviderPlannerResult,
+  type ProviderUsage,
+  type RuntimeDisplayMode,
+} from "./agent/providers/types";
 
 import {
   buildCaseDraft,
@@ -104,12 +111,29 @@ type ProviderInfo = {
   provider: ProviderName;
   providerStatus: "AVAILABLE" | "UNAVAILABLE" | "UNKNOWN";
   model: string;
+  available: boolean;
+  mode: RuntimeDisplayMode;
+  providerMode: ProviderMode | null;
+};
+
+type RuntimeInference = {
+  provider: ProviderName;
+  model: string;
+  available: boolean;
+  mode: RuntimeDisplayMode;
+  latencyMs: number | null;
+  ruleFallbackUsed: boolean;
+  providerFallbackCount: number;
+  lastLlmFailureReason?: string | null;
+  recordedAt: string;
 };
 
 type AgentPlanResponse = {
   provider: ProviderName;
   providerStatus: "AVAILABLE" | "UNAVAILABLE";
   model: string;
+  available?: boolean;
+  mode?: RuntimeDisplayMode;
   decision?: ProviderPlannerResult["decision"];
   metadata?: {
     usage?: ProviderUsage | null;
@@ -120,6 +144,13 @@ type AgentPlanResponse = {
     executionMode?: ExecutionMode;
     fallbackActive?: boolean;
     fallbackReason?: string | null;
+    mode?: ProviderMode | null;
+    plannerLatencyMs?: number;
+    llmCalls?: number;
+    fallbackCount?: number;
+    lastLlmFailureReason?: string | null;
+    estimatedCloudCostUsd?: number | null;
+    pricingLabel?: string | null;
   };
 };
 
@@ -136,6 +167,51 @@ export function describeExecution(execution: ExecutionInfo | null): string | nul
   if (!execution) return null;
   if (execution.mode === "DETERMINISTIC_FALLBACK") return "DETERMINISTIC_FALLBACK";
   return `AGENT · ${execution.provider}`;
+}
+
+const RUNTIME_INFERENCE_STORAGE_KEY = "govaid-atlas.latest-inference.v1";
+
+function isRuntimeInference(value: unknown): value is RuntimeInference {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    (record.provider === "OPENAI" || record.provider === "OLLAMA" || record.provider === "UNAVAILABLE") &&
+    typeof record.model === "string" &&
+    typeof record.available === "boolean" &&
+    (record.mode === "cloud" || record.mode === "local" || record.mode === "fallback") &&
+    (record.latencyMs === null || (typeof record.latencyMs === "number" && Number.isFinite(record.latencyMs))) &&
+    typeof record.ruleFallbackUsed === "boolean" &&
+    typeof record.providerFallbackCount === "number" &&
+    Number.isFinite(record.providerFallbackCount) &&
+    (record.lastLlmFailureReason === undefined || record.lastLlmFailureReason === null || typeof record.lastLlmFailureReason === "string") &&
+    typeof record.recordedAt === "string"
+  );
+}
+
+function readStoredRuntimeInference(): {record: RuntimeInference | null; storageUnavailable: boolean} {
+  if (typeof window === "undefined") return {record: null, storageUnavailable: false};
+  try {
+    const raw = window.localStorage.getItem(RUNTIME_INFERENCE_STORAGE_KEY);
+    if (!raw) return {record: null, storageUnavailable: false};
+    const parsed: unknown = JSON.parse(raw);
+    return isRuntimeInference(parsed)
+      ? {record: parsed, storageUnavailable: false}
+      : {record: null, storageUnavailable: false};
+  } catch {
+    return {record: null, storageUnavailable: true};
+  }
+}
+
+function providerDisplayName(provider: ProviderName): string {
+  if (provider === "OPENAI") return "OpenAI";
+  if (provider === "OLLAMA") return "Ollama";
+  return "Agent";
+}
+
+function runtimeModeLabel(mode: RuntimeDisplayMode): string {
+  if (mode === "cloud") return "Cloud";
+  if (mode === "local") return "Local";
+  return "Fallback";
 }
 
 const sensitiveProfile: SensitiveProfile = {
@@ -183,7 +259,13 @@ function App() {
     provider: "UNAVAILABLE",
     providerStatus: "UNKNOWN",
     model: "N/A",
+    available: false,
+    mode: "fallback",
+    providerMode: null,
   });
+  const [storedInference] = useState(readStoredRuntimeInference);
+  const [runtimeInference, setRuntimeInference] = useState<RuntimeInference | null>(() => storedInference.record);
+  const [runtimeStorageUnavailable, setRuntimeStorageUnavailable] = useState(storedInference.storageUnavailable);
   const [providerError, setProviderError] = useState<string | null>(null);
   const [execution, setExecution] = useState<ExecutionInfo | null>(null);
   const [centralEvaluation, setCentralEvaluation] = useState<RuleEvaluation[]>([]);
@@ -209,6 +291,16 @@ function App() {
   }, [agentRunning]);
 
   useEffect(() => {
+    if (!runtimeInference || typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(RUNTIME_INFERENCE_STORAGE_KEY, JSON.stringify(runtimeInference));
+      setRuntimeStorageUnavailable(false);
+    } catch {
+      setRuntimeStorageUnavailable(true);
+    }
+  }, [runtimeInference]);
+
+  useEffect(() => {
     const controller = new AbortController();
     void fetch("/api/health", {signal: controller.signal})
       .then(async (response) => {
@@ -219,22 +311,38 @@ function App() {
           provider?: ProviderName;
           providerStatus?: "AVAILABLE" | "UNAVAILABLE";
           model?: string;
+          available?: boolean;
+          mode?: RuntimeDisplayMode;
+          providerMode?: ProviderMode | null;
+          fallbackActive?: boolean;
           error?: string | null;
+          lastError?: string | null;
         }>;
       })
       .then((health) => {
+        const provider = health.provider ?? "UNAVAILABLE";
+        const available = health.available ?? health.providerStatus === "AVAILABLE";
+        const fallbackActive = health.fallbackActive ?? false;
         setProviderInfo({
-          provider: health.provider ?? "UNAVAILABLE",
+          provider,
           providerStatus: health.providerStatus ?? "UNAVAILABLE",
           model: health.model ?? "N/A",
+          available,
+          mode: health.mode ?? getRuntimeDisplayMode(provider, available, fallbackActive),
+          providerMode: health.providerMode ?? null,
         });
-        setProviderError(health.error ?? null);
+        setProviderError(health.lastError ?? health.error ?? null);
       })
       .catch((error: unknown) => {
         if (error instanceof Error && error.name === "AbortError") {
           return;
         }
-        setProviderInfo((current) => ({...current, providerStatus: "UNAVAILABLE"}));
+        setProviderInfo((current) => ({
+          ...current,
+          providerStatus: "UNAVAILABLE",
+          available: false,
+          mode: "fallback",
+        }));
         setProviderError(error instanceof Error ? error.message : "Provider health request failed.");
       });
     return () => controller.abort();
@@ -418,6 +526,8 @@ function App() {
     }]);
 
     let plannerResult: ProviderPlannerResult;
+    let inferenceRecord: RuntimeInference | null = null;
+    const plannerRequestStartedAt = performance.now();
     try {
       const response = await fetch("/api/agent/plan", {
         method: "POST",
@@ -429,7 +539,15 @@ function App() {
       }
       const payload = await response.json() as AgentPlanResponse;
       const usage = payload.metadata?.usage ?? undefined;
-      const succeeded = payload.metadata?.llmCallSucceeded === true;
+      const succeeded = payload.metadata?.llmCallSucceeded ??
+        (payload.providerStatus === "AVAILABLE" && Boolean(payload.decision));
+      const available = payload.available ?? succeeded;
+      const providerFallbackCount = payload.metadata?.fallbackCount ?? 0;
+      const mode = payload.mode ?? getRuntimeDisplayMode(
+        payload.provider,
+        available,
+        !succeeded || providerFallbackCount > 0
+      );
       plannerResult = {
         provider: payload.provider,
         providerStatus: payload.providerStatus,
@@ -445,6 +563,9 @@ function App() {
         provider: payload.provider,
         providerStatus: payload.providerStatus,
         model: payload.model,
+        available,
+        mode,
+        providerMode: payload.metadata?.mode ?? null,
       });
       setProviderError(payload.metadata?.error ?? null);
       setExecution({
@@ -453,14 +574,48 @@ function App() {
         fallbackActive: payload.metadata?.fallbackActive ?? !succeeded,
         fallbackReason: payload.metadata?.fallbackReason ?? null,
       });
-      if (plannerResult.callAttempted) {
-        setRuntimeMetrics((current) => recordLlmCall(current, usage ?? null, payload.provider === "OLLAMA"));
+      inferenceRecord = {
+        provider: payload.provider,
+        model: payload.model,
+        available,
+        mode,
+        latencyMs: payload.metadata?.plannerLatencyMs ?? performance.now() - plannerRequestStartedAt,
+        ruleFallbackUsed: !succeeded,
+        providerFallbackCount,
+        lastLlmFailureReason: payload.metadata?.lastLlmFailureReason ?? null,
+        recordedAt: new Date().toISOString(),
+      };
+      if (plannerResult.callAttempted || providerFallbackCount > 0) {
+        setRuntimeMetrics((current) => recordProviderRun(current, {
+          llmCalls: payload.metadata?.llmCalls ?? 1,
+          inputTokens: usage?.inputTokens ?? null,
+          outputTokens: usage?.outputTokens ?? null,
+          estimatedCloudCostUsd: payload.metadata?.estimatedCloudCostUsd ?? null,
+          pricingLabel: payload.metadata?.pricingLabel ?? null,
+          fallbackCount: providerFallbackCount,
+          fallbackReason: payload.metadata?.fallbackReason ?? null,
+        }));
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Agent planner request failed.";
-      setProviderInfo((current) => ({...current, providerStatus: "UNAVAILABLE"}));
+      setProviderInfo((current) => ({
+        ...current,
+        providerStatus: "UNAVAILABLE",
+        available: false,
+        mode: "fallback",
+      }));
       setProviderError(message);
       setExecution({mode: "DETERMINISTIC_FALLBACK", provider: "UNAVAILABLE", fallbackActive: true, fallbackReason: message});
+      inferenceRecord = {
+        provider: providerInfo.provider,
+        model: providerInfo.model,
+        available: false,
+        mode: "fallback",
+        latencyMs: performance.now() - plannerRequestStartedAt,
+        ruleFallbackUsed: true,
+        providerFallbackCount: 0,
+        recordedAt: new Date().toISOString(),
+      };
       plannerResult = {
         provider: "UNAVAILABLE",
         providerStatus: "UNAVAILABLE",
@@ -474,6 +629,15 @@ function App() {
       domain: currentDraft.domain,
       ...(currentDraft.requiredFields ? { requiredFields: [...currentDraft.requiredFields] } : {}),
     });
+    if (inferenceRecord) {
+      const ruleFallbackUsed = run.trace.some((step) => step.fallbackUsed);
+      setRuntimeInference({
+        ...inferenceRecord,
+        mode: ruleFallbackUsed ? "fallback" : inferenceRecord.mode,
+        ruleFallbackUsed,
+        recordedAt: new Date().toISOString(),
+      });
+    }
     setAgentRun(run);
     recordAgentToolMetrics(run);
     const centralResult = getCompletedToolResult<{evaluations?: RuleEvaluation[]}>(run, "evaluate_central_rules");
@@ -623,7 +787,17 @@ function App() {
       : providerInfo.providerStatus === "UNKNOWN"
         ? "AGENT"
         : "DETERMINISTIC";
-  const providerReady = providerInfo.providerStatus === "AVAILABLE";
+  const providerReady = providerInfo.available;
+  const modelStatusState = providerInfo.providerStatus === "UNKNOWN"
+    ? "checking"
+    : !providerInfo.available
+      ? "unavailable"
+      : providerInfo.mode;
+  const modelStatusLabel = providerInfo.providerStatus === "UNKNOWN"
+    ? "AGENT · CHECKING"
+    : !providerInfo.available
+      ? "AGENT · UNAVAILABLE"
+      : `${providerInfo.mode.toUpperCase()} · ${providerInfo.model}`;
 
   return (
     <div className={"app phase-" + phase.toLowerCase()}>
@@ -639,11 +813,22 @@ function App() {
           <WorkflowProgress status={status} running={agentRunning}/>
 
           <div className="topbar-actions">
+            <button
+              className={`model-status-pill model-status-${modelStatusState}`}
+              type="button"
+              onClick={() => openGovernance("RUNTIME")}
+              aria-label={`開啟模型資訊 Runtime：${modelStatusLabel}`}
+              aria-haspopup="dialog"
+              title={modelStatusLabel}
+            >
+              <span className="model-status-dot" aria-hidden="true"/>
+              <span>{modelStatusLabel}</span>
+            </button>
             <span className={"phase-pill pill-" + (agentRunning ? "planning" : status.toLowerCase())} role="status" aria-live="polite">
               <span className="pill-dot" aria-hidden="true"/>
               {agentRunning ? "分析中" : statusDisplayCopy[status]}
             </span>
-            <button className="ghost" type="button" onClick={() => openGovernance()} aria-haspopup="dialog">
+            <button className="ghost topbar-governance" type="button" onClick={() => openGovernance()} aria-haspopup="dialog">
               <span className="hide-sm">技術與治理</span><span className="show-sm">治理</span>
             </button>
             <button className="ghost" type="button" onClick={resetDemo} disabled={agentRunning}>重設</button>
@@ -757,6 +942,9 @@ function App() {
                 providerInfo={providerInfo}
                 execution={execution}
                 lastInferenceSeconds={lastInferenceSeconds}
+                healthError={providerError}
+                inference={runtimeInference}
+                storageUnavailable={runtimeStorageUnavailable}
               />
             )}
             {governanceTab === "EVAL" && <EvaluationPanel deterministic={benchmarkResult}/>}
@@ -1709,10 +1897,20 @@ function hasTaipeiStudyWithTaoyuanRegistration(passport: DecisionPassport, goal:
     && extractFactsFromGoal(goal, "HOUSING").studyCity === "臺北市";
 }
 
-function buildVerdicts(passport: DecisionPassport, newTaipeiStudentHint = false): ProgramVerdict[] {
+function buildVerdicts(
+  passport: DecisionPassport,
+  newTaipeiStudentHint = false,
+  dualCityComparison = false,
+): ProgramVerdict[] {
   const scenarios = [
-    {label: `目前住址 · ${shortPlace(passport.actual)}`, data: passport.actual},
-    {label: `搬遷假設 · ${shortPlace(passport.whatIf)}`, data: passport.whatIf},
+    {
+      label: `${dualCityComparison ? "方案 A" : "目前住址"} · ${shortPlace(passport.actual)}`,
+      data: passport.actual,
+    },
+    {
+      label: `${dualCityComparison ? "方案 B" : "搬遷假設"} · ${shortPlace(passport.whatIf)}`,
+      data: passport.whatIf,
+    },
   ];
   const order: string[] = [];
   const byPolicy = new Map<string, {label: string; status: ResultStatus; gap: string | null}[]>();
@@ -1740,7 +1938,9 @@ function buildVerdicts(passport: DecisionPassport, newTaipeiStudentHint = false)
       return [{
         policyId,
         status: entries[0].status,
-        scope: entries.length > 1 ? "兩個地址皆適用" : entries[0].label,
+        scope: entries.length > 1
+          ? dualCityComparison ? "方案 A、B 皆適用" : "兩個地址皆適用"
+          : entries[0].label,
         gap: entries.find((entry) => entry.gap)?.gap ?? null,
       }];
     }
@@ -1788,7 +1988,7 @@ function ResultView({
   const dualCityComparison = passport.domain !== "CHILDCARE"
     && extractFactsFromGoal(run.goal, "HOUSING").dualCityComparison === true;
   const newTaipeiStudentHint = hasTaipeiStudyWithTaoyuanRegistration(passport, run.goal);
-  const verdicts = buildVerdicts(passport, newTaipeiStudentHint);
+  const verdicts = buildVerdicts(passport, newTaipeiStudentHint, dualCityComparison);
   const certain = verdicts.filter((verdict) => verdict.status === "PASS" || verdict.status === "FAIL");
   const pending = verdicts.filter((verdict) => verdict.status !== "PASS" && verdict.status !== "FAIL");
   const resumeIndex = run.auditTrail.findIndex((event) => event.action === "AGENT_RESUMED");
@@ -2372,11 +2572,17 @@ function RuntimePanel({
   providerInfo,
   execution,
   lastInferenceSeconds,
+  healthError,
+  inference,
+  storageUnavailable,
 }: {
   metrics: RuntimeMetrics;
   providerInfo: ProviderInfo;
   execution: ExecutionInfo | null;
   lastInferenceSeconds: number | null;
+  healthError: string | null;
+  inference: RuntimeInference | null;
+  storageUnavailable: boolean;
 }) {
   const known = providerInfo.providerStatus !== "UNKNOWN";
   // Fallback = a different path than the primary provider produced the decision.
@@ -2395,6 +2601,52 @@ function RuntimePanel({
           <h3 id="runtime-title">模型資訊</h3>
           <span className="en-companion" lang="en">Runtime</span>
         </div>
+        <h4 className="runtime-subtitle">目前環境狀態</h4>
+        <div className="metric-grid">
+          <Metric label="Provider" value={providerDisplayName(providerInfo.provider)}/>
+          <Metric label="Model" value={providerInfo.model}/>
+          <Metric
+            label="Connection"
+            value={providerInfo.providerStatus === "UNKNOWN" ? "檢查中" : providerInfo.available ? "可用" : "未連線"}
+          />
+          <Metric label="Runtime Mode" value={runtimeModeLabel(providerInfo.mode)}/>
+          <Metric label="Configured Mode" value={providerInfo.providerMode ?? null}/>
+        </div>
+        {healthError && (
+          <p className="runtime-error-reason" role="status">
+            連線診斷：{healthError}
+          </p>
+        )}
+        <h4 className="runtime-subtitle">最近案件推論</h4>
+        {inference ? (
+          <>
+            <div className="metric-grid">
+              <Metric label="Provider" value={providerDisplayName(inference.provider)}/>
+              <Metric label="Model" value={inference.model}/>
+              <Metric label="Connection" value={inference.available ? "可用" : "未連線"}/>
+              <Metric label="Runtime Mode" value={runtimeModeLabel(inference.mode)}/>
+              <Metric label="Planner latency" value={inference.latencyMs === null ? null : `${inference.latencyMs.toFixed(0)} ms`}/>
+              <Metric label="Rule-based Fallback" value={inference.ruleFallbackUsed ? "已使用" : "未使用"}/>
+              <Metric label="Provider failovers" value={inference.providerFallbackCount}/>
+            </div>
+            {inference.lastLlmFailureReason && (
+              <p className="runtime-error-reason" role="status">
+                最近模型失敗原因：{inference.lastLlmFailureReason}
+              </p>
+            )}
+            <p className="muted small">
+              此為最近案件的保存紀錄；目前環境狀態以上方即時健康檢查為準。
+            </p>
+          </>
+        ) : (
+          <p className="muted">尚無已保存的案件推論紀錄；完成一次分析後會顯示最近的 Provider、模型、連線、延遲與規則式 Fallback 狀態。</p>
+        )}
+        {storageUnavailable && (
+          <p className="runtime-storage-warning" role="status">
+            瀏覽器儲存空間不可用；最近案件推論無法跨重新整理保存。
+          </p>
+        )}
+        <h4 className="runtime-subtitle">累計執行指標</h4>
         <div className="metric-grid">
           <Metric label="Provider" value={known && providerInfo.provider !== "UNAVAILABLE" ? providerInfo.provider : null}/>
           <Metric label="Model" value={known ? providerInfo.model : null}/>
@@ -2403,8 +2655,8 @@ function RuntimePanel({
           <Metric label="LLM Calls" value={metrics.llmCalls}/>
           <Metric label="Input Tokens" value={metrics.inputTokens}/>
           <Metric label="Output Tokens" value={metrics.outputTokens}/>
-          <Metric label="Planner latency" value={lastInferenceSeconds === null ? null : `${lastInferenceSeconds.toFixed(1)} s`}/>
           <Metric label="Cloud API Cost" value={cost}/>
+          <Metric label="Provider failovers" value={metrics.fallbackCount}/>
         </div>
         <p className="muted">LLM 負責規劃與工具調度；資格結果一律由規則引擎判斷。</p>
       </section>

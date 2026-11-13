@@ -28,6 +28,8 @@ import {
   server,
   setRateLimitMaxRequests,
 } from "../server";
+import healthApiHandler from "../../api/health";
+import plannerApiHandler from "../../api/agent/plan";
 import vercelApiHandler from "../vercel-handler";
 import type { AddressScenario, ApplicantProfile } from "../types";
 
@@ -75,6 +77,8 @@ const taoyuanScenario: AddressScenario = {
 
 const originalFetch = globalThis.fetch;
 const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+const originalOpenAiModel = process.env.OPENAI_MODEL;
+const originalOllamaModel = process.env.OLLAMA_MODEL;
 
 test.afterEach(() => {
   globalThis.fetch = originalFetch;
@@ -86,6 +90,16 @@ test.afterEach(() => {
   } else {
     process.env.OPENAI_API_KEY = originalOpenAiApiKey;
   }
+  if (originalOpenAiModel === undefined) {
+    delete process.env.OPENAI_MODEL;
+  } else {
+    process.env.OPENAI_MODEL = originalOpenAiModel;
+  }
+  if (originalOllamaModel === undefined) {
+    delete process.env.OLLAMA_MODEL;
+  } else {
+    process.env.OLLAMA_MODEL = originalOllamaModel;
+  }
 });
 
 function invokeServer(options: {
@@ -95,6 +109,8 @@ function invokeServer(options: {
   parsedBody?: unknown;
   serverless?: boolean;
   bundled?: boolean;
+  plannerEndpoint?: boolean;
+  healthEndpoint?: boolean;
   headers?: Record<string, string>;
   remoteAddress?: string;
 }): Promise<{ statusCode: number; headers: Record<string, string>; json: Record<string, unknown> }> {
@@ -143,11 +159,15 @@ function invokeServer(options: {
       },
     } as unknown as ServerResponse;
 
-    const handler = options.bundled
-      ? bundledVercelApiHandler
-      : options.serverless
-        ? vercelApiHandler
-        : handleRequest;
+    const handler = options.healthEndpoint
+      ? healthApiHandler
+      : options.plannerEndpoint
+        ? plannerApiHandler
+        : options.bundled
+          ? bundledVercelApiHandler
+          : options.serverless
+            ? vercelApiHandler
+            : handleRequest;
     handler(req, res).catch(rejectPromise);
   });
 }
@@ -525,7 +545,222 @@ test("Vercel API — OpenAI health uses server environment configuration", async
   assert.equal(response.statusCode, 200);
   assert.equal(response.json.provider, "OPENAI");
   assert.equal(response.json.providerStatus, "AVAILABLE");
+  assert.equal(response.json.available, true);
+  assert.equal(response.json.mode, "cloud");
+  assert.equal(response.json.providerMode, "openai");
   assert.equal(JSON.stringify(response.json).includes("test-key-not-for-commit"), false);
+});
+
+test("Vercel API — Ollama health returns local runtime information", async () => {
+  process.env.AGENT_PROVIDER = "ollama";
+  process.env.OLLAMA_MODEL = "qwen3.5:4b";
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ models: [{ name: "qwen3.5:4b" }] }), { status: 200 })) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "GET",
+    url: "/api/health",
+    bundled: true,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json.provider, "OLLAMA");
+  assert.equal(response.json.model, "qwen3.5:4b");
+  assert.equal(response.json.providerStatus, "AVAILABLE");
+  assert.equal(response.json.available, true);
+  assert.equal(response.json.mode, "local");
+  assert.equal(response.json.providerMode, "ollama");
+});
+
+test("Vercel API — auto mode identifies local failover as fallback", async () => {
+  process.env.AGENT_PROVIDER = "auto";
+  process.env.OLLAMA_MODEL = "qwen3.5:4b";
+  delete process.env.OPENAI_API_KEY;
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ models: [{ name: "qwen3.5:4b" }] }), { status: 200 })) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "GET",
+    url: "/api/health",
+    bundled: true,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json.provider, "OLLAMA");
+  assert.equal(response.json.available, true);
+  assert.equal(response.json.mode, "fallback");
+  assert.equal(response.json.providerMode, "auto");
+  assert.equal(response.json.fallbackActive, true);
+});
+
+test("Vercel API — unavailable Ollama health retains provider and model metadata", async () => {
+  process.env.AGENT_PROVIDER = "ollama";
+  process.env.OLLAMA_MODEL = "qwen3.5:4b";
+  globalThis.fetch = (async () => new Response("offline", { status: 503 })) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "GET",
+    url: "/api/health",
+    bundled: true,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json.provider, "OLLAMA");
+  assert.equal(response.json.model, "qwen3.5:4b");
+  assert.equal(response.json.available, false);
+  assert.equal(response.json.mode, "fallback");
+});
+
+test("Vercel API — planning response reports OpenAI cloud runtime information", async () => {
+  process.env.AGENT_PROVIDER = "openai";
+  process.env.OPENAI_API_KEY = "test-key-not-for-commit";
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({
+      status: "completed",
+      output: [{
+        type: "message",
+        content: [{
+          type: "output_text",
+          text: JSON.stringify({
+            reasoningSummary: "Use the deterministic housing rules.",
+            nextAction: "CALL_TOOL",
+            toolName: "evaluate_central_rules",
+            humanQuestion: null,
+          }),
+        }],
+      }],
+      usage: { input_tokens: 11, output_tokens: 5, total_tokens: 16 },
+    }), { status: 200 })) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "POST",
+    url: "/api/agent/plan",
+    parsedBody: { goal: "Check rent subsidy" },
+    bundled: true,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json.provider, "OPENAI");
+  assert.equal(response.json.available, true);
+  assert.equal(response.json.mode, "cloud");
+  assert.equal(typeof response.json.model, "string");
+});
+
+test("Vercel API — health route accepts a stripped path and reports configured OpenAI as cloud", async () => {
+  process.env.AGENT_PROVIDER = "openai";
+  process.env.OPENAI_API_KEY = "test-key-not-for-commit";
+  delete process.env.OPENAI_MODEL;
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    throw new Error("Health must not make an OpenAI network request");
+  }) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "GET",
+    url: "/health",
+    healthEndpoint: true,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json.available, true);
+  assert.equal(response.json.provider, "OPENAI");
+  assert.equal(response.json.model, "gpt-4o-mini");
+  assert.equal(response.json.mode, "cloud");
+  assert.equal(response.json.lastError, null);
+  assert.equal(fetchCalls, 0);
+});
+
+test("Vercel API — dedicated planner route normalizes stripped function paths", async () => {
+  process.env.AGENT_PROVIDER = "openai";
+  process.env.OPENAI_API_KEY = "test-key-not-for-commit";
+  process.env.OPENAI_MODEL = "gpt-4o-mini";
+  let fetchCalls = 0;
+  globalThis.fetch = (async () => {
+    fetchCalls += 1;
+    return new Response(JSON.stringify({
+      status: "completed",
+      output: [{
+        type: "message",
+        content: [{
+          type: "output_text",
+          text: JSON.stringify({
+            reasoningSummary: "Use the deterministic housing rules.",
+            nextAction: "CALL_TOOL",
+            toolName: "evaluate_central_rules",
+            humanQuestion: null,
+          }),
+        }],
+      }],
+    }), { status: 200 });
+  }) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "POST",
+    url: "/agent/plan",
+    parsedBody: { goal: "Check rent subsidy" },
+    plannerEndpoint: true,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json.provider, "OPENAI");
+  assert.equal(response.json.model, "gpt-4o-mini");
+  assert.equal(response.json.available, true, JSON.stringify(response.json));
+  assert.equal(fetchCalls, 1);
+});
+
+test("Vercel API — planning response exposes a safe OpenAI model failure reason", async () => {
+  process.env.AGENT_PROVIDER = "openai";
+  process.env.OPENAI_API_KEY = "test-key-not-for-commit";
+  process.env.OPENAI_MODEL = "missing-model";
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls += 1;
+    return new Response(JSON.stringify({
+      error: { message: `Invalid model request with key ${process.env.OPENAI_API_KEY}` },
+    }), { status: 400 });
+  }) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "POST",
+    url: "/api/agent/plan",
+    parsedBody: { goal: "Check rent subsidy" },
+    bundled: true,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(calls, 2, "configured model and gpt-4o-mini fallback were each attempted once");
+  assert.equal(response.json.providerStatus, "UNAVAILABLE");
+  const metadata = response.json.metadata as Record<string, unknown>;
+  assert.equal(metadata.lastLlmFailureReason, "OPENAI · BAD_REQUEST");
+  assert.equal(JSON.stringify(response.json).includes(process.env.OPENAI_API_KEY), false);
+  assert.equal(JSON.stringify(response.json).includes("Invalid model request"), false);
+});
+
+test("Vercel API — planning response reports Ollama local runtime information", async () => {
+  process.env.AGENT_PROVIDER = "ollama";
+  process.env.OLLAMA_MODEL = "qwen3.5:4b";
+  globalThis.fetch = (async (_input: string | URL | Request, init?: RequestInit) => {
+    if (init?.method === "POST") {
+      return new Response(JSON.stringify({
+        message: {
+          content: JSON.stringify({
+            reasoningSummary: "Use the deterministic housing rules.",
+            nextAction: "CALL_TOOL",
+            toolName: "evaluate_central_rules",
+          }),
+        },
+        prompt_eval_count: 11,
+        eval_count: 5,
+      }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ models: [{ name: "qwen3.5:4b" }] }), { status: 200 });
+  }) as typeof fetch;
+
+  const response = await invokeServer({
+    method: "POST",
+    url: "/api/agent/plan",
+    parsedBody: { goal: "Check rent subsidy" },
+    bundled: true,
+  });
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json.provider, "OLLAMA");
+  assert.equal(response.json.model, "qwen3.5:4b");
+  assert.equal(response.json.available, true);
+  assert.equal(response.json.mode, "local");
 });
 
 test("Vercel API — backend initialization failures return a JSON 500", () => {
@@ -573,6 +808,11 @@ test("Vercel API — pre-parsed JSON request bodies reach the shared backend", a
     bundled: true,
   });
   assert.equal(response.statusCode, 200);
+  assert.equal(response.json.provider, "OLLAMA");
+  assert.equal(response.json.model, "qwen3.5:4b");
+  assert.equal(response.json.available, false);
+  assert.equal(response.json.mode, "fallback");
+  assert.equal((response.json.metadata as Record<string, unknown>).mode, "ollama");
 });
 
 test("API Hardening — oversized payload (> 16 KB), oversized goal (> 800 chars), and malformed JSON are rejected", async () => {
