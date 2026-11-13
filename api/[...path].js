@@ -328,20 +328,7 @@ async function healthCheckOpenAI() {
   if (!apiKey) {
     return healthFailure(model, "MISSING_API_KEY");
   }
-  try {
-    const response = await fetch(`${OPENAI_BASE_URL}/models/${encodeURIComponent(model)}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(positiveInt(getEnv2().OPENAI_HEALTH_TIMEOUT_MS, DEFAULT_OPENAI_HEALTH_TIMEOUT_MS))
-    });
-    await response.text().catch(() => void 0);
-    if (!response.ok) {
-      return healthFailure(model, classifyHttpStatus(response.status));
-    }
-    return { provider: "OPENAI", providerStatus: "AVAILABLE", model };
-  } catch (error) {
-    return healthFailure(model, classifyThrownError(error));
-  }
+  return { provider: "OPENAI", providerStatus: "AVAILABLE", model };
 }
 async function callOpenAIPlanner(input, modelOverride = getOpenAIModel()) {
   const apiKey = getEnv2().OPENAI_API_KEY?.trim();
@@ -433,7 +420,7 @@ Return only a valid decision that follows the required schema. Use null for tool
     usage
   };
 }
-var DEFAULT_OPENAI_MODEL, OPENAI_FALLBACK_MODEL, DEFAULT_OPENAI_TIMEOUT_MS, DEFAULT_OPENAI_HEALTH_TIMEOUT_MS, OPENAI_BASE_URL, OPENAI_AGENT_DECISION_SCHEMA;
+var DEFAULT_OPENAI_MODEL, OPENAI_FALLBACK_MODEL, DEFAULT_OPENAI_TIMEOUT_MS, OPENAI_BASE_URL, OPENAI_AGENT_DECISION_SCHEMA;
 var init_openai = __esm({
   "src/agent/providers/openai.ts"() {
     "use strict";
@@ -441,7 +428,6 @@ var init_openai = __esm({
     DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
     OPENAI_FALLBACK_MODEL = DEFAULT_OPENAI_MODEL;
     DEFAULT_OPENAI_TIMEOUT_MS = 2e4;
-    DEFAULT_OPENAI_HEALTH_TIMEOUT_MS = 5e3;
     OPENAI_BASE_URL = "https://api.openai.com/v1";
     OPENAI_AGENT_DECISION_SCHEMA = {
       type: "object",
@@ -1322,8 +1308,8 @@ function getClientIp(request) {
 }
 async function handleRequest(request, response) {
   const url = new import_node_url.URL(request.url ?? "/", "http://localhost");
-  const pathname = url.pathname === "/agent/plan" ? "/api/agent/plan" : url.pathname;
-  if (request.method === "GET" && url.pathname === "/api/health") {
+  const pathname = url.pathname === "/health" ? "/api/health" : url.pathname === "/agent/plan" ? "/api/agent/plan" : url.pathname;
+  if (request.method === "GET" && pathname === "/api/health") {
     const health = await getProviderHealth();
     const available = health.providerStatus === "AVAILABLE";
     sendJson(response, 200, {
@@ -1339,6 +1325,7 @@ async function handleRequest(request, response) {
       status: health.providerStatus === "AVAILABLE" ? "configured" : "provider_unavailable",
       // Safe error class only; raw provider messages never leave the server.
       error: health.errorClass ?? (health.providerStatus === "AVAILABLE" ? null : "PROVIDER_UNAVAILABLE"),
+      lastError: health.errorClass ?? null,
       timestamp: (/* @__PURE__ */ new Date()).toISOString()
     });
     return;

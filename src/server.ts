@@ -255,9 +255,13 @@ function getClientIp(request: IncomingMessage): string {
 
 export async function handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
   const url = new URL(request.url ?? "/", "http://localhost");
-  const pathname = url.pathname === "/agent/plan" ? "/api/agent/plan" : url.pathname;
+  const pathname = url.pathname === "/health"
+    ? "/api/health"
+    : url.pathname === "/agent/plan"
+      ? "/api/agent/plan"
+      : url.pathname;
 
-  if (request.method === "GET" && url.pathname === "/api/health") {
+  if (request.method === "GET" && pathname === "/api/health") {
     const health = await getProviderHealth();
     const available = health.providerStatus === "AVAILABLE";
     sendJson(response, 200, {
@@ -273,6 +277,7 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
       status: health.providerStatus === "AVAILABLE" ? "configured" : "provider_unavailable",
       // Safe error class only; raw provider messages never leave the server.
       error: health.errorClass ?? (health.providerStatus === "AVAILABLE" ? null : "PROVIDER_UNAVAILABLE"),
+      lastError: health.errorClass ?? null,
       timestamp: new Date().toISOString(),
     });
     return;

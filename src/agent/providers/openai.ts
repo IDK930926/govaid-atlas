@@ -15,7 +15,6 @@ import {
 const DEFAULT_OPENAI_MODEL = "gpt-4o-mini";
 export const OPENAI_FALLBACK_MODEL = DEFAULT_OPENAI_MODEL;
 const DEFAULT_OPENAI_TIMEOUT_MS = 20_000;
-const DEFAULT_OPENAI_HEALTH_TIMEOUT_MS = 5_000;
 const OPENAI_BASE_URL = "https://api.openai.com/v1";
 
 /**
@@ -91,7 +90,7 @@ function healthFailure(model: string, errorClass: ProviderErrorClass): ProviderH
   return { provider: "OPENAI", providerStatus: "UNAVAILABLE", model, error: `OPENAI_${errorClass}`, errorClass };
 }
 
-/** Reachability + key + model-access check (GET /models/{model}); bills no tokens. */
+/** Health reports whether the cloud provider is configured; request failures are reported per run. */
 export async function healthCheckOpenAI(): Promise<ProviderHealth> {
   const model = getOpenAIModel();
   const apiKey = getEnv().OPENAI_API_KEY?.trim();
@@ -99,20 +98,7 @@ export async function healthCheckOpenAI(): Promise<ProviderHealth> {
     return healthFailure(model, "MISSING_API_KEY");
   }
 
-  try {
-    const response = await fetch(`${OPENAI_BASE_URL}/models/${encodeURIComponent(model)}`, {
-      method: "GET",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(positiveInt(getEnv().OPENAI_HEALTH_TIMEOUT_MS, DEFAULT_OPENAI_HEALTH_TIMEOUT_MS)),
-    });
-    await response.text().catch(() => undefined);
-    if (!response.ok) {
-      return healthFailure(model, classifyHttpStatus(response.status));
-    }
-    return { provider: "OPENAI", providerStatus: "AVAILABLE", model };
-  } catch (error) {
-    return healthFailure(model, classifyThrownError(error));
-  }
+  return { provider: "OPENAI", providerStatus: "AVAILABLE", model };
 }
 
 type ResponsesApiBody = {

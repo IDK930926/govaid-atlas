@@ -297,6 +297,7 @@ function App() {
           providerMode?: ProviderMode | null;
           fallbackActive?: boolean;
           error?: string | null;
+          lastError?: string | null;
         }>;
       })
       .then((health) => {
@@ -311,7 +312,7 @@ function App() {
           mode: health.mode ?? getRuntimeDisplayMode(provider, available, fallbackActive),
           providerMode: health.providerMode ?? null,
         });
-        setProviderError(health.error ?? null);
+        setProviderError(health.lastError ?? health.error ?? null);
       })
       .catch((error: unknown) => {
         if (error instanceof Error && error.name === "AbortError") {
@@ -906,6 +907,7 @@ function App() {
               <RuntimePanel
                 metrics={runtimeMetrics}
                 providerInfo={providerInfo}
+                healthError={providerError}
                 inference={runtimeInference}
                 storageUnavailable={runtimeStorageUnavailable}
               />
@@ -2554,11 +2556,13 @@ function AuditPanel({
 function RuntimePanel({
   metrics,
   providerInfo,
+  healthError,
   inference,
   storageUnavailable,
 }: {
   metrics: RuntimeMetrics;
   providerInfo: ProviderInfo;
+  healthError: string | null;
   inference: RuntimeInference | null;
   storageUnavailable: boolean;
 }) {
@@ -2583,6 +2587,11 @@ function RuntimePanel({
           <Metric label="Runtime Mode" value={runtimeModeLabel(providerInfo.mode)}/>
           <Metric label="Configured Mode" value={providerInfo.providerMode ?? null}/>
         </div>
+        {healthError && (
+          <p className="runtime-error-reason" role="status">
+            連線診斷：{healthError}
+          </p>
+        )}
         <h4 className="runtime-subtitle">最近案件推論</h4>
         {inference ? (
           <>
@@ -2600,6 +2609,9 @@ function RuntimePanel({
                 最近模型失敗原因：{inference.lastLlmFailureReason}
               </p>
             )}
+            <p className="muted small">
+              此為最近案件的保存紀錄；目前環境狀態以上方即時健康檢查為準。
+            </p>
           </>
         ) : (
           <p className="muted">尚無已保存的案件推論紀錄；完成一次分析後會顯示最近的 Provider、模型、連線、延遲與規則式 Fallback 狀態。</p>

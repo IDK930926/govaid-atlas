@@ -273,8 +273,9 @@ test("P7 — both providers unavailable: provider unavailable + deterministic sa
   assert.ok(!completedActions.includes("AGENT_COMPLETED"), "must not report a completed LLM agent run");
 
   const health = await getProviderHealth();
-  assert.equal(health.provider, "UNAVAILABLE");
-  assert.equal(health.providerStatus, "UNAVAILABLE");
+  assert.equal(health.provider, "OPENAI");
+  assert.equal(health.providerStatus, "AVAILABLE", "health reports configured credentials, not the last request result");
+  assert.equal(health.mode, "auto");
 });
 
 test("P8 — OpenAI decision cannot override deterministic UNCERTAIN", async () => {
