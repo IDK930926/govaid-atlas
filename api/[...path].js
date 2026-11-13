@@ -26,6 +26,12 @@ var __copyProps = (to, from, except, desc) => {
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/agent/providers/types.ts
+function getRuntimeDisplayMode(provider, available, fallbackActive = false) {
+  if (!available || fallbackActive || provider === "UNAVAILABLE") {
+    return "fallback";
+  }
+  return provider === "OPENAI" ? "cloud" : "local";
+}
 function classifyHttpStatus(status) {
   if (status === 401 || status === 403) return "AUTH_ERROR";
   if (status === 429) return "RATE_LIMITED";
@@ -1256,12 +1262,15 @@ async function handleRequest(request, response) {
   const url = new import_node_url.URL(request.url ?? "/", "http://localhost");
   if (request.method === "GET" && url.pathname === "/api/health") {
     const health = await getProviderHealth();
+    const available = health.providerStatus === "AVAILABLE";
     sendJson(response, 200, {
-      ok: health.providerStatus === "AVAILABLE",
+      ok: available,
       provider: health.provider,
       providerStatus: health.providerStatus,
       model: health.model,
-      mode: health.mode ?? null,
+      available,
+      mode: getRuntimeDisplayMode(health.provider, available, health.fallbackActive),
+      providerMode: health.mode ?? null,
       fallbackActive: health.fallbackActive ?? false,
       fallbackReason: health.fallbackReason ?? null,
       status: health.providerStatus === "AVAILABLE" ? "configured" : "provider_unavailable",
@@ -1349,6 +1358,9 @@ async function handleRequest(request, response) {
     });
     const plannerLatencyMs = performance.now() - plannerStarted;
     const llmCallSucceeded = llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision);
+    const lastAttempt = llmResult.attempts?.[llmResult.attempts.length - 1];
+    const responseProvider = llmResult.provider !== "UNAVAILABLE" ? llmResult.provider : lastAttempt?.provider ?? (llmResult.mode === "openai" ? "OPENAI" : llmResult.mode === "ollama" ? "OLLAMA" : "UNAVAILABLE");
+    const responseModel = llmResult.model !== "N/A" ? llmResult.model : lastAttempt?.model ?? "N/A";
     const safeErrorCode = llmCallSucceeded ? null : llmResult.error === "AGENT_PROVIDER_TIMEOUT" ? "AGENT_PROVIDER_TIMEOUT" : llmResult.errorClass ?? "PROVIDER_UNAVAILABLE";
     const fallbackDecision = coverage.status === "NOT_COVERED" ? {
       reasoningSummary: coverage.message ?? "Request is outside covered policies; safe fallback stops without tool execution.",
@@ -1370,9 +1382,15 @@ async function handleRequest(request, response) {
     };
     const responseBody = {
       ok: true,
-      provider: llmResult.provider,
+      provider: responseProvider,
       providerStatus: llmResult.providerStatus,
-      model: llmResult.model,
+      model: responseModel,
+      available: llmCallSucceeded,
+      mode: getRuntimeDisplayMode(
+        responseProvider,
+        llmCallSucceeded,
+        !llmCallSucceeded || (llmResult.fallbackCount ?? 0) > 0
+      ),
       goal: trimmedGoal,
       plan: defaultPlan,
       allowedTools: allowlistedTools,
@@ -1424,6 +1442,7 @@ var init_server = __esm({
     init_client();
     init_orchestrator();
     init_tools();
+    init_types();
     init_coverage();
     try {
       process.loadEnvFile((0, import_node_path.resolve)(__dirname, "../.env"));

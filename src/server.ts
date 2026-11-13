@@ -7,6 +7,7 @@ import { callPlanner, getProviderHealth, DEFAULT_PROVIDER_TIMEOUT_MS } from "./a
 import { buildSafePlan } from "./agent/orchestrator";
 import { listAllowedTools } from "./agent/tools";
 import type { AgentDecision } from "./agent/types";
+import { getRuntimeDisplayMode } from "./agent/providers/types";
 import { assessQueryCoverage, detectBenefitDomain } from "./coverage";
 
 // Secrets such as OPENAI_API_KEY stay server-side: load an optional, gitignored .env into this
@@ -257,12 +258,15 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
   if (request.method === "GET" && url.pathname === "/api/health") {
     const health = await getProviderHealth();
+    const available = health.providerStatus === "AVAILABLE";
     sendJson(response, 200, {
-      ok: health.providerStatus === "AVAILABLE",
+      ok: available,
       provider: health.provider,
       providerStatus: health.providerStatus,
       model: health.model,
-      mode: health.mode ?? null,
+      available,
+      mode: getRuntimeDisplayMode(health.provider, available, health.fallbackActive),
+      providerMode: health.mode ?? null,
       fallbackActive: health.fallbackActive ?? false,
       fallbackReason: health.fallbackReason ?? null,
       status: health.providerStatus === "AVAILABLE" ? "configured" : "provider_unavailable",
@@ -361,6 +365,17 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
     });
     const plannerLatencyMs = performance.now() - plannerStarted;
     const llmCallSucceeded = llmResult.providerStatus === "AVAILABLE" && Boolean(llmResult.decision);
+    const lastAttempt = llmResult.attempts?.[llmResult.attempts.length - 1];
+    const responseProvider = llmResult.provider !== "UNAVAILABLE"
+      ? llmResult.provider
+      : lastAttempt?.provider ?? (llmResult.mode === "openai"
+        ? "OPENAI"
+        : llmResult.mode === "ollama"
+          ? "OLLAMA"
+          : "UNAVAILABLE");
+    const responseModel = llmResult.model !== "N/A"
+      ? llmResult.model
+      : lastAttempt?.model ?? "N/A";
 
     const safeErrorCode = llmCallSucceeded
       ? null
@@ -395,9 +410,15 @@ export async function handleRequest(request: IncomingMessage, response: ServerRe
 
     const responseBody = {
       ok: true,
-      provider: llmResult.provider,
+      provider: responseProvider,
       providerStatus: llmResult.providerStatus,
-      model: llmResult.model,
+      model: responseModel,
+      available: llmCallSucceeded,
+      mode: getRuntimeDisplayMode(
+        responseProvider,
+        llmCallSucceeded,
+        !llmCallSucceeded || (llmResult.fallbackCount ?? 0) > 0
+      ),
       goal: trimmedGoal,
       plan: defaultPlan,
       allowedTools: allowlistedTools,

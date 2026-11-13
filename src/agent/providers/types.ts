@@ -3,6 +3,18 @@ import type { AgentDecision } from "../types";
 export type ProviderName = "OLLAMA" | "OPENAI" | "UNAVAILABLE";
 export type ProviderStatus = "AVAILABLE" | "UNAVAILABLE";
 export type ProviderMode = "auto" | "openai" | "ollama";
+export type RuntimeDisplayMode = "cloud" | "local" | "fallback";
+
+export function getRuntimeDisplayMode(
+  provider: ProviderName,
+  available: boolean,
+  fallbackActive = false
+): RuntimeDisplayMode {
+  if (!available || fallbackActive || provider === "UNAVAILABLE") {
+    return "fallback";
+  }
+  return provider === "OPENAI" ? "cloud" : "local";
+}
 
 /**
  * Safe, enumerable provider failure classes. These are the only error strings that may
