@@ -950,6 +950,7 @@ function App() {
             )}
             {governanceTab === "AUDIT" && (
               <AuditPanel
+                caseId={agentRun.status === "IDLE" ? undefined : agentRun.caseId}
                 events={displayedAuditTrail}
                 debug={{status: agentRun.status, currentStep: agentRun.currentStep, lastToolCall: agentRun.lastToolCall, providerError, plan: agentRun.plan, decision: agentRun.lastDecision, centralEvaluation, auditTrail: displayedAuditTrail}}
                 running={agentRunning}
@@ -2689,11 +2690,13 @@ function SafetyPanel({
 }
 
 function AuditPanel({
+  caseId,
   events,
   debug,
   running,
   onRunGolden,
 }: {
+  caseId?: string;
   events: AuditEvent[];
   debug: unknown;
   running: boolean;
@@ -2706,6 +2709,9 @@ function AuditPanel({
           <h3 id="audit-title">稽核紀錄 · {events.length}</h3>
           <span className="en-companion" lang="en">Audit Trail</span>
         </div>
+        {caseId && events.length > 0 && (
+          <p className="muted small">案件編號 <code>{caseId}</code>（與決策護照一致）</p>
+        )}
         {events.length === 0 ? (
           <p className="muted">尚無執行紀錄。開始分析後，每一次模型呼叫、工具呼叫與人工確認都會記錄在這裡。</p>
         ) : (

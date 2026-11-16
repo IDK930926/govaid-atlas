@@ -32,7 +32,7 @@ test("2D — owned-home location question leads the New Taipei pending items", (
     .filter((verdict) => verdict.policyId === "NEW_TAIPEI_RENT_115");
   assert.equal(newTaipei.length, 1);
   assert.equal(newTaipei[0].status, "UNCERTAIN", "never FAIL without location evidence");
-  assert.match(newTaipei[0].missingFields[0], /自有住宅.*新北市.*臺北市.*桃園市.*基隆市/);
+  assert.match(newTaipei[0].missingFields[0], /自有住宅.*新北.*臺北.*桃園.*基隆/);
   assert.match(newTaipei[0].gap ?? "", /自有住宅/);
   // The other gap is still listed, after it.
   assert.ok(newTaipei[0].missingFields.some((label) => label.includes("新北市設籍")));

@@ -100,7 +100,7 @@ export function humanizeRuleReason(evaluation: RuleEvaluation): string {
 // An answered condition the profile cannot resolve (it blocks any estimate). Shown before
 // ordinary missing data because it decides whether the program can apply at all.
 const pendingConditionLabels: Record<string, string> = {
-  "NEWTAIPEI-115-HOME-001": "自有住宅（含家庭成員）是否位於新北市、臺北市、桃園市或基隆市",
+  "NEWTAIPEI-115-HOME-001": "自有住宅（含家庭成員）是否位於新北／臺北／桃園／基隆",
 };
 
 export function getPendingConditionLabel(evaluation: RuleEvaluation): string {
