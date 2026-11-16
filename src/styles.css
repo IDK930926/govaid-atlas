@@ -2603,6 +2603,32 @@ a {
   color: var(--ink-2);
 }
 
+.eval-scope {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  font-size: var(--fs-caption);
+}
+
+.eval-scope-row {
+  display: grid;
+  gap: 2px;
+}
+
+.eval-scope-row dt small {
+  color: var(--ink-2);
+}
+
+.eval-scope-row dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.eval-scope-pending dd strong,
+.eval-scope-not_measured dd strong {
+  color: var(--ink-2);
+}
+
 .regression {
   display: grid;
   font-size: var(--fs-caption);

@@ -27,6 +27,24 @@ export type RuntimeCounterKey =
   | "conflictChecks"
   | "permissionChecks";
 
+/**
+ * Display text for the cloud API cost metric. Never presents a figure as billing truth:
+ * a value is always "Estimated" from a versioned pricing snapshot; without a snapshot for the
+ * model in use, it says the estimate is unavailable and why, instead of a bare N/A or a guess.
+ */
+export function describeCloudCost(metrics: RuntimeMetrics, model: string | null | undefined): string | null {
+  const cost = metrics.estimatedCostUsd;
+  if (cost === 0) return "$0（本機模型，無雲端費用）";
+  if (cost === null) {
+    if (metrics.llmCalls > 0 && model) {
+      return `Cost estimate unavailable：尚無 ${model} 的已驗證價格快照`;
+    }
+    return null;
+  }
+  const amount = cost < 0.01 ? cost.toPrecision(2) : cost.toFixed(2);
+  return `Estimated US$${amount}${metrics.pricingLabel ? `（${metrics.pricingLabel}）` : ""}`;
+}
+
 export function createRuntimeMetrics(): RuntimeMetrics {
   return {
     rulesEngineCalls: 0,

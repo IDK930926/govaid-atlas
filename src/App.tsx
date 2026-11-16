@@ -32,6 +32,7 @@ import {
 
 import {
   createRuntimeMetrics,
+  describeCloudCost,
   measureSync,
   recordProviderRun,
   recordRuntimeCall,
@@ -42,6 +43,7 @@ import {
 
 import {runBenchmark} from "./benchmark";
 import {finalBenchmark} from "./benchmark-final";
+import {evaluationScopeRows} from "./evaluation-scope";
 import {estimateRentalSubsidyComparison} from "./navigation";
 
 import centralRulesJson from "./policies/central-rent-115.json";
@@ -2761,9 +2763,7 @@ function RuntimePanel({
     : execution.fallbackActive
       ? `true${execution.fallbackReason ? ` (${execution.fallbackReason})` : ""}`
       : "false";
-  const cost = metrics.estimatedCostUsd === null
-    ? null
-    : metrics.estimatedCostUsd === 0 ? "$0" : `$${metrics.estimatedCostUsd.toFixed(2)}`;
+  const cost = describeCloudCost(metrics, known ? providerInfo.model : null);
   return (
     <div className="panel-stack">
       <section className="gov-card" aria-labelledby="runtime-title">
@@ -2825,7 +2825,7 @@ function RuntimePanel({
           <Metric label="LLM Calls" value={metrics.llmCalls}/>
           <Metric label="Input Tokens" value={metrics.inputTokens}/>
           <Metric label="Output Tokens" value={metrics.outputTokens}/>
-          <Metric label="Cloud API Cost" value={cost}/>
+          <Metric label="Cloud API Cost (Estimated)" value={cost}/>
           <Metric label="Provider failovers" value={metrics.fallbackCount}/>
         </div>
         <p className="muted">LLM 負責規劃與工具調度；資格結果一律由規則引擎判斷。</p>
@@ -2870,8 +2870,14 @@ function EvaluationPanel({deterministic}: {deterministic: ReturnType<typeof runB
   const coverage = metrics.find((metric) => metric.key === "evidenceCoverage");
   const sides = [
     {key: "llmContext" as const, title: "LLM + Context", sub: "一般 LLM ＋ 政策文件"},
-    {key: "govaidAtlas" as const, title: "GovAid Atlas", sub: "Agent ＋ 規則引擎 ＋ 人工確認"},
+    {key: "govaidAtlas" as const, title: "GovAid Atlas", sub: "規則引擎評估（不含 LLM 規劃）"},
   ];
+  const scopeRows = evaluationScopeRows({
+    regressionPassed: deterministic.summary.passedCases,
+    regressionTotal: deterministic.summary.totalCases,
+    benchmarkCaseCount: finalBenchmark.caseCount,
+    manualBaseline: finalBenchmark.manualBaseline,
+  });
   return (
     <div className="panel-stack">
       <section className="gov-card" aria-labelledby="eval-title">
@@ -2914,6 +2920,15 @@ function EvaluationPanel({deterministic}: {deterministic: ReturnType<typeof runB
           過度確定率只計算 5 個安全關鍵案例。GovAid Atlas 數據來自規則引擎評估，不含完整 Agent 流程耗時。
           人工基準測試：<strong>{finalBenchmark.manualBaseline === "PENDING" ? "進行中 (Manual Pending)" : finalBenchmark.manualBaseline}</strong>
         </p>
+        <h4 className="runtime-subtitle">各項數據量測範圍 <span lang="en">What each figure measures</span></h4>
+        <dl className="eval-scope">
+          {scopeRows.map((row) => (
+            <div key={row.key} className={"eval-scope-row eval-scope-" + row.status.toLowerCase()}>
+              <dt>{row.label} <small lang="en">{row.en}</small></dt>
+              <dd><strong>{row.value}</strong> <span className="muted small">{row.note}</span></dd>
+            </div>
+          ))}
+        </dl>
       </section>
 
       <details className="gov-card">
