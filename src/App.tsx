@@ -57,7 +57,13 @@ import type {
 import {evaluateRules} from "./rules";
 import type {ScenarioResult} from "./scenario";
 import type {DecisionPassport} from "./passport";
-import {displayedPassportPrograms, displayedPassportRisks, displayedPassportScenarios} from "./scenario-view";
+import {
+  CHILDCARE_SCOPE_LABEL,
+  displayedPassportPrograms,
+  displayedPassportRisks,
+  displayedPassportScenarios,
+  passportHasWhatIf,
+} from "./scenario-view";
 
 import {
   createAgentRun,
@@ -636,6 +642,7 @@ function App() {
     const run = runAgenticGoldenCase(goal, freshApplicant, selectedActualScenario, selectedWhatIfScenario, plannerResult, {
       includePassport: true,
       domain: currentDraft.domain,
+      whatIfMirrorsActual: currentDraft.whatIfMirrorsActual,
       ...(currentDraft.requiredFields ? { requiredFields: [...currentDraft.requiredFields] } : {}),
     });
     if (inferenceRecord) {
@@ -699,9 +706,10 @@ function App() {
     const completedPassport =
       getCompletedToolResult<DecisionPassport>(resumed, "generate_decision_passport") ??
       getCompletedToolResult<DecisionPassport>(resumed, "generate_childcare_passport");
-    if (actual && whatIf && completedPassport) {
+    if (actual && completedPassport) {
       setActualResult(actual);
-      setWhatIfResult(draft.domain === "HOUSING" && !draft.whatIfMirrorsActual ? whatIf : null);
+      // The engine only evaluates a what-if when the case defines a distinct one.
+      setWhatIfResult(draft.domain === "HOUSING" && !draft.whatIfMirrorsActual && whatIf ? whatIf : null);
       setPassport(completedPassport);
     } else if (completedPassport) {
       setPassport(completedPassport);
@@ -1908,16 +1916,18 @@ function hasTaipeiStudyWithTaoyuanRegistration(passport: DecisionPassport, goal:
     && extractFactsFromGoal(goal, "HOUSING").studyCity === "臺北市";
 }
 
-function buildVerdicts(
+export function buildVerdicts(
   passport: DecisionPassport,
   hasWhatIf: boolean,
   newTaipeiStudentHint = false,
   dualCityComparison = false,
 ): ProgramVerdict[] {
   const scenarios = displayedPassportScenarios(passport, hasWhatIf).map((scenario) => ({
-    label: scenario.kind === "ACTUAL"
-      ? `${dualCityComparison ? "方案 A" : "目前住址"} · ${shortPlace(scenario.data)}`
-      : `${dualCityComparison ? "方案 B" : "搬遷假設"} · ${shortPlace(scenario.data)}`,
+    label: passport.domain === "CHILDCARE"
+      ? CHILDCARE_SCOPE_LABEL
+      : scenario.kind === "ACTUAL"
+        ? `${dualCityComparison ? "方案 A" : "目前住址"} · ${shortPlace(scenario.data)}`
+        : `${dualCityComparison ? "方案 B" : "搬遷假設"} · ${shortPlace(scenario.data)}`,
     data: scenario.data,
   }));
   const order: string[] = [];
@@ -2015,7 +2025,7 @@ function ResultView({
   const newTaipeiStudentHint = hasTaipeiStudyWithTaoyuanRegistration(passport, run.goal);
   // Housing: a what-if exists only when the run kept one (see analysis start). Childcare
   // keeps its existing single-scenario display path unchanged.
-  const hasWhatIf = passport.domain === "CHILDCARE" || whatIf !== null;
+  const hasWhatIf = passportHasWhatIf(passport, whatIf !== null);
   const verdicts = buildVerdicts(passport, hasWhatIf, newTaipeiStudentHint, dualCityComparison);
   const displayedPrograms = displayedPassportPrograms(passport, hasWhatIf);
   const displayedRisks = displayedPassportRisks(passport, hasWhatIf);
@@ -2094,7 +2104,7 @@ function ResultView({
                   <li key={verdict.policyId + verdict.scope}>
                     <strong>{policyName(verdict.policyId)}</strong>
                     {verdict.status === "PASS"
-                      ? `：${verdict.scope === "兩個地址皆適用" ? "依目前條件" : verdict.scope}在目前資料下通過條件檢查${
+                      ? `：${verdict.scope === "兩個地址皆適用" || verdict.scope === CHILDCARE_SCOPE_LABEL ? "依目前條件" : verdict.scope}在目前資料下通過條件檢查${
                           passport.childcare?.benefitTierLabel ? `（${passport.childcare.benefitTierLabel}）` : ""
                         }`
                       : `：不符合（${verdict.gap ?? "條件不符"}）。依目前已實作規則判定，不代表官方駁回。`}

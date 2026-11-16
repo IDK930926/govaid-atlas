@@ -898,6 +898,7 @@ export function startCaseRun(draft: CaseDraft, plannerResult?: ProviderPlannerRe
     plannerResult,
     {
       includePassport: true,
+      whatIfMirrorsActual: draft.whatIfMirrorsActual,
       ...(draft.requiredFields ? { requiredFields: [...draft.requiredFields] } : {}),
     }
   );
@@ -950,6 +951,7 @@ export function submitHumanGateAnswer(
 
   const next = resumeAgentWithFieldResponse(run, field, candidate, undefined, whatIfOverride, {
     includePassport: options?.includePassport ?? true,
+    whatIfMirrorsActual: options?.whatIfMirrorsActual,
   });
   if (!local.valid || next.errorCode) {
     return { ok: false, run: next, error: fieldErrorMessage(field as CaseField) };
