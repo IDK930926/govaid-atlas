@@ -101,6 +101,10 @@ export type EvidenceRecord = {
   policyName: string;
   url: string;
   lastVerifiedAt: string;
+  /** Version label of the official programme this record documents (e.g. annual edition). */
+  policyVersion?: string;
+  /** Provenance of the version this record replaced, kept for auditability. */
+  supersedes?: string;
 };
 
 export type ApplicationAvailabilityStatus =

@@ -28,10 +28,13 @@ export const evidenceRegistry: EvidenceRecord[] = [
     sourceId: "R7",
     agency: "新北市政府城鄉發展局",
     policyName:
-      "115年度新北市青年租金補貼",
+      "116年度新北市青年租金補貼（新北城住字第1151855676號公告）",
     url:
-      "https://www.shulin.ris.ca.ntpc.gov.tw/Content/Upload/file/20251001/6389492414785848483467433.pdf",
-    lastVerifiedAt: "2026-10-16",
+      "https://www.planning.ntpc.gov.tw/uploaddowndoc?file=planningapply/202610010829240.pdf&filedisplay=115%E5%B9%B49%E6%9C%8823%E6%97%A5%E6%96%B0%E5%8C%97%E5%9F%8E%E4%BD%8F%E5%AD%97%E7%AC%AC1151855676%E8%99%9F%E5%85%AC%E5%91%8A.pdf&flag=doc",
+    lastVerifiedAt: "2026-11-16",
+    policyVersion: "NTPC-YOUTH-RENT-116",
+    supersedes:
+      "115年度新北市青年租金補貼（114/10/1 起受理）；依新北城住字第1151855676號公告於 115/10/1 廢止並停止受理",
   },
 
   {

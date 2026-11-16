@@ -42,6 +42,7 @@ import {
 } from "./metrics";
 
 import {runBenchmark} from "./benchmark";
+import {describeAgentDecision} from "./agent-decision-view";
 import {finalBenchmark} from "./benchmark-final";
 import {evaluationScopeRows} from "./evaluation-scope";
 import {estimateRentalSubsidyComparison} from "./navigation";
@@ -1449,10 +1450,38 @@ const stepStateText: Record<StepState, string> = {
   BLOCKED: "未完成",
 };
 
+// Proposal → Validation → Next state, from the structured trace only (no model reasoning).
+export function AgentDecisionLine({run, compact = false}: {run: AgentRun; compact?: boolean}) {
+  const view = describeAgentDecision(run);
+  if (!view) return null;
+  const rejected = view.kind === "MODEL_REJECTED";
+  return (
+    <section
+      className={"agent-decision" + (compact ? " is-compact" : "") + " is-" + view.kind.toLowerCase().replace(/_/g, "-")}
+      aria-label="Agent 決策"
+    >
+      <p className="agent-decision-title">
+        Agent 決策 <span lang="en">Decision</span>
+        <span className="agent-decision-by">{view.decidedBy}</span>
+      </p>
+      <ol className="agent-decision-flow">
+        {view.proposal && (
+          <li><span className="ad-label">模型提案 <span lang="en">Proposal</span></span><span className="ad-value">{view.proposal}</span></li>
+        )}
+        <li className={rejected ? "ad-rejected" : view.kind === "MODEL_ACCEPTED" ? "ad-passed" : undefined}>
+          <span className="ad-label">系統驗證 <span lang="en">Validation</span></span><span className="ad-value">{view.validation}</span>
+        </li>
+        <li><span className="ad-label">下一步 <span lang="en">Next</span></span><span className="ad-value">{view.next}</span></li>
+      </ol>
+    </section>
+  );
+}
+
 function JourneyStepper({run, running}: {run: AgentRun; running: boolean}) {
   const steps = buildJourney(run, running);
   return (
-    <nav className="journey dim-when-gated" aria-labelledby="journey-title">
+    <div className="journey">
+    <nav className="dim-when-gated" aria-labelledby="journey-title">
       <div className="col-head">
         <h2 id="journey-title">Agent 執行步驟</h2>
         <span className="en-companion" lang="en">Agent Journey</span>
@@ -1472,6 +1501,8 @@ function JourneyStepper({run, running}: {run: AgentRun; running: boolean}) {
         ))}
       </ol>
     </nav>
+    <AgentDecisionLine run={run}/>
+    </div>
   );
 }
 
@@ -1848,7 +1879,7 @@ function ContextPanel({
 
 const policyLabels: Record<string, {name: string; short: string; detail: string}> = {
   CENTRAL_RENT_115: {name: "中央租屋補助", short: "中央方案", detail: "中央擴大租金補貼（115年度）"},
-  NEW_TAIPEI_RENT_115: {name: "新北地方方案", short: "新北方案", detail: "新北市青年租金補貼（115年度）"},
+  NEW_TAIPEI_RENT_115: {name: "新北地方方案", short: "新北方案", detail: "新北市青年租金補貼（116年度）"},
   TAIPEI_RENT_115: {name: "臺北地方方案", short: "臺北方案", detail: "臺北幸福租－租金加碼補貼（115年度）"},
   TAOYUAN_CENTRAL_RENT_115: {name: "桃園市受理方案", short: "桃園受理", detail: "300億元中央擴大租金補貼（桃園市政府住宅發展處協辦受理）"},
   CHILDCARE_ALLOWANCE_UNDER_2_115: {name: "未滿2歲育兒津貼", short: "育兒津貼", detail: "衛生福利部育有未滿2歲兒童育兒津貼（115年度）"},
@@ -2078,6 +2109,7 @@ function ResultView({
               <> · 預估每月津貼 <strong>NT${passport.childcare.estimatedMonthlyBenefitNtd.toLocaleString()}</strong></>
             )}
           </p>
+          <AgentDecisionLine run={run} compact/>
         </header>
 
         <ul className="verdict-band" aria-label="各方案結果">

@@ -1010,6 +1010,89 @@ a {
   padding-top: var(--s2);
 }
 
+/* Agent decision: Proposal → Validation → Next, kept fully visible while the gate dims the stepper. */
+.agent-decision {
+  margin-top: var(--s4);
+  padding: var(--s3);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--brand-line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-size: var(--fs-caption);
+}
+
+.agent-decision.is-model-rejected {
+  border-left-color: var(--warn);
+}
+
+.agent-decision-title {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px var(--s2);
+  align-items: baseline;
+  margin: 0 0 var(--s2);
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.agent-decision-title [lang="en"] {
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.agent-decision-by {
+  margin-left: auto;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.agent-decision-flow {
+  display: grid;
+  gap: var(--s2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.agent-decision-flow li {
+  display: grid;
+  gap: 1px;
+}
+
+.ad-label {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.ad-value {
+  color: var(--ink);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.ad-passed .ad-value {
+  color: var(--pass);
+}
+
+.ad-rejected .ad-value {
+  color: var(--warn);
+}
+
+/* Result header: one horizontal line of three parts. */
+.agent-decision.is-compact {
+  margin-top: var(--s3);
+  max-width: 880px;
+}
+
+.agent-decision.is-compact .agent-decision-flow {
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.agent-decision.is-compact .agent-decision-flow li + li {
+  position: relative;
+}
+
 /* Supportive stepper: a thin rail, no boxes. */
 .vstepper {
   position: relative;

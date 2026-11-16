@@ -7,8 +7,8 @@ import { buildDecisionPassport } from "./passport";
 import type { ScenarioResult } from "./scenario";
 import type { AddressScenario, ApplicantProfile, PolicyRule } from "./types";
 
-// Official basis: 115年度新北市青年租金補貼申請書（新北市政府城鄉發展局，R7）申請條件 3：
-// 「申請人及家庭成員於本市、臺北市、桃園市及基隆市均無自有住宅」；申請期限 114/10/1–115/12/31。
+// Official basis: 116年度新北市青年租金補貼申請書（新北市政府城鄉發展局，R7）申請條件 3（115年度相同）：
+// 「申請人及家庭成員於本市、臺北市、桃園市及基隆市均無自有住宅」；申請期限 115/10/1–116/12/31 或經費用罄止。
 // The profile records only whether a home is owned, not where, so an owned home leaves R7
 // undetermined (never PASS, never an estimate) rather than a blanket FAIL.
 
@@ -55,8 +55,8 @@ test("NT1 — R7 home rule is encoded from the official application period and s
   assert.equal(rule.field, "ownsHome");
   assert.equal(rule.expected, false);
   assert.equal(rule.sourceId, "R7");
-  assert.equal(rule.validFrom, "2025-10-01");
-  assert.equal(rule.validTo, "2026-12-31");
+  assert.equal(rule.validFrom, "2026-10-01");
+  assert.equal(rule.validTo, "2027-12-31");
   assert.equal(rule.mismatchStatus, "UNCERTAIN");
   for (const city of ["新北市", "臺北市", "桃園市", "基隆市"]) {
     assert.ok(rule.mismatchReason?.includes(city), `scope must name ${city}`);
