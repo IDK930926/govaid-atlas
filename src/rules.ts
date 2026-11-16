@@ -176,6 +176,16 @@ export function evaluateRule(
     rule.expected
   );
 
+  if (!passed && rule.mismatchStatus === "UNCERTAIN") {
+    return {
+      ruleId: rule.ruleId,
+      status: "UNCERTAIN",
+      reason: `${historicalPrefix}${rule.mismatchReason ?? `${String(rule.field)} 需進一步確認`}`,
+      sourceId: rule.sourceId,
+      blocksEstimate: true,
+    };
+  }
+
   return {
     ruleId: rule.ruleId,
     status: passed ? "PASS" : "FAIL",

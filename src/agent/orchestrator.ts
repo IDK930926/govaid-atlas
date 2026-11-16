@@ -246,6 +246,7 @@ export function validatePlannerProposal(
     centralStatus?: EligibilityStatus;
     childcareStatus?: EligibilityStatus;
     overallEligibilityStatus?: EligibilityStatus | "HUMAN_REVIEW_REQUIRED";
+    conflictStatus?: "CLEAR" | "CONFLICT";
   }
 ): ProposalValidationResult {
   if (!rawProposal || typeof rawProposal !== "object") {
@@ -287,6 +288,18 @@ export function validatePlannerProposal(
   }
 
   const domain: BenefitDomain = state.domain ?? "HOUSING";
+
+  // The policy-conflict review path is entered only from deterministic state (a validated
+  // detect_policy_conflict result). A model proposal alone cannot manufacture a conflict;
+  // rejecting it lets the deterministic selector route by actual state (Human Gate or next tool).
+  if (nextAction === "HUMAN_REVIEW_REQUIRED" && state.conflictStatus !== "CONFLICT") {
+    return {
+      valid: false,
+      validationStage: "STATE_TRANSITION_VALIDATION",
+      proposalRejected: true,
+      rejectionReason: "HUMAN_REVIEW_WITHOUT_VALIDATED_CONFLICT",
+    };
+  }
 
   if (nextAction === "CALL_TOOL") {
     if (typeof candidate.toolName !== "string" || !candidate.toolName.trim()) {

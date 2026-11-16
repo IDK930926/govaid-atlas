@@ -64,12 +64,24 @@ export function estimateRentalSubsidyComparison(
     };
   }
 
-  const statusOf = (policyId: string) =>
-    result.policyResults.find((policy) => policy.policyId === policyId)?.eligibilityStatus;
+  const policyOf = (policyId: string) =>
+    result.policyResults.find((policy) => policy.policyId === policyId);
+  // A program whose answered condition cannot be resolved (e.g. location of an owned home)
+  // is not estimated either: showing an amount would imply the condition is likely met.
+  const isPendingBlocked = (policyId: string) =>
+    Boolean(policyOf(policyId)?.evaluations.some((evaluation) => evaluation.blocksEstimate));
   const options = metadata.options.filter((option) => {
-    const status = statusOf(option.policyId);
-    return status !== "FAIL" && status !== "NOT_COVERED";
+    const status = policyOf(option.policyId)?.eligibilityStatus;
+    return status !== "FAIL" && status !== "NOT_COVERED" && !isPendingBlocked(option.policyId);
   });
+  const hasPendingExclusion = metadata.options.some((option) => isPendingBlocked(option.policyId));
+  if (options.length === 0 && hasPendingExclusion) {
+    return {
+      maxSubsidy: "不提供估算：已涵蓋之補助方案資格未通過，或自有住宅條件仍待確認",
+      outOfPocket: "不適用（無可估算之補助）",
+      note: "資格未通過或條件待確認之方案不列入補助後租金試算。",
+    };
+  }
   if (options.length === 0) {
     return {
       maxSubsidy: "不適用：本情境已涵蓋之補助方案資格皆未通過",
@@ -96,7 +108,9 @@ export function estimateRentalSubsidyComparison(
   const note = city === "臺北市" && registeredCity === "臺北市"
     ? "此估算僅列中央 R1，未估算須依資格核定的北市 R6 加碼。"
     : options.length < metadata.options.length
-      ? "已排除本情境資格未通過之方案。"
+      ? hasPendingExclusion
+        ? "已排除資格未通過或自有住宅條件待確認之方案。"
+        : "已排除本情境資格未通過之方案。"
       : metadata.note;
 
   return {

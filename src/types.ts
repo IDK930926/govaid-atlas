@@ -77,6 +77,13 @@ export type PolicyRule = {
   sourceId: string;
   validFrom: string;
   validTo: string;
+  /**
+   * Use only when the official condition is narrower than the profile field can express
+   * (e.g. the field records home ownership but not where the home is). A mismatch is then
+   * UNCERTAIN with this reason instead of FAIL, and blocks any subsidy estimate.
+   */
+  mismatchStatus?: "UNCERTAIN";
+  mismatchReason?: string;
 };
 
 export type RuleEvaluation = {
@@ -84,6 +91,8 @@ export type RuleEvaluation = {
   status: RuleStatus;
   reason: string;
   sourceId: string;
+  /** Set when an answered field cannot be resolved against the rule's scope (see PolicyRule.mismatchStatus). */
+  blocksEstimate?: boolean;
 };
 
 export type EvidenceRecord = {

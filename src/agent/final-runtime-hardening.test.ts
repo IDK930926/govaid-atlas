@@ -292,7 +292,10 @@ test("B5 — ownsHome=true: central FAIL stops the path; no submission step, no 
   assert.match(taipeiEstimate.outOfPocket, /不適用/);
   const newTaipeiEstimate = estimateRentalSubsidyComparison(actualResult, "臺北市");
   assert.ok(!newTaipeiEstimate.maxSubsidy.includes("中央 R1"), "failed central R1 must not be used");
-  assert.match(newTaipeiEstimate.outOfPocket, /NT\$10,000/, "only the non-failed R7 option remains (13,500 − 3,500)");
+  // R7 also excludes applicants whose household owns a home in 新北/臺北/桃園/基隆 (official 115
+  // application form, 申請條件 3). Home location is unknown, so R7 is pending and not estimated.
+  assert.ok(!newTaipeiEstimate.maxSubsidy.includes("新北青年 R7"), "pending R7 must not be estimated");
+  assert.match(newTaipeiEstimate.outOfPocket, /不適用/);
 });
 
 test("B5 — a dependency FAIL shows the upstream reason, not a still-pending question (Gate C)", () => {
