@@ -355,9 +355,12 @@ test("B6 — supported and generic requests are unchanged (no over-correction)",
   assert.equal(assessQueryCoverage("我想申請租屋補助").status, "COVERED");
   assert.equal(assessQueryCoverage("檢查補助資格").status, "COVERED");
   assert.equal(assessQueryCoverage("我想申請育兒津貼").status, "COVERED");
+  // Gate 2F: national central scheme stays in scope; the city's local scheme does not.
   const taichungRental = assessQueryCoverage("我想申請臺中市租屋補助");
-  assert.equal(taichungRental.status, "NOT_COVERED");
+  assert.equal(taichungRental.status, "COVERED");
+  assert.equal(taichungRental.reason, "CENTRAL_ONLY_LOCAL_NOT_COVERED");
   assert.equal(taichungRental.domain, "RENTAL_SUBSIDY");
+  assert.equal(assessQueryCoverage("我想申請臺中市地方租屋補助").status, "NOT_COVERED");
 });
 
 // ---------------------------------------------------------------- B7 API validation

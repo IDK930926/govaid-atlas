@@ -151,7 +151,7 @@ test("CASE D — 桃園市 central rental workflow is PARTIAL_CHECK while local-
   assert.equal(actualLocalOnly.status, "NOT_COVERED");
   assert.notEqual(userFacingLabel(actualLocalOnly.status), "通過");
   const text = JSON.stringify(actualLocalOnly);
-  assert.match(text, /尚未完整涵蓋桃園市/);
+  assert.match(text, /尚未涵蓋桃園市地方租屋補助或加碼/);
   assert.ok(!text.includes("不存在"), "must not claim the subsidy does not exist");
 });
 
