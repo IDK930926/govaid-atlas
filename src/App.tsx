@@ -5,6 +5,7 @@ import {
   benchmarkCopy,
   getExecutedRuleSummaries,
   getMissingUserFieldLabels,
+  getPendingConditionLabel,
   getPolicyCoverageLimitation,
   getVerifiedRuleLabels,
   resultCopy,
@@ -1886,6 +1887,11 @@ function describeGap(evaluations: RuleEvaluation[]): string | null {
   const failures = summarizeFailReasons(evaluations);
   if (failures) {
     return failures;
+  }
+  // A safety-relevant unresolved condition (e.g. where an owned home is) outranks missing data.
+  const blocking = evaluations.find((evaluation) => evaluation.status === "UNCERTAIN" && evaluation.blocksEstimate);
+  if (blocking) {
+    return getPendingConditionLabel(blocking);
   }
   const gap = evaluations.find((evaluation) => evaluation.status === "UNCERTAIN")
     ?? undefined;

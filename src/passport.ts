@@ -36,6 +36,7 @@ import {
 } from "./coverage";
 
 import type { RuleEvaluationOptions } from "./rules";
+import { humanizeRuleReason } from "./ui-copy";
 
 type DecisionStatus = EligibilityStatus;
 
@@ -138,7 +139,7 @@ function missingMessage(
       return "確認自有住宅（含家庭成員持有）是否位於新北市、臺北市、桃園市或基隆市；位於上述縣市即不符合新北青年租金補貼";
 
     default:
-      return evaluation.reason;
+      return humanizeRuleReason(evaluation);
   }
 }
 
@@ -172,13 +173,14 @@ function buildProgram(
         item !== undefined
     );
 
+  // Public passport wording; raw reasons stay in ruleResults for the audit trail.
   const passedConditions = policy.evaluations
     .filter((ev) => ev.status === "PASS")
-    .map((ev) => ev.reason);
+    .map(humanizeRuleReason);
   const failedConditions = [
     ...policy.evaluations
       .filter((ev) => ev.status === "FAIL")
-      .map((ev) => ev.reason),
+      .map(humanizeRuleReason),
     // Upstream dependency FAIL (e.g. local program requiring central approval).
     ...(policy.blockedByPolicyId && policy.coverageNote ? [policy.coverageNote] : []),
   ];
