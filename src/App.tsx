@@ -61,6 +61,7 @@ import type {
 import {evaluateRules} from "./rules";
 import type {ScenarioResult} from "./scenario";
 import type {DecisionPassport} from "./passport";
+import {guidanceModeFor, OFFICIAL_REFERENCE_LABEL} from "./guidance";
 import {
   CHILDCARE_SCOPE_LABEL,
   displayedPassportPrograms,
@@ -2335,6 +2336,7 @@ function ResultView({
 
         <section className="doc-section" aria-labelledby="ps-next">
           <h3 id="ps-next"><span className="doc-num" aria-hidden="true">02</span>建議下一步</h3>
+          {passport.guidanceNote && <p className="callout callout-warn" role="note">{passport.guidanceNote}</p>}
           <ol className="steps">{passport.nextSteps.map((item) => <li key={item}>{item}</li>)}</ol>
         </section>
 
@@ -2380,11 +2382,18 @@ function ResultView({
                       {guide.benefitAmountFormula && (
                         <div><dt>補助金額基準</dt><dd>{guide.benefitAmountFormula}</dd></div>
                       )}
-                      <div><dt>臨櫃／郵寄資訊</dt><dd>{guide.officeInformation}</dd></div>
+                      <div><dt>{ineligible ? "受理機關（官方資訊）" : "臨櫃／郵寄資訊"}</dt><dd>{guide.officeInformation}</dd></div>
                       <div><dt>諮詢電話</dt><dd>{guide.contactInformation}</dd></div>
-                      {guide.onlineApplicationUrl && !ineligible && (
+                      {guide.onlineApplicationUrl && (
                         <div>
-                          <dt>官方線上申辦</dt>
+                          {/* FAIL keeps the official link as reference only — never a recommendation to submit. */}
+                          <dt>
+                            {ineligible
+                              ? OFFICIAL_REFERENCE_LABEL
+                              : guidanceModeFor(verdict?.status ?? "PASS") === "CONDITIONAL"
+                                ? "官方線上申辦（待條件確認後）"
+                                : "官方線上申辦"}
+                          </dt>
                           <dd>
                             <a href={guide.onlineApplicationUrl} target="_blank" rel="noreferrer">
                               {guide.onlineApplicationUrl} ↗

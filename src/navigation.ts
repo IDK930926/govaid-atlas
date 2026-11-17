@@ -496,6 +496,9 @@ export function getApplicationGuide(
           "本津貼採「申請制」，不會自動發放，須由父母雙方或監護人主動向兒童戶籍地公所或線上系統提出申請。",
           "若後續改送托公共化或準公共托嬰中心／保母並改領托育補助，須依規定辦理津貼停發或轉換，避免重複溢領。",
         ],
+        stoppedNotes: [
+          "若後續改採托育補助，請依主管機關規定辦理原津貼停發／轉換；此為資訊提醒，不代表目前建議申請。",
+        ],
         disclaimer: OFFICIAL_FINAL_DECISION_DISCLAIMER,
       };
     }

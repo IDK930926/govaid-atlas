@@ -155,6 +155,8 @@ export type ApplicationGuide = {
   exclusions: string[];
   nextSteps: string[];
   warnings: string[];
+  /** Informational notes still valid when the program is FAIL (never a recommendation to apply). */
+  stoppedNotes?: string[];
   disclaimer: string;
 };
 
