@@ -14,7 +14,8 @@
 // - Housing and childcare facts never leak across domains.
 // - No eligibility logic lives here; the deterministic engine decides.
 
-import { detectBenefitDomain, isSupportedTaiwanCity, normalizeCityName, TAIWAN_CITIES } from "./coverage";
+import { detectBenefitDomain, normalizeCityName, TAIWAN_CITIES } from "./coverage";
+import { extractChildcareFactsTyped, extractHousingFactsTyped, hedgedFields, knownValues, type FactMap } from "./fact-extraction";
 import { validateMissingFieldInput } from "./agent/missing-fields";
 import { resumeAgentWithFieldResponse, runAgenticGoldenCase } from "./agent/orchestrator";
 import type { AgentRun, SupportedMissingField } from "./agent/types";
@@ -76,7 +77,7 @@ export const FIELD_SPECS: Record<CaseField, FieldSpec> = {
   age: { field: "age", label: "申請人年齡", kind: "integer", min: 0, max: 130, unit: "歲", placeholder: "例如 28", affectsEligibility: true },
   monthlyIncome: {
     field: "monthlyIncome",
-    label: "家庭平均月所得",
+    label: "家庭成員平均每人每月所得",
     kind: "number",
     min: 0,
     unit: "元",
@@ -337,25 +338,17 @@ export function findPresetByGoal(goal: string): CasePreset | undefined {
 
 export type ExtractedFacts = Partial<Record<CaseField, CaseFieldValue>> & {
   whatIfCity?: string;
+  whatIfDistrict?: string;
   whatIfMonthlyRent?: number;
   dualCityComparison?: boolean;
   studyCity?: string;
+  /** District of the actual rental address when stated (e.g. 永和區). */
+  district?: string;
+  /** Typed facts with state (KNOWN_TRUE / KNOWN_FALSE / KNOWN_VALUE / UNKNOWN / CONFLICT) and source spans. */
+  normalized?: FactMap;
+  /** Clarification wording for fields that are withheld because the text conflicts or is ambiguous. */
+  clarifications?: Partial<Record<CaseField, string>>;
 };
-
-const CITY_TOKENS: string[] = (() => {
-  const tokens = new Set<string>();
-  for (const city of TAIWAN_CITIES) {
-    tokens.add(city);
-    tokens.add(city.slice(0, -1));
-    if (city.startsWith("臺")) {
-      tokens.add("台" + city.slice(1));
-      tokens.add("台" + city.slice(1, -1));
-    }
-  }
-  return [...tokens].sort((left, right) => right.length - left.length);
-})();
-
-const CITY_PATTERN = `(${CITY_TOKENS.join("|")})`;
 
 /** Maps a matched token to a canonical city; returns undefined when ambiguous (e.g. 新竹 / 嘉義). */
 export function toCanonicalCity(token: string): string | undefined {
@@ -366,38 +359,33 @@ export function toCanonicalCity(token: string): string | undefined {
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
-function parseAmount(digits: string, wan?: string): number | undefined {
-  const value = Number(digits.replace(/,/g, ""));
-  if (!Number.isFinite(value) || value < 0) return undefined;
-  return Math.round(wan ? value * 10000 : value);
+const CASE_FIELD_SET = new Set<string>([
+  "city", "registeredCity", "age", "monthlyIncome", "monthlyRent", "ownsHome", "receivesOtherHousingAid",
+  "centralRentApproved", "newTaipeiResidenceStudyWork", "childAgeMonths", "birthOrder",
+  "childHasBirthOrInitialHouseholdRegistration", "receivesPublicOrQuasiPublicChildcare", "isGovernmentPlaced",
+  "childRegisteredCity",
+]);
+
+function applyTypedFacts(facts: ExtractedFacts, typed: FactMap): void {
+  facts.normalized = typed;
+  for (const [field, value] of Object.entries(knownValues(typed))) {
+    if (CASE_FIELD_SET.has(field)) (facts as Record<string, unknown>)[field] = value;
+  }
+  for (const fact of Object.values(typed)) {
+    if ((fact.state === "CONFLICT" || fact.state === "UNKNOWN") && fact.clarification && CASE_FIELD_SET.has(fact.field)) {
+      facts.clarifications = { ...facts.clarifications, [fact.field as CaseField]: fact.clarification };
+    }
+  }
 }
-
-const CHINESE_DIGITS: Record<string, number> = {
-  一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
-};
-
-function parseOrdinal(token: string): number | undefined {
-  if (/^\d+$/.test(token)) return Number(token);
-  return CHINESE_DIGITS[token];
-}
-
-const RENT_PATTERN = /(?:月租|租金|房租)[^\d。，,；;]{0,6}(\d[\d,]*)\s*(萬)?/;
 
 function extractHousingFacts(text: string, facts: ExtractedFacts): void {
-  // Residence city (actual scenario). "搬到X" is a what-if, never the residence.
-  const residence =
-    new RegExp(`(?:住在|居住在|居住於|租屋在|租屋於|租在|住)\\s*${CITY_PATTERN}`).exec(text) ??
-    new RegExp(`在\\s*${CITY_PATTERN}[^，。,；;]{0,8}租`).exec(text);
-  if (residence) {
-    const city = toCanonicalCity(residence[1]);
-    if (city) facts.city = city;
-  }
-
-  const registered = new RegExp(`(?:戶籍(?:地)?(?:設)?(?:在|於|為|是)?|設籍(?:在|於)?)\\s*${CITY_PATTERN}`).exec(text);
-  if (registered) {
-    const city = toCanonicalCity(registered[1]);
-    if (city) facts.registeredCity = city;
-  }
+  const typed = extractHousingFactsTyped(text);
+  applyTypedFacts(facts, typed.facts);
+  if (typed.district) facts.district = typed.district;
+  if (typed.whatIfCity) facts.whatIfCity = typed.whatIfCity;
+  if (typed.whatIfDistrict) facts.whatIfDistrict = typed.whatIfDistrict;
+  if (typed.whatIfMonthlyRent !== undefined) facts.whatIfMonthlyRent = typed.whatIfMonthlyRent;
+  if (typed.dualCityComparison) facts.dualCityComparison = true;
 
   const studyStatement = /[^，。,；;。？！?！]*(?:就讀|就學|在學|在校|讀書)[^，。,；;。？！?！]*/.exec(text)?.[0] ?? "";
   if (
@@ -407,112 +395,20 @@ function extractHousingFacts(text: string, facts: ExtractedFacts): void {
     facts.studyCity = "臺北市";
   }
 
-  const move = new RegExp(`(?:搬到|搬去|搬至|搬往)\\s*${CITY_PATTERN}`).exec(text);
-  const beforeMove = move ? text.slice(0, move.index) : text;
-  if (move) {
-    const city = toCanonicalCity(move[1]);
-    if (city) {
-      facts.whatIfCity = city;
-      const afterMove = text.slice(move.index).split(/[。？?！!]/)[0];
-      const whatIfRent = RENT_PATTERN.exec(afterMove);
-      if (whatIfRent) {
-        const amount = parseAmount(whatIfRent[1], whatIfRent[2]);
-        if (amount !== undefined) facts.whatIfMonthlyRent = amount;
-      }
-    }
-  }
-
-  const rent = RENT_PATTERN.exec(beforeMove);
-  if (rent) {
-    const amount = parseAmount(rent[1], rent[2]);
-    if (amount !== undefined) facts.monthlyRent = amount;
-  }
-
   if (/雙北/.test(text)) {
     const hasDistinctCities = Boolean(facts.city && facts.whatIfCity && facts.city !== facts.whatIfCity);
     if (!hasDistinctCities) {
       facts.city = "臺北市";
       facts.whatIfCity = "新北市";
       facts.dualCityComparison = true;
+      delete facts.district;
+      delete facts.whatIfDistrict;
     }
-  }
-
-  // Age: "28 歲", but not thresholds such as "未滿 2 歲" / "65 歲以上".
-  for (const match of text.matchAll(/(\d{1,3})\s*歲/g)) {
-    const before = text.slice(Math.max(0, (match.index ?? 0) - 2), match.index ?? 0);
-    const after = text.slice((match.index ?? 0) + match[0].length, (match.index ?? 0) + match[0].length + 3);
-    if (/滿|過|於/.test(before) || /^\s*(以上|以下|至|到|~|-|－|個月)/.test(after)) continue;
-    const age = Number(match[1]);
-    if (Number.isInteger(age) && age >= 0 && age <= 130) {
-      facts.age = age;
-      break;
-    }
-  }
-
-  const income = /(?<!年)(?:月薪|月收入|月所得|每月收入|每月所得|月入|薪水)[^\d。，,；;]{0,6}(\d[\d,]*(?:\.\d+)?)\s*(萬)?/.exec(text);
-  if (income) {
-    const amount = parseAmount(income[1], income[2]);
-    if (amount !== undefined) facts.monthlyIncome = amount;
-  }
-
-  // Home ownership: only explicit statements. Negation is checked first.
-  if (/(?:沒有|沒|無|未持有|名下無|並無)(?:自有)?(?:房子|房屋|住宅|自宅|房產)(?!補)/.test(text)) {
-    facts.ownsHome = false;
-  } else if (/(?<![所領享具沒])(?:有|持有|擁有|名下有)(?:自有)?(?:房子|房屋|住宅|自宅|房產)(?!補)/.test(text)) {
-    facts.ownsHome = true;
-  }
-
-  // Other housing aid: only explicit "receiving" statements (領/領取/請領).
-  if (/(?:沒有|沒|未|無)(?:在)?(?:領|領取|請領)(?:其他)?(?:政府)?(?:住宅|租金|租屋)補(?:貼|助)/.test(text)) {
-    facts.receivesOtherHousingAid = false;
-  } else if (/(?<![沒未無])(?:有|正在|目前|已)(?:在)?(?:領|領取|請領)(?:其他)?(?:政府)?(?:住宅|租金|租屋)補(?:貼|助)/.test(text)) {
-    facts.receivesOtherHousingAid = true;
   }
 }
 
 function extractChildcareFacts(text: string, facts: ExtractedFacts): void {
-  const yearsMonths = /(\d{1,2})\s*歲\s*(?:又)?\s*(\d{1,2})\s*個月/.exec(text);
-  if (yearsMonths) {
-    facts.childAgeMonths = Number(yearsMonths[1]) * 12 + Number(yearsMonths[2]);
-  } else {
-    const months = /(\d{1,3})\s*個月/.exec(text);
-    if (months) facts.childAgeMonths = Number(months[1]);
-  }
-  // A bare "1 歲" is ambiguous (12–23 months) and is intentionally not converted.
-
-  const order = /第\s*([1-9]\d?|[一二兩三四五六七八九十])\s*(?:胎|個孩子|個小孩|個寶寶|名子女|名小孩|個子女)/.exec(text);
-  if (order) {
-    const value = parseOrdinal(order[1]);
-    if (value !== undefined && value >= 1) facts.birthOrder = value;
-  } else if (/頭胎/.test(text)) {
-    facts.birthOrder = 1;
-  }
-
-  const registrationTerms = "(?:出生登記|出生戶籍登記|初設戶籍登記|初設戶籍|報戶口)";
-  if (new RegExp(`(?:尚未|還沒|還未|沒有|未)(?:完成|辦理|辦好|辦)?${registrationTerms}`).test(text)) {
-    facts.childHasBirthOrInitialHouseholdRegistration = false;
-  } else if (new RegExp(`(?:已經|已|有)(?:完成|辦理|辦好|辦)?${registrationTerms}`).test(text)) {
-    facts.childHasBirthOrInitialHouseholdRegistration = true;
-  }
-
-  const careTerms = "(?:公托|公共托育|公共化托育|準公共|公共化)";
-  if (new RegExp(`(?:沒有|沒|未|並未|不是|無|非)(?:在)?(?:送托|送去|送|使用|接受|讀|念)?\\s*${careTerms}`).test(text)) {
-    facts.receivesPublicOrQuasiPublicChildcare = false;
-  } else if (new RegExp(`(?:有送托|有送|送托|送去|送|正在接受|接受|使用|讀|念)\\s*${careTerms}`).test(text)) {
-    facts.receivesPublicOrQuasiPublicChildcare = true;
-  }
-
-  if (/(?:沒有|未|並未|非|無)(?:經)?(?:政府)?(?:公費)?安置/.test(text)) {
-    facts.isGovernmentPlaced = false;
-  } else if (/(?:經政府(?:公費)?安置|公費安置|安置(?:機構|收容)中)/.test(text)) {
-    facts.isGovernmentPlaced = true;
-  }
-
-  const registered = new RegExp(`(?:戶籍(?:地)?(?:設)?(?:在|於|為|是)?|設籍(?:在|於)?)\\s*${CITY_PATTERN}`).exec(text);
-  if (registered) {
-    const city = toCanonicalCity(registered[1]);
-    if (city) facts.childRegisteredCity = city;
-  }
+  applyTypedFacts(facts, extractChildcareFactsTyped(text).facts);
 }
 
 /**
@@ -625,6 +521,10 @@ export type CaseDraft = {
   /** True when no relocation was stated; the what-if column then mirrors the actual address. */
   whatIfMirrorsActual: boolean;
   requiredFields?: SupportedMissingField[];
+  /** Gate wording for fields withheld because the text conflicts / is ambiguous (says why it is asked). */
+  fieldQuestions?: Partial<Record<SupportedMissingField, string>>;
+  /** Typed extraction result (state + source span per field); empty for an unmodified preset. */
+  normalizedFacts?: FactMap;
   valid: boolean;
 };
 
@@ -665,14 +565,18 @@ function buildHousingCase(
   const city = typeof values.city === "string" ? values.city : undefined;
   const monthlyRent = typeof values.monthlyRent === "number" ? values.monthlyRent : 0;
 
+  // The extracted district only belongs to the extracted city (never to an edited one).
+  const district = city && extracted.city === city ? extracted.district : undefined;
+
   let actualScenario: AddressScenario;
   if (preset && preset.actualScenario.city === city) {
     actualScenario = { ...preset.actualScenario, monthlyRent };
   } else {
     actualScenario = {
       type: "ACTUAL",
-      address: city ? `${city}（自訂案例，未提供詳細地址）` : "",
+      address: city ? `${city}${district ?? ""}（自訂案例，未提供詳細地址）` : "",
       city,
+      ...(district ? { district } : {}),
       monthlyRent,
     };
   }
@@ -691,11 +595,13 @@ function buildHousingCase(
   } else if (preset?.whatIfScenario) {
     whatIfScenario = { ...preset.whatIfScenario };
   } else if (extracted.whatIfCity) {
+    const dualSharedRent = extracted.dualCityComparison && extracted.whatIfMonthlyRent === undefined;
     whatIfScenario = {
       type: "WHAT_IF",
-      address: `${extracted.whatIfCity}（搬遷假設，未提供詳細地址）`,
+      address: `${extracted.whatIfCity}${extracted.whatIfDistrict ?? ""}（搬遷假設，未提供詳細地址）`,
       city: extracted.whatIfCity,
-      monthlyRent: extracted.dualCityComparison ? monthlyRent : extracted.whatIfMonthlyRent ?? 0,
+      ...(extracted.whatIfDistrict ? { district: extracted.whatIfDistrict } : {}),
+      monthlyRent: dualSharedRent ? monthlyRent : extracted.whatIfMonthlyRent ?? 0,
     };
   } else {
     whatIfScenario = { ...actualScenario, type: "WHAT_IF" };
@@ -706,14 +612,47 @@ function buildHousingCase(
   // rule TAOYUAN-115-INCOME-001 reads monthlyIncome, so ask for it instead of skipping.
   const requiredFields: SupportedMissingField[] = ["ownsHome", "receivesOtherHousingAid"];
   if (city === "桃園市") requiredFields.push("monthlyIncome");
+  // Gate order: contradictory fields first, then fields the user mentioned but hedged.
+  for (const field of hedgedFields(extracted.normalized ?? {}).reverse()) {
+    const agentField = field as SupportedMissingField;
+    const index = requiredFields.indexOf(agentField);
+    if (index === -1) continue;
+    requiredFields.splice(index, 1);
+    requiredFields.unshift(agentField);
+  }
+  for (const field of Object.keys(extracted.clarifications ?? {}).reverse()) {
+    if (field === "monthlyRent" || field === "city") continue;
+    const agentField = field as SupportedMissingField;
+    const index = requiredFields.indexOf(agentField);
+    if (index !== -1) requiredFields.splice(index, 1);
+    requiredFields.unshift(agentField);
+  }
 
   void goal;
   return { applicant, actualScenario, whatIfScenario, whatIfMirrorsActual, requiredFields };
 }
 
+const CHILDCARE_GATE_ORDER: SupportedMissingField[] = [
+  "childAgeMonths",
+  "childHasBirthOrInitialHouseholdRegistration",
+  "isGovernmentPlaced",
+  "receivesPublicOrQuasiPublicChildcare",
+  "birthOrder",
+];
+
+function childcareGateOrder(extracted: ExtractedFacts): SupportedMissingField[] | undefined {
+  const first = [
+    ...(Object.keys(extracted.clarifications ?? {}) as SupportedMissingField[]),
+    ...(hedgedFields(extracted.normalized ?? {}) as SupportedMissingField[]),
+  ].filter((field, index, list) => CHILDCARE_GATE_ORDER.includes(field) && list.indexOf(field) === index);
+  if (first.length === 0) return undefined;
+  return [...first, ...CHILDCARE_GATE_ORDER.filter((field) => !first.includes(field))];
+}
+
 function buildChildcareCase(
   preset: CasePreset | null,
-  values: Partial<Record<CaseField, CaseFieldValue>>
+  values: Partial<Record<CaseField, CaseFieldValue>>,
+  extracted: ExtractedFacts = {}
 ): Pick<CaseDraft, "applicant" | "actualScenario" | "whatIfScenario" | "whatIfMirrorsActual" | "requiredFields"> {
   const applicant: ApplicantProfile = {};
   if (preset) {
@@ -742,7 +681,8 @@ function buildChildcareCase(
     actualScenario: { type: "ACTUAL", address: "", city, monthlyRent: 0 },
     whatIfScenario: { type: "WHAT_IF", address: "", city, monthlyRent: 0 },
     whatIfMirrorsActual: true,
-    requiredFields: undefined,
+    // Conflicting, then hedged, childcare facts are asked first; otherwise the engine derives the list.
+    requiredFields: childcareGateOrder(extracted),
   };
 }
 
@@ -807,8 +747,16 @@ export function buildCaseDraft(goal: string, editsByDomain: CaseEditsByDomain = 
     : undefined;
 
   const built = domain === "CHILDCARE"
-    ? buildChildcareCase(preset, values)
+    ? buildChildcareCase(preset, values, extracted)
     : buildHousingCase(trimmed, preset, values, extracted, whatIfCityOverride);
+
+  // Clarification wording applies only while the field is still unresolved (an edit resolves it).
+  const fieldQuestions: Partial<Record<SupportedMissingField, string>> = {};
+  for (const [field, question] of Object.entries(extracted.clarifications ?? {})) {
+    if (question && field !== "monthlyRent" && values[field as CaseField] === undefined) {
+      fieldQuestions[field as SupportedMissingField] = question;
+    }
+  }
 
   return {
     goal: trimmed,
@@ -819,6 +767,8 @@ export function buildCaseDraft(goal: string, editsByDomain: CaseEditsByDomain = 
     sources,
     errors,
     ...built,
+    ...(Object.keys(fieldQuestions).length ? { fieldQuestions } : {}),
+    ...(extracted.normalized ? { normalizedFacts: extracted.normalized } : {}),
     valid: Object.keys(errors).length === 0,
   };
 }
@@ -865,7 +815,7 @@ export function buildPersonaChips(
     ? { key: "registeredCity", label: `${shortCity(applicant.registeredCity)}戶籍` }
     : { key: "registeredCity", label: "戶籍：未填", pending: true });
   const place = actualScenario?.city
-    ? `${shortCity(actualScenario.city)}${(actualScenario.district ?? "").replace(/區$/, "")}`
+    ? `${shortCity(actualScenario.city)}${(actualScenario.district ?? "").replace(/(..)區$/, "$1")}`
     : "";
   chips.push(place
     ? { key: "city", label: `目前租屋：${place}` }
@@ -900,6 +850,7 @@ export function startCaseRun(draft: CaseDraft, plannerResult?: ProviderPlannerRe
       includePassport: true,
       whatIfMirrorsActual: draft.whatIfMirrorsActual,
       ...(draft.requiredFields ? { requiredFields: [...draft.requiredFields] } : {}),
+      ...(draft.fieldQuestions ? { fieldQuestions: { ...draft.fieldQuestions } } : {}),
     }
   );
 }

@@ -80,6 +80,11 @@ export type AgentLoopOptions = {
   runId?: string;
   /** The case defines no relocation / option B; the what-if object only mirrors the actual address. */
   whatIfMirrorsActual?: boolean;
+  /**
+   * Gate wording for fields whose free-text statement was contradictory or ambiguous. It
+   * replaces the generic question so the user sees WHY a stated fact is asked again.
+   */
+  fieldQuestions?: Partial<Record<SupportedMissingField, string>>;
 };
 
 /**
@@ -119,6 +124,7 @@ type InternalExecutionState = {
   /** False when the what-if only mirrors the actual address (see hasDistinctWhatIf). */
   distinctWhatIf: boolean;
   ruleOptions?: RuleEvaluationOptionsWithScope;
+  fieldQuestions?: Partial<Record<SupportedMissingField, string>>;
   conflictStatus?: "CLEAR" | "CONFLICT";
   centralEvaluations?: RuleEvaluation[];
   centralStatus?: EligibilityStatus;
@@ -129,6 +135,24 @@ type InternalExecutionState = {
   passportResult?: DecisionPassport;
   overallEligibilityStatus?: EligibilityStatus | "HUMAN_REVIEW_REQUIRED";
 };
+
+/** Gate wording: clarification (contradiction / ambiguity) when present, else the canonical question. */
+function gateQuestion(field: SupportedMissingField, fieldQuestions?: Partial<Record<SupportedMissingField, string>>): string {
+  return fieldQuestions?.[field] ?? getQuestionForMissingField(field);
+}
+
+/** Keeps clarification wording only for fields that are still unresolved. */
+function openFieldQuestions(
+  fieldQuestions: Partial<Record<SupportedMissingField, string>> | undefined,
+  applicant: ApplicantProfile,
+  actualScenario: AddressScenario
+): Partial<Record<SupportedMissingField, string>> | undefined {
+  if (!fieldQuestions) return undefined;
+  const open = Object.fromEntries(
+    Object.entries(fieldQuestions).filter(([field]) => isFieldMissing(field as SupportedMissingField, applicant, actualScenario))
+  ) as Partial<Record<SupportedMissingField, string>>;
+  return Object.keys(open).length ? open : undefined;
+}
 
 function computeStateSignature(
   applicant: ApplicantProfile,
@@ -397,6 +421,15 @@ export function validatePlannerProposal(
     const requestedField = isSupportedMissingField(candidate.missingField)
       ? candidate.missingField
       : missingFields[0];
+    // Invariant: a Human Gate never asks for a field the normalized state already knows.
+    if (requestedField && !isFieldMissing(requestedField, state.applicant, state.actualScenario)) {
+      return {
+        valid: false,
+        validationStage: "STATE_TRANSITION_VALIDATION",
+        proposalRejected: true,
+        rejectionReason: `ASK_FOR_KNOWN_FIELD: ${requestedField}`,
+      };
+    }
     const question =
       typeof candidate.humanQuestion === "string" && candidate.humanQuestion.trim()
         ? candidate.humanQuestion.trim()
@@ -799,8 +832,11 @@ function selectDeterministicToolDecision(state: InternalExecutionState): AgentDe
   }
 
   if (!state.completedTools.includes("evaluate_central_rules")) {
+    // Only the rental city is needed BEFORE the central rules run (it selects the policy layer).
+    // Other missing fields are asked afterwards in required order, so the first gate targets an
+    // encoded eligibility condition (e.g. ownership) rather than a field no encoded rule reads.
     const extraMissing = detectMissingFields(state.applicant, state.actualScenario, state.requiredFields).find(
-      (field) => field !== "ownsHome" && field !== "receivesOtherHousingAid"
+      (field) => field === "city"
     );
     if (extraMissing) {
       return {
@@ -1082,6 +1118,9 @@ function syncRunStateSnapshot(run: AgentRun, state: InternalExecutionState): voi
     whatIfStatus: state.whatIfScenarioResult?.overallStatus,
     childcareStatus: state.childcareStatus,
     overallEligibilityStatus: state.overallEligibilityStatus,
+    ...(openFieldQuestions(state.fieldQuestions, state.applicant, state.actualScenario)
+      ? { fieldQuestions: openFieldQuestions(state.fieldQuestions, state.applicant, state.actualScenario) }
+      : {}),
   };
 }
 
@@ -1260,11 +1299,13 @@ function executeBoundedSteps(
     if (selectedDecision.nextAction === "ASK_HUMAN") {
       const defaultField: SupportedMissingField =
         state.domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome";
+      const stillMissing = detectMissingFields(state.applicant, state.actualScenario, state.requiredFields);
+      const proposedField = selectedDecision.missingField;
       const missingField =
-        selectedDecision.missingField ??
-        detectMissingFields(state.applicant, state.actualScenario, state.requiredFields)[0] ??
+        (proposedField && isFieldMissing(proposedField, state.applicant, state.actualScenario) ? proposedField : undefined) ??
+        stillMissing[0] ??
         defaultField;
-      const question = getQuestionForMissingField(missingField);
+      const question = gateQuestion(missingField, state.fieldQuestions);
       currentRun.stepsTaken += 1;
       currentRun.status = "WAITING_FOR_HUMAN";
       currentRun.currentStep = `Waiting for human confirmation on ${missingField}`;
@@ -1479,7 +1520,7 @@ function executeBoundedSteps(
         resultMissingField ??
         detectMissingFields(state.applicant, state.actualScenario, state.requiredFields)[0] ??
         defaultField;
-      const question = getQuestionForMissingField(missingField);
+      const question = gateQuestion(missingField, state.fieldQuestions);
 
       currentRun.status = "WAITING_FOR_HUMAN";
       currentRun.currentStep = "Deterministic result is uncertain and requires human input";
@@ -1698,6 +1739,7 @@ export function runAgenticGoldenCase(
     includePassport: options?.includePassport ?? false,
     caseId: caseIdOf(run),
     distinctWhatIf: domain === "HOUSING" && hasDistinctWhatIf(actualScenario, whatIfScenario, options?.whatIfMirrorsActual),
+    fieldQuestions: options?.fieldQuestions,
     ruleOptions: {
       ...options?.ruleOptions,
       ...(isLocalOnlyHousingQuery(goal) ? { localOnly: true } : {}),
@@ -2020,7 +2062,7 @@ export function resumeAgentRun(
       (childcareResult.status === "UNCERTAIN" || remainingMissing.length > 0)
     ) {
       const nextMissing = remainingMissing[0] ?? "childAgeMonths";
-      const question = getQuestionForMissingField(nextMissing);
+      const question = gateQuestion(nextMissing, options?.fieldQuestions ?? run.state?.fieldQuestions);
       nextRun.status = "WAITING_FOR_HUMAN";
       nextRun.currentStep = "Childcare rules still have missing required fields";
       nextRun.missingField = nextMissing;
@@ -2176,7 +2218,7 @@ export function resumeAgentRun(
   const remainingMissing = detectMissingFields(applicant, actualScenario, requiredFields);
   if (centralResult.status === "UNCERTAIN" || remainingMissing.length > 0) {
     const nextMissing = remainingMissing[0] ?? "ownsHome";
-    const question = getQuestionForMissingField(nextMissing);
+    const question = gateQuestion(nextMissing, options?.fieldQuestions ?? run.state?.fieldQuestions);
     nextRun.status = "WAITING_FOR_HUMAN";
     nextRun.currentStep = "Central rules or required fields are still uncertain";
     nextRun.missingField = nextMissing;

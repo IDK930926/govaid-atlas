@@ -137,6 +137,8 @@ export type AgentWorkflowState = {
   whatIfStatus?: EligibilityStatus;
   childcareStatus?: EligibilityStatus;
   overallEligibilityStatus?: EligibilityStatus | "HUMAN_REVIEW_REQUIRED";
+  /** Clarification wording for still-unresolved contradictory / ambiguous fields. */
+  fieldQuestions?: Partial<Record<SupportedMissingField, string>>;
 };
 
 export type AgentRun = {
