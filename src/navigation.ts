@@ -16,16 +16,107 @@ export type BuildApplicationGuideOptions = RuleEvaluationOptions & {
   registeredCity?: string;
 };
 
+/**
+ * 每月補貼金額上限 by tier, verbatim from 三百億元中央擴大租金補貼專案計畫作業規定 附表四
+ * (國署住字第1151002186號令修正，行政院公報 第032卷第006期 2026-01-09，自115/1/1生效).
+ * The tier is set by household composition / low-income status, NOT by district:
+ *   第一級：家庭成員二人以上且具低收入戶身分，或三人以上且具中低收入戶身分
+ *   第二級：非屬第一級及第三級
+ *   第三級：家庭成員一人、未滿四十歲，且未具經濟或社會弱勢身分
+ * GovAid does not collect household size or low-/middle-low-income / social-disadvantage
+ * status, so it never determines the tier; it can only show the 第三級 base for comparison.
+ */
+export type CentralRentTierAmounts = { tier1: number; tier2: number; tier3: number };
+
+export const CENTRAL_RENT_TIER_TABLE: Record<string, Array<{ districts: readonly string[] | "ALL"; amounts: CentralRentTierAmounts }>> = {
+  "臺北市": [{ districts: "ALL", amounts: { tier1: 8000, tier2: 5000, tier3: 3000 } }],
+  "新北市": [
+    {
+      districts: [
+        "三重區", "土城區", "中和區", "永和區", "汐止區", "板橋區", "新店區", "新莊區", "蘆洲區", "八里區",
+        "三峽區", "五股區", "林口區", "泰山區", "淡水區", "深坑區", "樹林區", "鶯歌區",
+      ],
+      amounts: { tier1: 5000, tier2: 4000, tier3: 2400 },
+    },
+    {
+      districts: [
+        "三芝區", "平溪區", "石門區", "石碇區", "坪林區", "金山區", "烏來區", "貢寮區", "瑞芳區", "萬里區", "雙溪區",
+      ],
+      amounts: { tier1: 3600, tier2: 3200, tier3: 2000 },
+    },
+  ],
+  "桃園市": [{ districts: "ALL", amounts: { tier1: 5000, tier2: 4000, tier3: 2400 } }],
+};
+
+/** Official 附表四 amounts for a city/district, or null when the district is unknown/unlisted. */
+export function lookupCentralRentTierAmounts(city: string, district?: string): CentralRentTierAmounts | null {
+  const rows = CENTRAL_RENT_TIER_TABLE[city];
+  if (!rows) return null;
+  const row = rows.find((item) => item.districts === "ALL" || (district !== undefined && item.districts.includes(district)));
+  return row?.amounts ?? null;
+}
+
+/** Label for a tier-unknown base estimate: never claims a tier was determined. */
+export const CENTRAL_TIER3_BASE_LABEL = "中央 R1 第三級基準（級距未判定）";
+export const CENTRAL_TIER_UNDETERMINED_NOTE =
+  "本系統未取得家庭人數、低收／中低收入戶或社會弱勢身分，未判定補貼級距；僅以第三級（單身未滿40歲、無經濟或社會弱勢身分）基準估算，未計加碼倍數。";
+
+export function describeCentralTierTable(amounts: CentralRentTierAmounts): string {
+  return `附表四級距：第一級 NT$${amounts.tier1.toLocaleString()}／第二級 NT$${amounts.tier2.toLocaleString()}／第三級 NT$${amounts.tier3.toLocaleString()}`;
+}
+
+/**
+ * 每月租金補貼金額加碼表, verbatim from 作業規定 附表五 (same 115/1/9 amendment, 自115/1/1生效).
+ * Marriage / newborn multipliers depend on the event date relative to 115/1/1 (2026-01-01).
+ * GovAid does not collect marriage-registration or child birth dates, so it presents both
+ * schedules and never selects a multiplier for the applicant.
+ */
+export const CENTRAL_RENT_MULTIPLIER_REFORM_DATE = "2026-01-01";
+export const CENTRAL_RENT_MULTIPLIERS = {
+  singleYouth: 1.2,
+  economicallyDisadvantaged: 1.4,
+  sociallyDisadvantaged: 1.2,
+  newlywed: { registeredOnOrBefore20251231: 1.3, registeredOnOrAfter20260101: 1.5 },
+  /** 子女均非 115/1/1 以後出生（含胎兒）：1人1.4、2人1.6、3人1.8，逾3人每增1名 +0.2 */
+  minorChildrenPreReform: { base: 1.4, step: 0.2 },
+  /** 115/1/1 以後（含）有新生兒出生：1人2、2人2.5、3人3，逾3人每增1名 +0.5 */
+  newbornPostReform: { base: 2.0, step: 0.5 },
+} as const;
+
+/** Table lookup only (附表五); callers must know the event date — GovAid's applicant model does not. */
+export function centralRentChildMultiplier(schedule: "PRE_115" | "POST_115_NEWBORN", children: number): number | null {
+  if (!Number.isInteger(children) || children < 1) return null;
+  const { base, step } = schedule === "PRE_115"
+    ? CENTRAL_RENT_MULTIPLIERS.minorChildrenPreReform
+    : CENTRAL_RENT_MULTIPLIERS.newbornPostReform;
+  return Math.round((base + step * (children - 1)) * 10) / 10;
+}
+
+export const CENTRAL_RENT_MULTIPLIER_DATE_NOTE =
+  "新婚與育兒加碼倍數依結婚登記日或新生兒出生日是否在 115/1/1 以後而不同；本系統未取得上述日期，不判定適用倍數。";
+
+export function describeCentralRentMultipliers(): string {
+  const m = CENTRAL_RENT_MULTIPLIERS;
+  return [
+    `加碼倍數（附表五）：單身青年 ${m.singleYouth} 倍`,
+    `新婚家庭：114/12/31 前（含）登記結婚 ${m.newlywed.registeredOnOrBefore20251231} 倍、115/1/1 後（含）登記結婚 ${m.newlywed.registeredOnOrAfter20260101} 倍`,
+    `育有未成年子女（胎兒）且子女非 115/1/1 後出生：1人 1.4 倍、2人 1.6 倍、3人 1.8 倍，逾3人每增1名加 0.2 倍`,
+    `115/1/1 後（含）有新生兒出生：1人 2 倍、2人 2.5 倍、3人 3 倍，逾3人每增1名加 0.5 倍`,
+    `經濟弱勢 ${m.economicallyDisadvantaged} 倍、社會弱勢 ${m.sociallyDisadvantaged} 倍；同時符合者擇高`,
+  ].join("；");
+}
+
 export const RENTAL_SUBSIDY_COMPARISON_METADATA = {
   "臺北市": {
     options: [
-      { policyId: "CENTRAL_RENT_115", description: "中央 R1 第一級單身", minNtd: 3000, maxNtd: 3000 },
+      { policyId: "CENTRAL_RENT_115", description: CENTRAL_TIER3_BASE_LABEL, minNtd: 3000, maxNtd: 3000 },
     ],
     note: "未設籍臺北市者不適用北市 R6。",
   },
   "新北市": {
     options: [
-      { policyId: "CENTRAL_RENT_115", description: "中央 R1 第二／三級單身", minNtd: 2200, maxNtd: 2400 },
+      // 附表四 新北市（含永和區）第三級 = 2,400；偏遠 11 區第三級 = 2,000 (resolved per district below).
+      { policyId: "CENTRAL_RENT_115", description: CENTRAL_TIER3_BASE_LABEL, minNtd: 2400, maxNtd: 2400 },
       { policyId: "NEW_TAIPEI_RENT_115", description: "新北青年 R7（符合新北設籍／就學／就業條件）", minNtd: 3500, maxNtd: 3500 },
     ],
     note: "R7 與中央 R1 擇優，不得重複請領。",
@@ -70,16 +161,32 @@ export function estimateRentalSubsidyComparison(
   // is not estimated either: showing an amount would imply the condition is likely met.
   const isPendingBlocked = (policyId: string) =>
     Boolean(policyOf(policyId)?.evaluations.some((evaluation) => evaluation.blocksEstimate));
-  const options = metadata.options.filter((option) => {
-    const status = policyOf(option.policyId)?.eligibilityStatus;
-    return status !== "FAIL" && status !== "NOT_COVERED" && !isPendingBlocked(option.policyId);
-  });
+  // Central R1 amount comes from 附表四 for the scenario's district; an unknown or unlisted
+  // district yields no central estimate rather than a guessed bracket.
+  const tierAmounts = lookupCentralRentTierAmounts(city ?? "", result.scenario.district);
+  const options = metadata.options
+    .map((option) => option.policyId === "CENTRAL_RENT_115"
+      ? tierAmounts ? { ...option, minNtd: tierAmounts.tier3, maxNtd: tierAmounts.tier3 } : null
+      : option)
+    .filter((option): option is NonNullable<typeof option> => {
+      if (!option) return false;
+      const status = policyOf(option.policyId)?.eligibilityStatus;
+      return status !== "FAIL" && status !== "NOT_COVERED" && !isPendingBlocked(option.policyId);
+    });
+  const usesCentralBase = options.some((option) => option.policyId === "CENTRAL_RENT_115");
   const hasPendingExclusion = metadata.options.some((option) => isPendingBlocked(option.policyId));
   if (options.length === 0 && hasPendingExclusion) {
     return {
       maxSubsidy: "不提供估算：已涵蓋之補助方案資格未通過，或自有住宅條件仍待確認",
       outOfPocket: "不適用（無可估算之補助）",
       note: "資格未通過或條件待確認之方案不列入補助後租金試算。",
+    };
+  }
+  if (options.length === 0 && !tierAmounts) {
+    return {
+      maxSubsidy: "目前無可用級距估算：租賃行政區未確認",
+      outOfPocket: "—",
+      note: "中央租金補貼金額依租賃行政區及家庭級距而定，請以主管機關核定為準。",
     };
   }
   if (options.length === 0) {
@@ -91,8 +198,13 @@ export function estimateRentalSubsidyComparison(
   }
 
   const maxSubsidy = options
-    .map((option) => `${option.description}最高 ${formatNtdRange(option.minNtd, option.maxNtd)} / 月`)
+    .map((option) => option.policyId === "CENTRAL_RENT_115"
+      ? `${option.description} ${formatNtdRange(option.minNtd, option.maxNtd)} / 月`
+      : `${option.description}最高 ${formatNtdRange(option.minNtd, option.maxNtd)} / 月`)
     .join("；");
+  const tierDisclosure = usesCentralBase && tierAmounts
+    ? `${CENTRAL_TIER_UNDETERMINED_NOTE}${describeCentralTierTable(tierAmounts)}。`
+    : "";
   const rent = result.scenario.monthlyRent;
   const outOfPocket = rent > 0
     ? (() => {
@@ -107,16 +219,20 @@ export function estimateRentalSubsidyComparison(
     : "填入月租後估算";
   const note = city === "臺北市" && registeredCity === "臺北市"
     ? "此估算僅列中央 R1，未估算須依資格核定的北市 R6 加碼。"
-    : options.length < metadata.options.length
+    : !tierAmounts
+      ? "租賃行政區未確認，中央 R1 未列入估算。"
+      : options.length < metadata.options.length
       ? hasPendingExclusion
         ? "已排除資格未通過或自有住宅條件待確認之方案。"
         : "已排除本情境資格未通過之方案。"
       : metadata.note;
 
   return {
-    maxSubsidy: `${maxSubsidy}；${note}`,
+    maxSubsidy: `${maxSubsidy}；${note}${tierDisclosure ? ` ${tierDisclosure}` : ""}`,
     outOfPocket,
-    note: "依月租扣除最高補助試算；實際金額以主管機關核定級距為準。",
+    note: usesCentralBase
+      ? "依月租扣除上列金額試算（中央 R1 以第三級基準計，級距未判定）；實際金額以主管機關核定級距及加碼倍數為準。"
+      : "依月租扣除最高補助試算；實際金額以主管機關核定級距為準。",
   };
 }
 
@@ -402,7 +518,7 @@ export function getApplicationGuide(
         validFrom,
         validTo,
         estimatedMonthlyBenefitNtd: options?.estimatedMonthlyBenefitNtd ?? null,
-        benefitAmountFormula: "依桃園市租賃行政區分級（每月基本補貼上限 2,400 元至 5,000 元不等）及單身青年（1.2倍）、新婚（1.3倍）、育有未成年子女（1.4倍起）或弱勢加碼倍數計算；實際金額以國土管理署及桃園市住宅發展處核定為準",
+        benefitAmountFormula: `桃園市每月補貼上限依家庭級距（附表四）：第一級 5,000 元／第二級 4,000 元／第三級 2,400 元，本系統未判定級距。${describeCentralRentMultipliers()}。${CENTRAL_RENT_MULTIPLIER_DATE_NOTE}實際金額以國土管理署及桃園市住宅發展處核定為準`,
         requiredDocuments: TAOYUAN_RENT_REQUIRED_DOCUMENTS,
         applicationMethods: [
           "線上申辦（最推薦）：至內政部國土管理署「300億元中央擴大租金補貼線上申請系統」（https://has.nlma.gov.tw/subsidyOnline/）填寫並上傳租約與存摺影本（免附紙本申請書）",
@@ -410,7 +526,7 @@ export function getApplicationGuide(
           "郵寄申辦：填妥紙本申請書並簽章，連同應備文件影本以掛號郵寄至「330060 桃園市桃園區力行路300號 桃園市政府住宅發展處住宅服務科收」（以郵戳為憑）",
         ],
         onlineApplicationUrl: "https://has.nlma.gov.tw/subsidyOnline/",
-        formUrl: "https://thd.taichung.gov.tw/media/1305401/附件2-115-300億租金補貼作業規定.pdf",
+        formUrl: "https://pip.moi.gov.tw/Upload/HouSubsidy/File2/115Y_01_租金補貼申請書.pdf",
         officeInformation: "桃園市政府住宅發展處（住宅服務科）：330060 桃園市桃園區力行路300號",
         contactInformation: "桃園市政府住宅發展處諮詢專線：(03) 332-4700 轉分機 6 ／ 內政部國土管理署租金補貼專線：(02) 7729-8003",
         officialSources: sourcesFor(["R1", "R9"]),
@@ -451,14 +567,14 @@ export function getApplicationGuide(
         validFrom,
         validTo,
         estimatedMonthlyBenefitNtd: options?.estimatedMonthlyBenefitNtd ?? null,
-        benefitAmountFormula: "依租賃房屋所在行政區分級（每月 2,000 元至 8,000 元）及加碼倍數計算；實際金額以國土管理署核定為準",
+        benefitAmountFormula: "依租賃房屋所在縣市／行政區及家庭級距（附表四第一級至第三級，依家庭人數與低收／中低收入戶身分等判定；本系統未判定級距）每月上限 2,000 元至 8,000 元，並依附表五加碼倍數計算（新婚與育兒倍數依結婚登記日或新生兒出生日是否在 115/1/1 以後而不同）；實際金額以國土管理署核定為準",
         requiredDocuments: CENTRAL_RENT_REQUIRED_DOCUMENTS,
         applicationMethods: [
           "線上申辦：至內政部國土管理署「300億元中央擴大租金補貼線上申請系統」（https://has.nlma.gov.tw/subsidyOnline/）填寫並上傳租約與存摺影本",
           "郵寄或臨櫃申辦：填妥紙本申請書並檢附租賃契約影本、存摺封面影本，掛號郵寄或親送至租賃房屋所在地之直轄市、縣（市）政府住宅主管機關",
         ],
         onlineApplicationUrl: "https://has.nlma.gov.tw/subsidyOnline/",
-        formUrl: "https://thd.taichung.gov.tw/media/1305401/附件2-115-300億租金補貼作業規定.pdf",
+        formUrl: "https://pip.moi.gov.tw/Upload/HouSubsidy/File2/115Y_01_租金補貼申請書.pdf",
         officeInformation: "內政部國土管理署及各直轄市、縣（市）政府住宅發展／都市發展主管機關",
         contactInformation: "內政部國土管理署 300億元中央擴大租金補貼諮詢專線：(02) 7729-8003（週一至週五 08:00–18:00）",
         officialSources: sourcesFor(["R1"]),

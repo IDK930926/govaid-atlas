@@ -1094,7 +1094,7 @@ var init_navigation = __esm({
 });
 
 // src/ui-copy.ts
-var agentStatusCopy, statusCopy, currentStepCopy, auditCopy;
+var agentStatusCopy, workflowSteps, childcareWorkflowSteps, singleScenarioWorkflowSteps, statusCopy, currentStepCopy, auditCopy;
 var init_ui_copy = __esm({
   "src/ui-copy.ts"() {
     "use strict";
@@ -1110,6 +1110,19 @@ var init_ui_copy = __esm({
       HUMAN_REVIEW_REQUIRED: { zh: "\u9700\u8981\u4EBA\u5DE5\u5BE9\u67E5", en: "Human review required" },
       NOT_COVERED: { zh: "\u5C1A\u672A\u6DB5\u84CB", en: "Not covered" }
     };
+    workflowSteps = [
+      { key: "goal", zh: "\u7533\u8ACB\u76EE\u6A19", en: "Goal" },
+      { key: "analyze", zh: "Agent \u5206\u6790", en: "Analyze" },
+      { key: "human", zh: "\u4EBA\u5DE5\u78BA\u8A8D", en: "Human Gate" },
+      { key: "compare", zh: "\u60C5\u5883\u6BD4\u8F03", en: "Compare" },
+      { key: "decision", zh: "\u6C7A\u7B56\u8B77\u7167", en: "Decision" }
+    ];
+    childcareWorkflowSteps = workflowSteps.map(
+      (step) => step.key === "compare" ? { key: "eligibility", zh: "\u8CC7\u683C\u8207\u91D1\u984D", en: "Eligibility" } : step
+    );
+    singleScenarioWorkflowSteps = workflowSteps.map(
+      (step) => step.key === "compare" ? { key: "evaluate", zh: "\u8CC7\u683C\u8A55\u4F30", en: "Evaluate" } : step
+    );
     statusCopy = {
       ...agentStatusCopy,
       PASS: { zh: "\u901A\u904E", en: "PASS" },

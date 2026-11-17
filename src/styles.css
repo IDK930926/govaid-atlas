@@ -2246,6 +2246,20 @@ a {
   background: var(--surface-2);
 }
 
+.evidence-supporting {
+  list-style: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.evidence-list .evidence-supporting a {
+  display: block;
+  padding: var(--s1) var(--s2) var(--s1) var(--s4);
+  border-bottom: 0;
+  font-size: 0.85em;
+  color: var(--ink-2, var(--ink));
+  overflow-wrap: anywhere;
+}
+
 .evidence-list a:hover .evidence-open {
   color: var(--brand);
 }

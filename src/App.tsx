@@ -14,7 +14,7 @@ import {
   statusDisplayCopy,
   summarizeFailReasons,
   toolCopy,
-  workflowSteps,
+  workflowStepsFor,
 } from "./ui-copy";
 import {PARTIAL_CHECK_NOTE} from "./coverage";
 
@@ -42,7 +42,7 @@ import {
 } from "./metrics";
 
 import {runBenchmark} from "./benchmark";
-import {describeAgentDecision} from "./agent-decision-view";
+import {describeAgentDecision, describeCaseModelUse} from "./agent-decision-view";
 import {finalBenchmark} from "./benchmark-final";
 import {evaluationScopeRows} from "./evaluation-scope";
 import {estimateRentalSubsidyComparison} from "./navigation";
@@ -450,6 +450,8 @@ function App() {
     setConflictResult(null);
     setAuditTrail([]);
     setGateError(null);
+    // The rules demo never calls the model: a planner latency from an earlier case must not carry over.
+    setLastInferenceSeconds(null);
 
     const newRun = runAgenticGoldenCase(DEFAULT_GOAL, freshApplicant, DUAL_CITY_ACTUAL_SCENARIO, WENSHAN_WHAT_IF_SCENARIO);
     setAgentRun(newRun);
@@ -831,7 +833,7 @@ function App() {
             GovAid Atlas
           </span>
 
-          <WorkflowProgress status={status} running={agentRunning}/>
+          <WorkflowProgress status={status} running={agentRunning} domain={agentRun.domain ?? draft.domain} hasComparison={!draft.whatIfMirrorsActual}/>
 
           <div className="topbar-actions">
             <button
@@ -993,7 +995,8 @@ function workflowIndex(status: AgentStatus, running: boolean): number {
   }
 }
 
-function WorkflowProgress({status, running}: {status: AgentStatus; running: boolean}) {
+export function WorkflowProgress({status, running, domain, hasComparison = true}: {status: AgentStatus; running: boolean; domain?: string; hasComparison?: boolean}) {
+  const workflowSteps = workflowStepsFor(domain, hasComparison);
   const current = workflowIndex(status, running);
   const failed = (status === "FAILED" || status === "NOT_COVERED") && !running;
   const allDone = status === "COMPLETED";
@@ -1799,7 +1802,7 @@ function CurrentAction({
   );
 }
 
-function ContextPanel({
+export function ContextPanel({
   run,
   running,
   applicant,
@@ -1823,6 +1826,7 @@ function ContextPanel({
     ? (llmEvent.output as {decision?: {reasoningSummary?: string}} | undefined)?.decision?.reasoningSummary
     : undefined;
   const allowed = listAllowedTools();
+  const caseModelUse = describeCaseModelUse(run);
   const personaChips = buildPersonaChips(run.domain ?? "HOUSING", applicant, run.state?.actualScenario);
 
   return (
@@ -1842,12 +1846,16 @@ function ContextPanel({
       </ul>
 
       <dl className="context-facts">
+        {/* Scope is explicit: the configured model is a deployment fact, not proof this case called it. */}
+        {!running && caseModelUse && (
+          <div><dt>本案決策</dt><dd>{caseModelUse.label.replace(/^本案決策：/, "")}</dd></div>
+        )}
         <div>
-          <dt>模型</dt>
+          <dt>目前可用模型</dt>
           <dd><code>{providerInfo.model}</code> <span className="muted" lang="en">{providerKind}</span></dd>
         </div>
-        {!running && lastInferenceSeconds !== null && (
-          <div><dt>規劃耗時</dt><dd>{lastInferenceSeconds.toFixed(1)} 秒</dd></div>
+        {!running && caseModelUse?.modelPlanned && lastInferenceSeconds !== null && (
+          <div><dt>本案模型規劃耗時</dt><dd>{lastInferenceSeconds.toFixed(1)} 秒</dd></div>
         )}
         {(!providerReady || providerError) && !running && (
           <div><dt>模型狀態</dt><dd>無法使用，已改用規則式規劃</dd></div>
@@ -2408,6 +2416,15 @@ function ResultView({
                   </span>
                   <span className="visually-hidden">（另開新視窗）</span>
                 </a>
+                {item.supportingReferences && item.supportingReferences.length > 0 && (
+                  <ul className="evidence-supporting" aria-label={`${item.sourceId} 佐證來源`}>
+                    {item.supportingReferences.map((ref) => (
+                      <li key={ref.url}>
+                        <a href={ref.url} target="_blank" rel="noreferrer">佐證：{ref.label} ↗</a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </li>
             ))}
           </ul>
@@ -2825,7 +2842,7 @@ function RuntimePanel({
             連線診斷：{healthError}
           </p>
         )}
-        <h4 className="runtime-subtitle">最近案件推論</h4>
+        <h4 className="runtime-subtitle">最近一次模型規劃請求紀錄（不一定為目前案件）</h4>
         {inference ? (
           <>
             <div className="metric-grid">
@@ -2833,7 +2850,7 @@ function RuntimePanel({
               <Metric label="Model" value={inference.model}/>
               <Metric label="Connection" value={inference.available ? "可用" : "未連線"}/>
               <Metric label="Runtime Mode" value={runtimeModeLabel(inference.mode)}/>
-              <Metric label="Planner latency" value={inference.latencyMs === null ? null : `${inference.latencyMs.toFixed(0)} ms`}/>
+              <Metric label="最近一次規劃請求耗時 Planner latency" value={inference.latencyMs === null ? null : `${inference.latencyMs.toFixed(0)} ms`}/>
               <Metric label="Rule-based Fallback" value={inference.ruleFallbackUsed ? "已使用" : "未使用"}/>
               <Metric label="Provider failovers" value={inference.providerFallbackCount}/>
             </div>
@@ -2843,7 +2860,7 @@ function RuntimePanel({
               </p>
             )}
             <p className="muted small">
-              此為最近案件的保存紀錄；目前環境狀態以上方即時健康檢查為準。
+              此為最近一次送出模型規劃請求之案件的保存紀錄，不代表目前案件曾呼叫模型；目前案件是否呼叫模型以「案件摘要／本案決策」為準，目前環境狀態以上方即時健康檢查為準。
             </p>
           </>
         ) : (

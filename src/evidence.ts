@@ -8,10 +8,27 @@ export const evidenceRegistry: EvidenceRecord[] = [
     sourceId: "R1",
     agency: "內政部國土管理署",
     policyName:
-      "三百億元中央擴大租金補貼專案計畫作業規定（115年度）",
+      "三百億元中央擴大租金補貼專案計畫作業規定（115年度申請案適用 115.1.9 修正版）",
+    // Current official regulation page (full amendment history). Its 第十六點 states that cases
+    // applied for by 115/12/31 follow the 115.1.9 version; the 115.10.6 amendment applies only to
+    // old households carried into 116. Encoded 115 amounts / multipliers / thresholds were
+    // re-checked against the 115.1.9 Gazette tables and the MOI programme page on 2026-11-17.
     url:
-      "https://thd.taichung.gov.tw/media/1305401/附件2-115-300億租金補貼作業規定.pdf",
-    lastVerifiedAt: "2026-10-16",
+      "https://www.nlma.gov.tw/ch/legislation/law%26regu/6670",
+    lastVerifiedAt: "2026-11-17",
+    policyVersion: "CENTRAL-RENT-115（國署住字第1151002186號令，115.1.9 修正發布，自115.1.1生效）",
+    supersedes:
+      "原證據連結為地方政府網站轉載之作業規定 PDF，已失效（HTTP 404，2026-11-17 查核）；改以中央主辦機關原始來源為準",
+    supportingReferences: [
+      {
+        label: "行政院公報 第032卷第006期（2026-01-09）國署住字第1151002186號令",
+        url: "https://gazette.nat.gov.tw/EG_FileManager/eguploadpub/eg032006/ch02/type2/gov10/num2/Eg.htm",
+      },
+      {
+        label: "內政部不動產資訊平台：115年度300億元中央擴大租金補貼專區",
+        url: "https://pip.moi.gov.tw/Publicize/Info/B1020",
+      },
+    ],
   },
 
   {
@@ -51,10 +68,12 @@ export const evidenceRegistry: EvidenceRecord[] = [
     sourceId: "R9",
     agency: "桃園市政府住宅發展處／內政部國土管理署",
     policyName:
-      "300億元中央擴大租金補貼專案計畫－桃園市受理與申辦規定（115年度）",
+      "115年度300億元中央擴大租金補貼－桃園市受理說明（桃園市政府住宅發展及都市更新處公告）",
+    // Program-specific 115 notice from the Taoyuan housing office (金額 2,400–5,000 元、申請／查詢方式、
+    // 諮詢專線). Eligibility rules themselves are the central 作業規定 (R1).
     url:
-      "https://ohd.tycg.gov.tw/",
-    lastVerifiedAt: "2026-11-11",
+      "https://ohd.tycg.gov.tw/News_Content.aspx?n=8601&s=1601436",
+    lastVerifiedAt: "2026-11-17",
   },
 ];
 

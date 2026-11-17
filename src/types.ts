@@ -105,6 +105,8 @@ export type EvidenceRecord = {
   policyVersion?: string;
   /** Provenance of the version this record replaced, kept for auditability. */
   supersedes?: string;
+  /** Additional official references backing the primary URL (e.g. Gazette record, programme page). */
+  supportingReferences?: { label: string; url: string }[];
 };
 
 export type ApplicationAvailabilityStatus =
