@@ -2,7 +2,7 @@
 //   模型提案 (Proposal) → 系統驗證 (Validation) → 下一步 (Next state)
 // Built only from the structured trace of the planning step. It never shows model reasoning,
 // free-text model questions, tokens or raw codes, and never invents a proposal.
-import { getQuestionForMissingField } from "./agent/missing-fields";
+import { getQuestionForMissingField, isSupportedMissingField } from "./agent/missing-fields";
 import type { AgentRun } from "./agent/types";
 import { toolCopy } from "./ui-copy";
 
@@ -21,12 +21,20 @@ export type AgentDecisionView = {
   decidedBy: string;
 };
 
-function proposalLabel(nextAction: string, toolName?: string): string {
+/** "本人是否持有住宅？" → "本人是否持有住宅" (system wording for the field the model targeted). */
+function askedFieldPhrase(field?: string): string | null {
+  if (!field || !isSupportedMissingField(field)) return null;
+  return getQuestionForMissingField(field).replace(/^請問(?:您)?/, "").replace(/[？?].*$/, "");
+}
+
+function proposalLabel(nextAction: string, toolName?: string, missingField?: string): string {
+  const asked = askedFieldPhrase(missingField);
   switch (nextAction) {
     case "CALL_TOOL":
+      if ((toolName === "request_missing_field" || toolName === "request_human_confirmation") && asked) return `詢問${asked}`;
       return `執行${toolName ? toolCopy[toolName]?.zh ?? "政策工具" : "政策工具"}`;
     case "ASK_HUMAN":
-      return "詢問缺漏資料";
+      return asked ? `詢問${asked}` : "詢問缺漏資料";
     case "COMPLETE":
       return "直接完成分析";
     case "HUMAN_REVIEW_REQUIRED":
@@ -46,7 +54,8 @@ const REJECTION_COPY: Array<[RegExp, string]> = [
   [/^TOOL_NOT_IN_ALLOWLIST/, "工具不在允許清單"],
   [/^DUPLICATE_TOOL_CALL/, "狀態未變的重複呼叫"],
   [/^DOMAIN_MISMATCH/, "工具與補助領域不符"],
-  [/^ASK_FOR_KNOWN_FIELD/, "該資料已由使用者提供，不得重問"],
+  [/^FIELD_ALREADY_KNOWN|^ASK_FOR_KNOWN_FIELD/, "該資料已由使用者提供，不得重問"],
+  [/^NO_ASKABLE_FIELD/, "目前沒有需要再詢問的資料"],
   [/^UNSAFE_/, "試圖覆寫申請資料或資格結果"],
   [/^PASSPORT_REQUIRES/, "尚未完成情境評估"],
   [/^MISSING_HUMAN_QUESTION|^MISSING_TOOL_NAME|^INVALID_|^PROPOSAL_NOT_AN_OBJECT/, "提案格式不完整"],
@@ -109,7 +118,12 @@ export function describeAgentDecision(run: AgentRun): AgentDecisionView | null {
     };
   }
 
-  const label = proposalLabel(proposal.nextAction ?? "", proposal.toolName);
+  // Name the model's targeted field only when it is what the gate asks, or when the proposal was
+  // rejected (e.g. 該資料已由使用者提供); an accepted-but-redirected ask stays generic.
+  const rejected = step.validationResult === "REJECTED" || Boolean(step.proposalRejected);
+  const namedField =
+    rejected || step.humanGate?.missingField === proposal.missingField ? proposal.missingField : undefined;
+  const label = proposalLabel(proposal.nextAction ?? "", proposal.toolName, namedField);
   if (step.validationResult === "REJECTED" || step.proposalRejected) {
     return {
       kind: "MODEL_REJECTED",

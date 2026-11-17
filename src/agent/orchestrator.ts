@@ -10,8 +10,11 @@ import {
   CHILDCARE_MISSING_FIELDS,
   detectMissingFields,
   getQuestionForMissingField,
+  isFieldAskable,
   isFieldMissing,
   isSupportedMissingField,
+  resolveRequestedFields,
+  selectAskableField,
   summarizeSafeSnapshot,
   summarizeSafeState,
   validateMissingFieldInput,
@@ -417,24 +420,46 @@ export function validatePlannerProposal(
 
   const missingFields = detectMissingFields(state.applicant, state.actualScenario, state.requiredFields);
 
-  if (nextAction === "ASK_HUMAN") {
-    const requestedField = isSupportedMissingField(candidate.missingField)
-      ? candidate.missingField
-      : missingFields[0];
-    // Invariant: a Human Gate never asks for a field the normalized state already knows.
-    if (requestedField && !isFieldMissing(requestedField, state.applicant, state.actualScenario)) {
+  // Gate 4C invariant: a Human Gate never asks a field the normalized state already knows.
+  // The field is resolved from the proposal itself (explicit name, alias, or — for the cloud
+  // schema, which carries no field — the free-text question), never from `missingFields[0]`,
+  // so a proposal cannot slip past the check by omitting or aliasing the field.
+  const isHumanRequest =
+    nextAction === "ASK_HUMAN" ||
+    (nextAction === "CALL_TOOL" &&
+      (candidate.toolName === "request_missing_field" || candidate.toolName === "request_human_confirmation"));
+  let gateField: SupportedMissingField | undefined;
+  if (isHumanRequest) {
+    const resolution = resolveRequestedFields(candidate);
+    const askable = resolution.fields.filter((field) => isFieldAskable(field, state.applicant, state.actualScenario));
+    if (resolution.fields.length > 0 && askable.length === 0) {
       return {
         valid: false,
         validationStage: "STATE_TRANSITION_VALIDATION",
         proposalRejected: true,
-        rejectionReason: `ASK_FOR_KNOWN_FIELD: ${requestedField}`,
+        rejectionReason: `FIELD_ALREADY_KNOWN: ${resolution.fields.join(",")}`,
       };
     }
+    // A targeted unknown field is honoured only when it is required for this run; otherwise
+    // the canonical next required field is asked (the gate wording is always system-owned).
+    const targeted = askable.find((field) => missingFields.includes(field));
+    gateField = targeted ?? missingFields[0];
+    if (!gateField) {
+      return {
+        valid: false,
+        validationStage: "STATE_TRANSITION_VALIDATION",
+        proposalRejected: true,
+        rejectionReason: `NO_ASKABLE_FIELD${resolution.fields.length ? `: ${resolution.fields.join(",")}` : ""}`,
+      };
+    }
+  }
+
+  if (nextAction === "ASK_HUMAN") {
     const question =
       typeof candidate.humanQuestion === "string" && candidate.humanQuestion.trim()
         ? candidate.humanQuestion.trim()
-        : requestedField
-          ? getQuestionForMissingField(requestedField)
+        : gateField
+          ? getQuestionForMissingField(gateField)
           : "";
     if (!question) {
       return {
@@ -566,10 +591,10 @@ export function validatePlannerProposal(
     }
   }
 
-  const requestedMissingField = isSupportedMissingField(candidate.missingField)
-    ? candidate.missingField
-    : isSupportedMissingField((candidate.toolArguments as Record<string, unknown> | undefined)?.field)
-      ? ((candidate.toolArguments as Record<string, unknown>).field as SupportedMissingField)
+  const requestedMissingField = isHumanRequest
+    ? gateField
+    : isSupportedMissingField(candidate.missingField)
+      ? candidate.missingField
       : missingFields[0];
 
   const decision: AgentDecision = {
@@ -578,8 +603,12 @@ export function validatePlannerProposal(
     toolName,
     toolArguments: candidate.toolArguments,
     missingField: requestedMissingField,
+    // A Human Gate always shows the system-owned question for the validated field; the
+    // planner's free text may target a different (known) field and is never displayed as-is.
     humanQuestion:
-      typeof candidate.humanQuestion === "string" && candidate.humanQuestion.trim()
+      isHumanRequest && requestedMissingField
+        ? getQuestionForMissingField(requestedMissingField)
+        : typeof candidate.humanQuestion === "string" && candidate.humanQuestion.trim()
         ? candidate.humanQuestion.trim()
         : requestedMissingField
           ? getQuestionForMissingField(requestedMissingField)
@@ -650,11 +679,14 @@ export function decideNextStep(context: {
       };
     }
 
+    // Canonical gate field: never a field the state already knows (undefined → continue).
+    const childcareAskField = selectAskableField(context.applicant, context.actualScenario, requiredFields, missingFields[0] ?? "childAgeMonths");
     if (
+      childcareAskField &&
       context.lastToolResult?.status !== "FAIL" &&
       (missingFields.length > 0 || context.lastToolResult?.status === "UNCERTAIN")
     ) {
-      const field = missingFields[0] ?? "childAgeMonths";
+      const field = childcareAskField;
       return {
         reasoningSummary: `Childcare eligibility requires missing field (${field}) before a determination can be made.`,
         nextAction: "ASK_HUMAN",
@@ -720,8 +752,9 @@ export function decideNextStep(context: {
     };
   }
 
-  if (context.lastToolResult && context.lastToolResult.status === "UNCERTAIN") {
-    const fallbackField = missingFields[0] ?? "ownsHome";
+  const uncertainAskField = selectAskableField(context.applicant, context.actualScenario, requiredFields, missingFields[0] ?? "ownsHome");
+  if (context.lastToolResult && context.lastToolResult.status === "UNCERTAIN" && uncertainAskField) {
+    const fallbackField = uncertainAskField;
     return {
       reasoningSummary: "The deterministic engine remains uncertain and cannot be upgraded to PASS by the agent.",
       nextAction: "ASK_HUMAN",
@@ -796,11 +829,18 @@ function selectDeterministicToolDecision(state: InternalExecutionState): AgentDe
     }
 
     const missingAfterChildcare = detectMissingFields(state.applicant, state.actualScenario, state.requiredFields);
+    const childcareGateField = selectAskableField(
+      state.applicant,
+      state.actualScenario,
+      state.requiredFields,
+      missingAfterChildcare[0] ?? "childAgeMonths"
+    );
     if (
+      childcareGateField &&
       state.childcareStatus !== "FAIL" &&
       (missingAfterChildcare.length > 0 || state.childcareStatus === "UNCERTAIN")
     ) {
-      const field = missingAfterChildcare[0] ?? "childAgeMonths";
+      const field = childcareGateField;
       return {
         reasoningSummary: `Deterministic childcare evaluation requires missing field: ${field}.`,
         nextAction: "ASK_HUMAN",
@@ -854,8 +894,14 @@ function selectDeterministicToolDecision(state: InternalExecutionState): AgentDe
   }
 
   const missingAfterCentral = detectMissingFields(state.applicant, state.actualScenario, state.requiredFields);
-  if (missingAfterCentral.length > 0 || state.centralStatus === "UNCERTAIN") {
-    const field = missingAfterCentral[0] ?? "ownsHome";
+  const centralGateField = selectAskableField(
+    state.applicant,
+    state.actualScenario,
+    state.requiredFields,
+    missingAfterCentral[0] ?? "ownsHome"
+  );
+  if (centralGateField && (missingAfterCentral.length > 0 || state.centralStatus === "UNCERTAIN")) {
+    const field = centralGateField;
     return {
       reasoningSummary: `Deterministic evaluation requires missing field: ${field}.`,
       nextAction: "ASK_HUMAN",
@@ -1033,9 +1079,10 @@ function buildToolArguments(
     case "request_human_confirmation": {
       const defaultField: SupportedMissingField =
         state.domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome";
+      // Tool arguments only; whether a gate actually opens is decided by the canonical
+      // askable-field check at the post-tool gate below.
       const field =
-        proposedDecision?.missingField ??
-        detectMissingFields(state.applicant, state.actualScenario, state.requiredFields)[0] ??
+        selectAskableField(state.applicant, state.actualScenario, state.requiredFields, [proposedDecision?.missingField, defaultField]) ??
         defaultField;
       return {
         args: {
@@ -1230,10 +1277,12 @@ function executeBoundedSteps(
               (rawDecision as Record<string, unknown>).toolName !== undefined
                 ? String((rawDecision as Record<string, unknown>).toolName)
                 : undefined,
-            missingField:
-              (rawDecision as Record<string, unknown>).missingField !== undefined
+            // The field the proposal targets, resolved canonically (explicit name, alias or the
+            // cloud schema's free-text question) so the trace shows what the model asked for.
+            missingField: resolveRequestedFields(rawDecision as Record<string, unknown>).fields[0] ??
+              ((rawDecision as Record<string, unknown>).missingField !== undefined
                 ? String((rawDecision as Record<string, unknown>).missingField)
-                : undefined,
+                : undefined),
           }
         : providerResult
           ? { nextAction: "PROVIDER_ERROR" }
@@ -1295,16 +1344,32 @@ function executeBoundedSteps(
       );
     }
 
+    // Defence in depth for the known-field invariant: an ASK with nothing unknown to ask is
+    // replaced by the deterministic selector's decision (never a dead end, never a re-ask).
+    if (
+      selectedDecision.nextAction === "ASK_HUMAN" &&
+      !selectAskableField(state.applicant, state.actualScenario, state.requiredFields, [
+        selectedDecision.missingField,
+        state.domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome",
+      ])
+    ) {
+      selectedDecision = selectDeterministicToolDecision(state);
+      fallbackUsed = true;
+    }
+
     // Handle ASK_HUMAN action
     if (selectedDecision.nextAction === "ASK_HUMAN") {
       const defaultField: SupportedMissingField =
         state.domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome";
-      const stillMissing = detectMissingFields(state.applicant, state.actualScenario, state.requiredFields);
-      const proposedField = selectedDecision.missingField;
-      const missingField =
-        (proposedField && isFieldMissing(proposedField, state.applicant, state.actualScenario) ? proposedField : undefined) ??
-        stillMissing[0] ??
-        defaultField;
+      // Canonical askable field: the validated proposal's field, else the next unknown required
+      // field, else the domain default only while it is genuinely unknown.
+      const askable = selectAskableField(state.applicant, state.actualScenario, state.requiredFields, [
+        selectedDecision.missingField,
+        ...detectMissingFields(state.applicant, state.actualScenario, state.requiredFields),
+        defaultField,
+      ]);
+      // The guard above guarantees an askable field exists here.
+      const missingField = askable ?? defaultField;
       const question = gateQuestion(missingField, state.fieldQuestions);
       currentRun.stepsTaken += 1;
       currentRun.status = "WAITING_FOR_HUMAN";
@@ -1505,21 +1570,24 @@ function executeBoundedSteps(
       (toolResult.status === "UNCERTAIN" ||
         detectMissingFields(state.applicant, state.actualScenario, state.requiredFields).length > 0);
 
+    // Canonical gate field for the post-tool Human Gate; undefined when every candidate is
+    // already known, in which case no gate opens and the loop continues deterministically.
+    const postToolGateField = selectAskableField(state.applicant, state.actualScenario, state.requiredFields, [
+      (toolResult.result as { missingField?: SupportedMissingField } | undefined)?.missingField,
+      ...detectMissingFields(state.applicant, state.actualScenario, state.requiredFields),
+      state.domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome",
+    ]);
+
     if (
-      toolName === "request_missing_field" ||
-      toolName === "request_human_confirmation" ||
-      requiresChildcareHumanGate ||
-      (toolName === "evaluate_central_rules" &&
-        (toolResult.status === "UNCERTAIN" ||
-          detectMissingFields(state.applicant, state.actualScenario, state.requiredFields).length > 0))
+      postToolGateField &&
+      (toolName === "request_missing_field" ||
+        toolName === "request_human_confirmation" ||
+        requiresChildcareHumanGate ||
+        (toolName === "evaluate_central_rules" &&
+          (toolResult.status === "UNCERTAIN" ||
+            detectMissingFields(state.applicant, state.actualScenario, state.requiredFields).length > 0)))
     ) {
-      const defaultField: SupportedMissingField =
-        state.domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome";
-      const resultMissingField = (toolResult.result as { missingField?: SupportedMissingField } | undefined)?.missingField;
-      const missingField =
-        resultMissingField ??
-        detectMissingFields(state.applicant, state.actualScenario, state.requiredFields)[0] ??
-        defaultField;
+      const missingField = postToolGateField;
       const question = gateQuestion(missingField, state.fieldQuestions);
 
       currentRun.status = "WAITING_FOR_HUMAN";
@@ -2057,11 +2125,13 @@ export function resumeAgentRun(
     );
 
     const remainingMissing = detectMissingFields(applicant, actualScenario, requiredFields);
+    const childcareNextAsk = selectAskableField(applicant, actualScenario, requiredFields, remainingMissing[0] ?? "childAgeMonths");
     if (
+      childcareNextAsk &&
       childcareResult.status !== "FAIL" &&
       (childcareResult.status === "UNCERTAIN" || remainingMissing.length > 0)
     ) {
-      const nextMissing = remainingMissing[0] ?? "childAgeMonths";
+      const nextMissing = childcareNextAsk;
       const question = gateQuestion(nextMissing, options?.fieldQuestions ?? run.state?.fieldQuestions);
       nextRun.status = "WAITING_FOR_HUMAN";
       nextRun.currentStep = "Childcare rules still have missing required fields";
@@ -2216,8 +2286,9 @@ export function resumeAgentRun(
   );
 
   const remainingMissing = detectMissingFields(applicant, actualScenario, requiredFields);
-  if (centralResult.status === "UNCERTAIN" || remainingMissing.length > 0) {
-    const nextMissing = remainingMissing[0] ?? "ownsHome";
+  const centralNextAsk = selectAskableField(applicant, actualScenario, requiredFields, remainingMissing[0] ?? "ownsHome");
+  if (centralNextAsk && (centralResult.status === "UNCERTAIN" || remainingMissing.length > 0)) {
+    const nextMissing = centralNextAsk;
     const question = gateQuestion(nextMissing, options?.fieldQuestions ?? run.state?.fieldQuestions);
     nextRun.status = "WAITING_FOR_HUMAN";
     nextRun.currentStep = "Central rules or required fields are still uncertain";
@@ -2455,7 +2526,8 @@ export function runBoundedAgentLoop(
     if (decision.nextAction === "ASK_HUMAN" && !options?.forceLoop) {
       const defaultField: SupportedMissingField =
         domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome";
-      const missingField = decision.missingField ?? detectMissingFields(applicant, actualScenario, requiredFields)[0] ?? defaultField;
+      const missingField =
+        selectAskableField(applicant, actualScenario, requiredFields, [decision.missingField, defaultField]) ?? defaultField;
       const question = decision.humanQuestion ?? getQuestionForMissingField(missingField);
       run.status = "WAITING_FOR_HUMAN";
       run.missingField = missingField;
@@ -2518,10 +2590,14 @@ export function runBoundedAgentLoop(
     );
 
     const missingAfter = detectMissingFields(applicant, actualScenario, requiredFields);
-    if ((toolResult.status === "UNCERTAIN" || missingAfter.length > 0) && !options?.forceLoop) {
-      const defaultField: SupportedMissingField =
-        domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome";
-      const missingField = missingAfter[0] ?? defaultField;
+    const boundedAskField = selectAskableField(
+      applicant,
+      actualScenario,
+      requiredFields,
+      missingAfter[0] ?? (domain === "CHILDCARE" ? "childAgeMonths" : "ownsHome")
+    );
+    if (boundedAskField && (toolResult.status === "UNCERTAIN" || missingAfter.length > 0) && !options?.forceLoop) {
+      const missingField = boundedAskField;
       run.status = "WAITING_FOR_HUMAN";
       run.missingField = missingField;
       run.humanInputRequired = getQuestionForMissingField(missingField);
