@@ -95,6 +95,176 @@ export function isFieldMissing(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Gate 4C — canonical Human-Gate field state.
+// One contract decides whether a field may be asked, used by the planner validator, the
+// deterministic selector, the post-tool gate and the resume paths alike.
+//   KNOWN    — normalized state holds a value (true, false, a number or a city). Never re-asked.
+//   UNKNOWN  — no value; may be asked with the canonical question.
+//   CONFLICT — no value because the user's text contradicts itself / is ambiguous; may be asked
+//              only with the explicit clarification wording supplied by the input layer.
+// ---------------------------------------------------------------------------
+
+export type GateFieldState = "KNOWN" | "UNKNOWN" | "CONFLICT";
+
+export function getFieldState(
+  field: SupportedMissingField,
+  applicant: ApplicantProfile,
+  actualScenario?: AddressScenario,
+  clarifications?: Partial<Record<SupportedMissingField, string>>
+): GateFieldState {
+  if (!isFieldMissing(field, applicant, actualScenario)) return "KNOWN";
+  return clarifications?.[field] ? "CONFLICT" : "UNKNOWN";
+}
+
+export function isFieldAskable(
+  field: SupportedMissingField,
+  applicant: ApplicantProfile,
+  actualScenario?: AddressScenario
+): boolean {
+  return getFieldState(field, applicant, actualScenario) !== "KNOWN";
+}
+
+/** Planner / tool-argument field aliases (case- and separator-insensitive). */
+const FIELD_ALIASES: Record<string, SupportedMissingField> = {
+  ownshome: "ownsHome",
+  applicantownshome: "ownsHome",
+  hasownedhome: "ownsHome",
+  ownhome: "ownsHome",
+  hashome: "ownsHome",
+  homeownership: "ownsHome",
+  ownsproperty: "ownsHome",
+  hasproperty: "ownsHome",
+  ownshouse: "ownsHome",
+  receivesotherhousingaid: "receivesOtherHousingAid",
+  otherhousingaid: "receivesOtherHousingAid",
+  receivesotheraid: "receivesOtherHousingAid",
+  otheraid: "receivesOtherHousingAid",
+  otherhousingsubsidy: "receivesOtherHousingAid",
+  hasotherhousingsubsidy: "receivesOtherHousingAid",
+  city: "city",
+  rentalcity: "city",
+  rentcity: "city",
+  currentcity: "city",
+  residencecity: "city",
+  location: "city",
+  monthlyincome: "monthlyIncome",
+  income: "monthlyIncome",
+  percapitaincome: "monthlyIncome",
+  age: "age",
+  applicantage: "age",
+  centralrentapproved: "centralRentApproved",
+  newtaipeiresidencestudywork: "newTaipeiResidenceStudyWork",
+  registeredcity: "registeredCity",
+  householdregistrationcity: "registeredCity",
+  childagemonths: "childAgeMonths",
+  childage: "childAgeMonths",
+  childhasbirthorinitialhouseholdregistration: "childHasBirthOrInitialHouseholdRegistration",
+  childregistration: "childHasBirthOrInitialHouseholdRegistration",
+  childhouseholdregistration: "childHasBirthOrInitialHouseholdRegistration",
+  isgovernmentplaced: "isGovernmentPlaced",
+  governmentplacement: "isGovernmentPlaced",
+  receivespublicorquasipublicchildcare: "receivesPublicOrQuasiPublicChildcare",
+  publicchildcare: "receivesPublicOrQuasiPublicChildcare",
+  quasipublicchildcare: "receivesPublicOrQuasiPublicChildcare",
+  birthorder: "birthOrder",
+  childregisteredcity: "childRegisteredCity",
+};
+
+/** Maps a planner-supplied field name (canonical or alias) to the canonical field, if any. */
+export function normalizeFieldName(value: unknown): SupportedMissingField | undefined {
+  if (typeof value !== "string") return undefined;
+  if (isSupportedMissingField(value)) return value;
+  return FIELD_ALIASES[value.replace(/[\s_\-.]/g, "").toLowerCase()];
+}
+
+// Free-text question → field. The cloud planner schema carries only `humanQuestion`, so the
+// validator must recognise which field a question targets. Order: specific before generic.
+const QUESTION_FIELD_PATTERNS: Array<[SupportedMissingField, RegExp]> = [
+  ["childHasBirthOrInitialHouseholdRegistration", /出生登記|初設戶籍/],
+  ["childRegisteredCity", /(?:兒童|孩子|小孩|寶寶|幼兒)[^？?。]{0,6}戶籍[^？?。]{0,6}(?:縣市|哪)/],
+  ["isGovernmentPlaced", /公費安置|安置收容|政府安置/],
+  ["receivesPublicOrQuasiPublicChildcare", /公共化|準公共|公托|托嬰中心|送托|托育服務|保母/],
+  ["birthOrder", /胎次|第幾(?:名|個|胎)/],
+  ["childAgeMonths", /(?:兒童|孩子|小孩|寶寶|幼兒)[^？?。]{0,8}(?:幾個月|月齡|年齡|多大|幾歲)/],
+  ["centralRentApproved", /核准|核定|已獲[^？?。]{0,6}中央/],
+  ["newTaipeiResidenceStudyWork", /新北[^？?。]{0,8}(?:設籍|就學|就業|居住)/],
+  ["receivesOtherHousingAid", /其他[^？?。]{0,8}(?:政府)?(?:住宅|租屋|租金)?(?:補貼|補助)|(?:領|請領|享有)[^？?。]{0,6}(?:住宅|租屋|租金)(?:補貼|補助)/],
+  ["ownsHome", /持有住宅|自有(?:住宅|房屋|房產|房子|屋)|名下[^？?。]{0,8}(?:住宅|房屋|房產|房子|不動產)|(?:擁有|有沒有|是否有)[^？?。]{0,4}(?:住宅|房屋|房產|房子)/],
+  ["registeredCity", /戶籍(?:[^？?。]{0,8}(?:縣市|哪裡))?/],
+  ["monthlyIncome", /所得|收入|月薪|薪資/],
+  ["age", /年齡|幾歲|出生年/],
+  ["city", /縣市|哪(?:個|一個)?城市|租屋[^？?。]{0,6}(?:在哪|地點|位置|所在)|居住[^？?。]{0,4}(?:地|縣市)/],
+];
+
+export function inferFieldsFromQuestion(question: unknown): SupportedMissingField[] {
+  if (typeof question !== "string" || !question.trim()) return [];
+  const text = question.normalize("NFKC");
+  const found: SupportedMissingField[] = [];
+  const spans: Array<[number, number]> = [];
+  for (const [field, pattern] of QUESTION_FIELD_PATTERNS) {
+    const global = new RegExp(pattern.source, "g");
+    for (const match of text.matchAll(global)) {
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      // A generic match inside a more specific earlier match ("戶籍" within "初設戶籍") is not
+      // a separate request.
+      if (spans.some(([s, e]) => start >= s && end <= e)) continue;
+      spans.push([start, end]);
+      if (!found.includes(field)) found.push(field);
+    }
+  }
+  return found;
+}
+
+export type RequestedFieldResolution = {
+  /** Canonical fields the proposal targets (explicit name/alias first, else inferred from text). */
+  fields: SupportedMissingField[];
+  source: "EXPLICIT" | "ALIAS" | "QUESTION_TEXT" | "NONE";
+  /** A field name the proposal supplied that maps to no supported field. */
+  unrecognized?: string;
+};
+
+/** Resolves which field(s) a planner ASK / request_missing_field proposal actually targets. */
+export function resolveRequestedFields(proposal: {
+  missingField?: unknown;
+  toolArguments?: unknown;
+  humanQuestion?: unknown;
+}): RequestedFieldResolution {
+  const args = (proposal.toolArguments && typeof proposal.toolArguments === "object"
+    ? proposal.toolArguments
+    : {}) as Record<string, unknown>;
+  const named = [proposal.missingField, args.field, args.missingField].filter(
+    (value) => typeof value === "string" && value.trim()
+  ) as string[];
+  for (const name of named) {
+    const field = normalizeFieldName(name);
+    if (field) return { fields: [field], source: isSupportedMissingField(name) ? "EXPLICIT" : "ALIAS" };
+  }
+  const questionText = proposal.humanQuestion ?? args.question;
+  const inferred = inferFieldsFromQuestion(questionText);
+  if (inferred.length) return { fields: inferred, source: "QUESTION_TEXT", ...(named[0] ? { unrecognized: named[0] } : {}) };
+  return { fields: [], source: "NONE", ...(named[0] ? { unrecognized: named[0] } : {}) };
+}
+
+/**
+ * Canonical "which field may the Human Gate ask next": the preferred field when it is still
+ * unknown, else the first unknown required field. Returns undefined when nothing is askable —
+ * callers must then continue deterministically instead of asking a known field.
+ */
+export function selectAskableField(
+  applicant: ApplicantProfile,
+  actualScenario: AddressScenario | undefined,
+  requiredFields: SupportedMissingField[],
+  preferred?: SupportedMissingField | Array<SupportedMissingField | undefined>
+): SupportedMissingField | undefined {
+  const preferredList = (Array.isArray(preferred) ? preferred : [preferred]).filter(Boolean) as SupportedMissingField[];
+  for (const field of preferredList) {
+    if (isFieldAskable(field, applicant, actualScenario)) return field;
+  }
+  return detectMissingFields(applicant, actualScenario, requiredFields)[0];
+}
+
 export function detectMissingFields(
   applicant: ApplicantProfile,
   actualScenario?: AddressScenario,

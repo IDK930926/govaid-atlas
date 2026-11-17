@@ -147,7 +147,7 @@ test("EX10 — the missing-field selector never asks a field the normalized stat
     decision: { reasoningSummary: "ask city", nextAction: "ASK_HUMAN", missingField: "city", humanQuestion: "請問您的租屋所在地位於哪個縣市？" },
   }, { includePassport: true, whatIfMirrorsActual: true });
   assert.equal(run.trace[0]?.proposalRejected, true);
-  assert.match(run.trace[0]?.rejectionReason ?? "", /^ASK_FOR_KNOWN_FIELD: city/);
+  assert.match(run.trace[0]?.rejectionReason ?? "", /^FIELD_ALREADY_KNOWN: city/);
   assert.notEqual(run.missingField, "city");
   assert.match(describeAgentDecision(run)?.validation ?? "", /不得重問/);
 });
