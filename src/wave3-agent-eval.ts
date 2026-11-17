@@ -373,12 +373,15 @@ export function executeSingleWave3Category(
       description: "Childcare query is rejected by coverage boundary before any rental tool runs",
       provider: "OLLAMA_SCRIPTED (qwen3.5:4b schema)",
       run,
-      expectedAgentStatus: "NOT_COVERED",
-      expectedEligibilityStatus: "NOT_COVERED",
-      humanInterventionRequired: false,
+      // Gate 4B: a mixed allowance + subsidy request keeps the supported allowance part
+      // (asks the ambiguous child age) and reports the 托育補助 part as NOT_COVERED, instead of
+      // collapsing the whole request. The rental tool proposal is still rejected (0 rental tools).
+      expectedAgentStatus: "WAITING_FOR_HUMAN",
+      expectedEligibilityStatus: "UNCERTAIN",
+      humanInterventionRequired: true,
       humanResumeCompleted: false,
       latencyMs,
-      notes: "Coverage gate aborts rental tool proposal; 0 rental tools executed; status=NOT_COVERED.",
+      notes: "Rental tool proposal rejected (domain mismatch); 0 rental tools executed; allowance part asks child age; 托育補助 part NOT_COVERED.",
     });
   }
 

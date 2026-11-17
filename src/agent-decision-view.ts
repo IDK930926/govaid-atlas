@@ -46,6 +46,7 @@ const REJECTION_COPY: Array<[RegExp, string]> = [
   [/^TOOL_NOT_IN_ALLOWLIST/, "工具不在允許清單"],
   [/^DUPLICATE_TOOL_CALL/, "狀態未變的重複呼叫"],
   [/^DOMAIN_MISMATCH/, "工具與補助領域不符"],
+  [/^ASK_FOR_KNOWN_FIELD/, "該資料已由使用者提供，不得重問"],
   [/^UNSAFE_/, "試圖覆寫申請資料或資格結果"],
   [/^PASSPORT_REQUIRES/, "尚未完成情境評估"],
   [/^MISSING_HUMAN_QUESTION|^MISSING_TOOL_NAME|^INVALID_|^PROPOSAL_NOT_AN_OBJECT/, "提案格式不完整"],
@@ -58,21 +59,25 @@ function rejectionLabel(reason: string | null): string {
 
 function nextLabel(run: AgentRun): string {
   const step = run.trace[0];
-  if (step.finalStatus === "NOT_COVERED" || step.coverageStatus === "NOT_COVERED") {
+  // Only a whole-request coverage stop ends the analysis. A local layer outside coverage
+  // (step.coverageStatus) while the central / supported part continues is NOT a stop.
+  if (step.finalStatus === "NOT_COVERED" || run.status === "NOT_COVERED") {
     return "停止判定，提供官方查詢管道";
   }
   if (step.finalStatus === "HUMAN_REVIEW_REQUIRED") {
     return "停止確定式判斷，轉人工審查";
   }
+  const localNote = step.coverageStatus === "NOT_COVERED" ? "（地方方案未涵蓋，中央部分繼續）" : "";
   const field = step.humanGate?.missingField;
   if (field) {
-    // System wording for the field, never the model's free-text question.
-    const question = getQuestionForMissingField(field as Parameters<typeof getQuestionForMissingField>[0]);
+    // System wording for the gate (canonical or the system's clarification), never the model's free text.
+    const question =
+      step.humanGate?.question ?? getQuestionForMissingField(field as Parameters<typeof getQuestionForMissingField>[0]);
     const stillWaiting = run.status === "WAITING_FOR_HUMAN" && run.missingField === field;
     return stillWaiting ? `請你確認：${question}` : `已請你確認：${question}（已回答）`;
   }
   if (step.selectedTool) {
-    return `執行${toolCopy[step.selectedTool]?.zh ?? "政策工具"}`;
+    return `執行${toolCopy[step.selectedTool]?.zh ?? "政策工具"}${localNote}`;
   }
   return step.finalStatus === "COMPLETED" ? "完成分析" : "繼續執行";
 }

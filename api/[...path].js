@@ -833,216 +833,18 @@ var init_status = __esm({
   }
 });
 
-// src/coverage.ts
-function isHousingQuery(text) {
-  return HOUSING_KEYWORDS.some((keyword) => text.includes(keyword));
+// src/taiwan-cities.ts
+function normalizeCityName(city) {
+  const trimmed = city?.trim();
+  if (!trimmed) {
+    return void 0;
+  }
+  return trimmed.replace(/^台/, "\u81FA");
 }
-function outsideVerifiedCoverage() {
-  return {
-    status: "NOT_COVERED",
-    domain: "OTHER",
-    reason: "UNSUPPORTED_DOMAIN_NOT_IMPLEMENTED",
-    message: OUTSIDE_VERIFIED_COVERAGE_MESSAGE,
-    officialReferrals: GENERAL_WELFARE_REFERRALS
-  };
-}
-function isLocalOnlyHousingQuery(goal) {
-  const text = goal.toLowerCase();
-  return text.includes("\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9") || text.includes("\u5730\u65B9\u52A0\u78BC");
-}
-function detectBenefitDomain(goal) {
-  const text = goal.toLowerCase();
-  if (CHILDCARE_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
-    return "CHILDCARE";
-  }
-  return "HOUSING";
-}
-function assessQueryCoverage(goal) {
-  const text = goal.toLowerCase();
-  if (CHILDCARE_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
-    if (UNSUPPORTED_CHILDCARE_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
-      return {
-        status: "NOT_COVERED",
-        domain: "CHILDCARE",
-        reason: "CHILDCARE_POLICY_NOT_IMPLEMENTED",
-        message: "\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u300C\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u300D\uFF0C\u5C1A\u672A\u6DB5\u84CB\u6258\u80B2\u88DC\u52A9\u3001\u751F\u80B2\u734E\u52F5\u91D1\u3001\u5C31\u5B78\u88DC\u52A9\u6216\u80B2\u5B30\u7559\u8077\u505C\u85AA\u6D25\u8CBC\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u9805\u88DC\u52A9\u4E4B\u8CC7\u683C\u5224\u5B9A\u3002\u9019\u4E0D\u4EE3\u8868\u60A8\u7121\u6CD5\u7533\u8ACB\uFF0C\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002",
-        officialReferrals: [
-          {
-            label: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72\uFF0D\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u8207\u6258\u80B2\u88DC\u52A9\u5C08\u5340",
-            agency: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72",
-            url: "https://www.sfaa.gov.tw/SFAA/Pages/Detail.aspx?nodeid=415&pid=7582"
-          },
-          {
-            label: "\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7DB2",
-            agency: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72",
-            url: "https://twbaby.sfaa.gov.tw/"
-          }
-        ]
-      };
-    }
-    return {
-      status: "COVERED",
-      domain: "CHILDCARE",
-      reason: "CHILDCARE_UNDER2_ALLOWANCE_IN_SCOPE",
-      message: "\u76EE\u524D\u7248\u672C\u5DF2\u652F\u63F4\u300C\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\uFF08115\u5E74\u5EA6\uFF09\u300D\u4E4B\u8CC7\u683C\u9810\u5BE9\u3001\u80CE\u6B21\u91D1\u984D\u8A66\u7B97\u8207\u7533\u8FA6\u5C0E\u822A\u3002",
-      officialReferrals: [
-        {
-          label: "\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7DB2",
-          agency: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72",
-          url: "https://twbaby.sfaa.gov.tw/"
-        }
-      ]
-    };
-  }
-  if (UNSUPPORTED_HOUSING_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
-    return {
-      status: "NOT_COVERED",
-      domain: "RENTAL_SUBSIDY",
-      reason: "UNSUPPORTED_HOUSING_POLICY_NOT_IMPLEMENTED",
-      message: "\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u300C300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\uFF08\u542B\u96D9\u5317\u8207\u6843\u5712\u5E02\u53D7\u7406\u5C0E\u822A\uFF09\u300D\u3001\u300C\u81FA\u5317\u5E02\u81FA\u5317\u5E78\u798F\u79DF\u52A0\u78BC\u300D\u8207\u300C\u65B0\u5317\u5E02\u9752\u5E74\u79DF\u91D1\u88DC\u8CBC\u300D\uFF0C\u5C1A\u672A\u6DB5\u84CB\u6843\u5712\u5E02\u7368\u7ACB\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9\u3001\u539F\u4F4F\u6C11\u65CF\u5C08\u6848\u79DF\u91D1\u88DC\u8CBC\u3001\u793E\u6703\u4F4F\u5B85\u5305\u79DF\u4EE3\u7BA1\u6216\u8CFC\u5C4B\u8CB8\u6B3E\u88DC\u8CBC\u3002\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002",
-      officialReferrals: [
-        {
-          label: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72\uFF0D300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7CFB\u7D71",
-          agency: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72",
-          url: "https://has.nlma.gov.tw/subsidyOnline/"
-        },
-        {
-          label: "\u6843\u5712\u5E02\u653F\u5E9C\u4F4F\u5B85\u767C\u5C55\u8655\u5B98\u65B9\u7DB2\u7AD9",
-          agency: "\u6843\u5712\u5E02\u653F\u5E9C\u4F4F\u5B85\u767C\u5C55\u8655",
-          url: "https://ohd.tycg.gov.tw/"
-        }
-      ]
-    };
-  }
-  const normalizedText = text.replace(/台/g, "\u81FA");
-  const housingQuery = isHousingQuery(normalizedText);
-  if (!housingQuery && UNSUPPORTED_GENERAL_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
-    return outsideVerifiedCoverage();
-  }
-  const matchedCity = TAIWAN_CITIES.find((c) => normalizedText.includes(c));
-  if (housingQuery && matchedCity && !ALL_COVERED_HOUSING_CITIES.includes(matchedCity)) {
-    const nlmaReferral = {
-      label: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72\uFF0D300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7CFB\u7D71",
-      agency: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72",
-      url: "https://has.nlma.gov.tw/subsidyOnline/"
-    };
-    if (isLocalOnlyHousingQuery(normalizedText)) {
-      return {
-        status: "NOT_COVERED",
-        domain: "RENTAL_SUBSIDY",
-        reason: "UNSUPPORTED_CITY_HOUSING_POLICY_NOT_IMPLEMENTED",
-        message: `\u76EE\u524D\u7248\u672C\u5C1A\u672A\u6DB5\u84CB${matchedCity}\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9\u6216\u52A0\u78BC\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u7E23\u5E02\u5730\u65B9\u65B9\u6848\u4E4B\u8CC7\u683C\u5224\u5B9A\u3002\u5168\u570B\u9069\u7528\u4E4B\u4E2D\u592E\u79DF\u91D1\u88DC\u8CBC\u53EF\u53E6\u884C\u9810\u5BE9\u3002\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002`,
-        officialReferrals: [nlmaReferral]
-      };
-    }
-    return {
-      status: "COVERED",
-      domain: "RENTAL_SUBSIDY",
-      reason: "CENTRAL_ONLY_LOCAL_NOT_COVERED",
-      message: `\u53EF\u9810\u5BE9\u5168\u570B\u9069\u7528\u4E4B\u300C300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\u300D\u90E8\u5206\u689D\u4EF6\uFF1B${matchedCity}\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9\u6216\u52A0\u78BC\u5C1A\u672A\u6DB5\u84CB\uFF0C\u4E0D\u4F5C\u6210\u5730\u65B9\u65B9\u6848\u5224\u5B9A\u3002`,
-      officialReferrals: [nlmaReferral]
-    };
-  }
-  if (UNSUPPORTED_GENERAL_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
-    return {
-      status: "NOT_COVERED",
-      domain: "RENTAL_SUBSIDY",
-      reason: "UNSUPPORTED_DOMAIN_NOT_IMPLEMENTED",
-      message: "\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u7279\u5B9A\u79DF\u5C4B\u88DC\u8CBC\u8207\u672A\u6EFF2\u6B72\u80B2\u5152\u6D25\u8CBC\uFF0C\u5C1A\u672A\u6DB5\u84CB\u6B64\u985E\u653F\u7B56\u9805\u76EE\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u9805\u88DC\u52A9\u4E4B\u8CC7\u683C\u5224\u5B9A\u3002\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002",
-      officialReferrals: [
-        {
-          label: "\u885B\u751F\u798F\u5229\u90E8 1957 \u798F\u5229\u8AEE\u8A62\u5C08\u7DDA",
-          agency: "\u885B\u751F\u798F\u5229\u90E8",
-          url: "https://1957.mohw.gov.tw/"
-        }
-      ]
-    };
-  }
-  return {
-    status: "COVERED",
-    domain: "RENTAL_SUBSIDY",
-    reason: "RENTAL_SUBSIDY_IN_SCOPE",
-    message: "\u76EE\u524D\u7248\u672C\u53EF\u9032\u884C\u79DF\u5C4B\u88DC\u52A9\u7684\u90E8\u5206\u689D\u4EF6\u9810\u5BE9\u8207\u7533\u8FA6\u5C0E\u822A\u3002",
-    officialReferrals: []
-  };
-}
-var COVERED_LOCAL_CITIES, COVERED_CENTRAL_NAVIGATION_CITIES, ALL_COVERED_HOUSING_CITIES, CHILDCARE_KEYWORDS, UNSUPPORTED_CHILDCARE_KEYWORDS, UNSUPPORTED_HOUSING_KEYWORDS, UNSUPPORTED_GENERAL_KEYWORDS, HOUSING_KEYWORDS, OUTSIDE_VERIFIED_COVERAGE_MESSAGE, GENERAL_WELFARE_REFERRALS, TAIWAN_CITIES;
-var init_coverage = __esm({
-  "src/coverage.ts"() {
+var TAIWAN_CITIES;
+var init_taiwan_cities = __esm({
+  "src/taiwan-cities.ts"() {
     "use strict";
-    COVERED_LOCAL_CITIES = ["\u81FA\u5317\u5E02", "\u65B0\u5317\u5E02"];
-    COVERED_CENTRAL_NAVIGATION_CITIES = ["\u6843\u5712\u5E02"];
-    ALL_COVERED_HOUSING_CITIES = [
-      ...COVERED_LOCAL_CITIES,
-      ...COVERED_CENTRAL_NAVIGATION_CITIES
-    ];
-    CHILDCARE_KEYWORDS = [
-      "\u80B2\u5152",
-      "\u80B2\u5B30",
-      "\u6258\u80B2",
-      "\u6258\u5B30",
-      "\u5E7C\u5152",
-      "\u751F\u80B2",
-      "\u5B30\u5152",
-      "\u4FDD\u6BCD",
-      "\u4FDD\u59C6",
-      "\u6E96\u516C\u5171",
-      "\u672A\u6EFF2\u6B72",
-      "\u672A\u6EFF\u4E8C\u6B72",
-      "childcare",
-      "child care",
-      "parental leave"
-    ];
-    UNSUPPORTED_CHILDCARE_KEYWORDS = [
-      "\u6258\u80B2\u88DC\u52A9",
-      "\u6E96\u516C\u5171\u6258\u80B2\u88DC\u52A9",
-      "\u751F\u80B2\u6D25\u8CBC",
-      "\u751F\u80B2\u734E\u52F5",
-      "\u751F\u80B2\u88DC\u52A9",
-      "\u5C31\u5B78\u88DC\u52A9",
-      "\u5E7C\u5152\u5712\u88DC\u52A9",
-      "\u80B2\u5B30\u7559\u8077\u505C\u85AA",
-      "parental leave"
-    ];
-    UNSUPPORTED_HOUSING_KEYWORDS = [
-      "\u6843\u5712\u5E02\u5730\u65B9\u52A0\u78BC",
-      "\u6843\u5712\u5730\u65B9\u52A0\u78BC",
-      "\u6843\u5712\u5E02\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9",
-      "\u6843\u5712\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9",
-      "\u539F\u4F4F\u6C11\u65CF\u79DF\u91D1\u88DC\u8CBC",
-      "\u539F\u4F4F\u6C11\u79DF\u91D1\u88DC\u8CBC",
-      "\u5305\u79DF\u4EE3\u7BA1",
-      "\u8CFC\u5C4B\u8CB8\u6B3E",
-      "\u9752\u5E74\u8CFC\u5C4B",
-      "\u4FEE\u7E55\u4F4F\u5B85"
-    ];
-    UNSUPPORTED_GENERAL_KEYWORDS = [
-      "\u8001\u4EBA",
-      "\u9577\u7167",
-      "\u8EAB\u5FC3\u969C\u7919",
-      "\u6025\u96E3\u6551\u52A9",
-      "\u5931\u696D",
-      "\u5E74\u91D1",
-      "\u52DE\u4FDD",
-      "\u5065\u4FDD",
-      "\u91CD\u967D",
-      "\u656C\u8001",
-      "\u5047\u7259",
-      "\u8FB2\u6C11",
-      "\u6F01\u6C11",
-      "\u5B78\u8CB8",
-      "\u5C31\u5B78\u8CB8\u6B3E",
-      "\u734E\u5B78\u91D1"
-    ];
-    HOUSING_KEYWORDS = ["\u79DF", "\u623F", "\u4F4F\u5B85", "\u4F4F\u5C4B", "\u5C45\u4F4F", "rent", "housing", "lease"];
-    OUTSIDE_VERIFIED_COVERAGE_MESSAGE = "\u60A8\u67E5\u8A62\u7684\u653F\u7B56\uFF0F\u9818\u57DF\u4E0D\u5728\u76EE\u524D\u5DF2\u9A57\u8B49\u7684\u6DB5\u84CB\u7BC4\u570D\u5167\uFF08Requested policy/domain is outside current verified coverage\uFF09\u3002\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u7279\u5B9A\u79DF\u5C4B\u88DC\u8CBC\u8207\u672A\u6EFF2\u6B72\u80B2\u5152\u6D25\u8CBC\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u9805\u88DC\u52A9\u4E4B\u8CC7\u683C\u5224\u5B9A\uFF0C\u4E5F\u4E0D\u6703\u6539\u4EE5\u79DF\u5C4B\u88DC\u8CBC\u56DE\u7B54\u3002\u9019\u4E0D\u4EE3\u8868\u60A8\u7121\u6CD5\u7533\u8ACB\uFF0C\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002";
-    GENERAL_WELFARE_REFERRALS = [
-      {
-        label: "\u885B\u751F\u798F\u5229\u90E8 1957 \u798F\u5229\u8AEE\u8A62\u5C08\u7DDA",
-        agency: "\u885B\u751F\u798F\u5229\u90E8",
-        url: "https://1957.mohw.gov.tw/"
-      }
-    ];
     TAIWAN_CITIES = [
       "\u81FA\u5317\u5E02",
       "\u65B0\u5317\u5E02",
@@ -1067,6 +869,1070 @@ var init_coverage = __esm({
       "\u91D1\u9580\u7E23",
       "\u9023\u6C5F\u7E23"
     ];
+  }
+});
+
+// src/fact-extraction.ts
+function isThousandsComma(text, index) {
+  if (!/\d/.test(text[index - 1] ?? "")) return false;
+  const group = text.slice(index + 1, index + 4);
+  if (!/^\d{3}$/.test(group)) return false;
+  if (/\d/.test(text[index + 4] ?? "")) return false;
+  let start = index - 1;
+  while (start >= 0 && /\d/.test(text[start])) start -= 1;
+  const lead = index - 1 - start;
+  if (lead <= 3) return true;
+  return false;
+}
+function segment(text, separators) {
+  const clauses = [];
+  let start = 0;
+  for (let i = 0; i <= text.length; i += 1) {
+    const ch = text[i];
+    const isBreak = i === text.length || separators.has(ch) || ch === "," && !isThousandsComma(text, i);
+    if (isBreak) {
+      if (i > start) clauses.push({ start, end: i, text: text.slice(start, i) });
+      start = i + 1;
+    }
+  }
+  return clauses;
+}
+function splitClauses(text) {
+  return segment(text, HARD_SEPARATORS);
+}
+function splitSentences(text) {
+  return segment(text, SENTENCE_SEPARATORS);
+}
+function parseCnSmall(token) {
+  if (!token) return void 0;
+  if (/^[一二兩三四五六七八九]$/.test(token)) return CN_DIGIT[token];
+  const m = /^([一二兩三四五六七八九])?十([一二三四五六七八九])?$/.exec(token);
+  if (m) return (m[1] ? CN_DIGIT[m[1]] : 1) * 10 + (m[2] ? CN_DIGIT[m[2]] : 0);
+  return void 0;
+}
+function parseAmountAt(text, index) {
+  const rest = text.slice(index);
+  const arabic = /^(\d{1,3}(?:,\d{3})+(?!\d)|\d+)(?:\.(\d+))?(?:\s*(萬)\s*(\d{1,4})?|\s*(千))?/.exec(rest);
+  if (arabic) {
+    const whole = Number(arabic[1].replace(/,/g, ""));
+    const frac = arabic[2] ? Number(`0.${arabic[2]}`) : 0;
+    let value = whole + frac;
+    if (arabic[3]) {
+      value *= 1e4;
+      if (arabic[4]) {
+        const tail = arabic[4];
+        value += tail.length === 1 ? Number(tail) * 1e3 : Number(tail);
+      }
+    } else if (arabic[5]) {
+      value *= 1e3;
+    }
+    return { value: Math.round(value), start: index, end: index + arabic[0].length, text: arabic[0] };
+  }
+  const cn = /^([一二兩三四五六七八九十]{1,3})萬(?:([一二兩三四五六七八九])(千)?)?/.exec(rest);
+  if (cn) {
+    const head = parseCnSmall(cn[1]);
+    if (head === void 0) return void 0;
+    const value = head * 1e4 + (cn[2] ? CN_DIGIT[cn[2]] * 1e3 : 0);
+    return { value, start: index, end: index + cn[0].length, text: cn[0] };
+  }
+  return void 0;
+}
+function amountAfterCue(clause, cue, options = {}) {
+  const maxGap = options.maxGap ?? 8;
+  const global = new RegExp(cue.source, cue.flags.includes("g") ? cue.flags : cue.flags + "g");
+  for (const match of clause.text.matchAll(global)) {
+    const afterCue = (match.index ?? 0) + match[0].length;
+    for (let gap = 0; gap <= maxGap && afterCue + gap < clause.text.length; gap += 1) {
+      const ch = clause.text[afterCue + gap];
+      if (/[\d一二兩三四五六七八九十]/.test(ch)) {
+        const gapText = clause.text.slice(afterCue, afterCue + gap);
+        if (options.forbiddenGap && options.forbiddenGap.test(gapText)) break;
+        const parsed = parseAmountAt(clause.text, afterCue + gap);
+        if (!parsed) {
+          if (/\d/.test(ch)) break;
+          continue;
+        }
+        if (FOREIGN_UNIT.test(clause.text.slice(parsed.end))) break;
+        return {
+          ...parsed,
+          start: clause.start + parsed.start,
+          end: clause.start + parsed.end,
+          cueStart: clause.start + (match.index ?? 0)
+        };
+      }
+    }
+  }
+  return void 0;
+}
+function cityCandidates(token) {
+  if (token === "\u5317\u5E02") return ["\u81FA\u5317\u5E02"];
+  const normalized = normalizeCityName(token);
+  if (!normalized) return [];
+  if (TAIWAN_CITIES.includes(normalized)) return [normalized];
+  return TAIWAN_CITIES.filter((city) => city.slice(0, -1) === normalized);
+}
+function districtCities(name) {
+  return DISTRICT_INDEX.get(name.replace(/區$/, "")) ?? [];
+}
+function findRawLocations(text) {
+  const found = [];
+  const cityAlt = [...CITY_TOKENS, "\u5317\u5E02"].map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const districtAlt = DISTRICT_NAMES.join("|");
+  const pattern = new RegExp(`(?:(${cityAlt})\\s*(?:(${districtAlt})(\u5340)?)?)|(?:(${districtAlt})(\u5340))|(${districtAlt})`, "g");
+  for (const match of text.matchAll(pattern)) {
+    const index = match.index ?? 0;
+    const [whole, cityTok, cityDistrict, cityDistrictSuffix, soloDistrictWithSuffix, , bareDistrict] = match;
+    if (cityTok) {
+      if (cityTok === "\u5317\u5E02" && /[新臺台]$/.test(text.slice(0, index))) continue;
+      let district;
+      let length = whole.length;
+      if (cityDistrict) {
+        const candidates = districtCities(cityDistrict);
+        const hint = cityCandidates(cityTok);
+        const fits = candidates.filter((city) => hint.includes(city));
+        const singleChar = cityDistrict.length === 1;
+        if (fits.length > 0 && (!singleChar || cityDistrictSuffix) && !NOT_A_PLACE_AFTER.test(text.slice(index + whole.length))) {
+          district = cityDistrict;
+        } else {
+          length = cityTok.length;
+        }
+      }
+      found.push({
+        start: index,
+        end: index + length,
+        text: text.slice(index, index + length),
+        cityHint: cityCandidates(cityTok),
+        district: district ? `${district}\u5340` : void 0,
+        districtCandidates: district ? districtCities(district) : []
+      });
+      continue;
+    }
+    const name = soloDistrictWithSuffix ?? bareDistrict;
+    if (!name) continue;
+    if (bareDistrict && (NO_BARE.has(bareDistrict) || NOT_A_PLACE_AFTER.test(text.slice(index + whole.length)))) continue;
+    found.push({
+      start: index,
+      end: index + whole.length,
+      text: whole,
+      cityHint: [],
+      district: `${name}\u5340`,
+      districtCandidates: districtCities(name)
+    });
+  }
+  return found;
+}
+function classifyRole(text, clause, start, end) {
+  const before = text.slice(clause.start, start);
+  const after = text.slice(end, clause.end);
+  if (WITHDRAWN.test(clause.text)) return "WITHDRAWN";
+  if (/(?:改查|改成只看|改成|改看|改為|換成|只看|只比較|改問)\s*$/.test(before)) return "RENTAL";
+  if (/(?:戶籍|設籍|籍)(?:地)?(?:設)?(?:在|於|為|是)?\s*$/.test(before) || /^\s*(?:的)?戶籍/.test(after) || /^[^，。]{0,6}(?:登記|設(?:有)?)戶籍/.test(after)) {
+    return "REGISTRATION";
+  }
+  if (/(?:搬到|搬去|搬至|搬往)\s*$/.test(before)) return "MOVE";
+  const clauseText = clause.text;
+  if (/^(?:市|縣)?(?:政府|市府|縣府)?(?:自辦|自己的|地方|的地方|青年|市)?[^，。]{0,6}?(?:租補|租金補貼|租金加碼|加碼|方案|租屋補助)/.test(after) && !/^\s*(?:\S{0,3})?租(?!補|金補|金加碼|屋補)/.test(after)) {
+    return "PROGRAM";
+  }
+  if (/^[^，。]{0,4}(?:名下)?(?:有|持有|擁有)[^，。租]{0,14}(?:住宅|房子|房屋|房產|自宅)/.test(after) || /名下\s*(?:在)?\s*$/.test(before)) {
+    return "PROPERTY";
+  }
+  const rentalWord = /租(?!補|金補|金加碼|屋補)/;
+  if (/(?:住在|居住在|居住於|住|租屋在|租屋於|租在|租)\s*$/.test(before) || rentalWord.test(after) || rentalWord.test(clauseText) && !/^\s*(?:上班|工作)/.test(after)) {
+    return "RENTAL";
+  }
+  if (/^\s*(?:上班|工作|唸書|念書|讀書|就學|就業|就讀)/.test(after) || /(?:工作在|就讀於|上班在)\s*$/.test(before)) {
+    return "WORK_STUDY";
+  }
+  return "LOCATION";
+}
+function extractLocations(text) {
+  return extractAllLocations(text).filter((loc) => loc.role !== "WITHDRAWN");
+}
+function extractAllLocations(text) {
+  const raw = findRawLocations(text);
+  const clauses = splitClauses(text);
+  const hintCities = /* @__PURE__ */ new Set();
+  for (const item of raw) {
+    if (item.cityHint.length === 1) hintCities.add(item.cityHint[0]);
+    else if (!item.cityHint.length && item.districtCandidates.length === 1) hintCities.add(item.districtCandidates[0]);
+  }
+  return raw.map((item) => {
+    const clause = clauses.find((c) => item.start >= c.start && item.start < c.end) ?? { start: 0, end: text.length, text };
+    let city;
+    if (item.cityHint.length && item.districtCandidates.length) {
+      const fits = item.districtCandidates.filter((candidate) => item.cityHint.includes(candidate));
+      city = fits.length === 1 ? fits[0] : void 0;
+    } else if (item.cityHint.length) {
+      city = item.cityHint.length === 1 ? item.cityHint[0] : void 0;
+    } else if (item.districtCandidates.length === 1) {
+      city = item.districtCandidates[0];
+    } else if (item.districtCandidates.length > 1) {
+      const fits = item.districtCandidates.filter((candidate) => hintCities.has(candidate));
+      city = fits.length === 1 ? fits[0] : void 0;
+    }
+    return {
+      start: item.start,
+      end: item.end,
+      text: item.text,
+      cityHint: item.cityHint,
+      district: city ? item.district : void 0,
+      city,
+      role: classifyRole(text, clause, item.start, item.end)
+    };
+  });
+}
+function hedgedBefore(text, clause, index) {
+  return HEDGE.test(text.slice(clause.start, index));
+}
+function clauseHits(text, pattern, guard) {
+  const hits = [];
+  const global = new RegExp(pattern.source, pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g");
+  for (const clause of splitClauses(text)) {
+    for (const match of clause.text.matchAll(global)) {
+      const hit = { start: clause.start + (match.index ?? 0), end: clause.start + (match.index ?? 0) + match[0].length, text: match[0] };
+      if (hedgedBefore(text, clause, hit.start)) continue;
+      if (guard && !guard(hit, clause)) continue;
+      hits.push(hit);
+    }
+  }
+  return hits;
+}
+function booleanFact(field, positive, negative, clarification, source = "EXPLICIT") {
+  if (positive.length && negative.length) {
+    return { field, state: "CONFLICT", candidates: [true, false], spans: [...negative, ...positive], source, clarification };
+  }
+  if (positive.length) return { field, state: "KNOWN_TRUE", value: true, spans: positive, source };
+  if (negative.length) return { field, state: "KNOWN_FALSE", value: false, spans: negative, source };
+  return void 0;
+}
+function markHedged(text, facts, field, mention, exclude) {
+  if (facts[field]) return;
+  for (const sentence of splitSentences(text)) {
+    const hit = mention.exec(sentence.text);
+    if (!hit || !HEDGE.test(sentence.text)) continue;
+    if (exclude && exclude.test(sentence.text.slice(Math.max(0, hit.index - 3), hit.index + hit[0].length + 3))) continue;
+    const start = sentence.start + hit.index;
+    facts[field] = { field, state: "UNKNOWN", spans: [{ start, end: start + hit[0].length, text: hit[0] }], source: "EXPLICIT", note: "HEDGED" };
+    return;
+  }
+}
+function quote(spans, index) {
+  return spans[index]?.text ?? "";
+}
+function extractAge(text, facts) {
+  for (const clause of splitClauses(text)) {
+    const explicit = /年齡\s*(?:為|是|:)?\s*(\d{1,3})(?!\d)/.exec(clause.text);
+    if (explicit) {
+      const age = Number(explicit[1]);
+      if (age >= 0 && age <= 130) {
+        const start = clause.start + (explicit.index ?? 0);
+        facts.age = { field: "age", state: "KNOWN_VALUE", value: age, spans: [{ start, end: start + explicit[0].length, text: explicit[0] }], source: "EXPLICIT" };
+        return;
+      }
+    }
+    for (const match of clause.text.matchAll(/(\d{1,3})\s*歲/g)) {
+      const index = match.index ?? 0;
+      const before = clause.text.slice(Math.max(0, index - 2), index);
+      const after = clause.text.slice(index + match[0].length, index + match[0].length + 3);
+      if (/(?:未滿|不滿|年滿|超過|高於|低於|以上|以下)$/.test(before) || /滿$/.test(before) && !/(?:剛|已)滿$/.test(before)) continue;
+      if (/^\s*(?:以上|以下|至|到|~|-|－|個月|半)/.test(after)) continue;
+      if (/\d|,/.test(clause.text[index - 1] ?? "")) continue;
+      const age = Number(match[1]);
+      if (age >= 0 && age <= 130) {
+        const start = clause.start + index;
+        facts.age = { field: "age", state: "KNOWN_VALUE", value: age, spans: [{ start, end: start + match[0].length, text: match[0] }], source: "EXPLICIT" };
+        return;
+      }
+    }
+  }
+}
+function extractIncome(text, facts) {
+  for (const clause of splitClauses(text)) {
+    const hit = amountAfterCue(clause, INCOME_CUE, { maxGap: 8, forbiddenGap: /租|歲/ });
+    if (!hit) continue;
+    const span = { start: hit.cueStart, end: hit.end, text: text.slice(hit.cueStart, hit.end) };
+    if (hit.value < 0 || hit.value > 5e6) {
+      facts.monthlyIncome = { field: "monthlyIncome", state: "UNKNOWN", spans: [span], source: "EXPLICIT", note: "IMPLAUSIBLE_VALUE" };
+      return;
+    }
+    const perPerson = /人均|每人|平均每人|每個人/.test(clause.text);
+    const householdTotal = /全戶|全家|合計|總共|一共|總所得|總收入|家戶總/.test(clause.text);
+    if (householdTotal && !perPerson) {
+      facts.monthlyIncome = { field: "monthlyIncome", state: "UNKNOWN", spans: [span], source: "EXPLICIT", note: "HOUSEHOLD_TOTAL_NOT_PER_PERSON" };
+      return;
+    }
+    facts.monthlyIncome = { field: "monthlyIncome", state: "KNOWN_VALUE", value: hit.value, spans: [span], source: "EXPLICIT" };
+    return;
+  }
+}
+function rentHits(text, from = 0, to = text.length) {
+  const hits = [];
+  for (const clause of splitClauses(text)) {
+    if (clause.end <= from || clause.start >= to) continue;
+    const scoped = {
+      start: Math.max(clause.start, from),
+      end: Math.min(clause.end, to),
+      text: text.slice(Math.max(clause.start, from), Math.min(clause.end, to))
+    };
+    let cursor = scoped;
+    for (let guard = 0; guard < 4; guard += 1) {
+      const hit = amountAfterCue(cursor, RENT_CUE, { maxGap: 8, forbiddenGap: /所得|收入|月入|薪|歲|年齡|補/ });
+      if (!hit) break;
+      hits.push(hit);
+      const tail = text.slice(hit.end, scoped.end);
+      const listed = /^\s*(?:元)?\s*(?:和|與|跟|、|及)\s*/.exec(tail);
+      if (listed) {
+        const second = parseAmountAt(text, hit.end + listed[0].length);
+        if (second && !FOREIGN_UNIT.test(text.slice(second.end))) {
+          hits.push({ ...second, cueStart: hit.cueStart });
+        }
+      }
+      const nextStart = hit.end;
+      if (nextStart >= scoped.end) break;
+      cursor = { start: nextStart, end: scoped.end, text: text.slice(nextStart, scoped.end) };
+    }
+  }
+  return hits.filter((hit) => hit.value >= 500 && hit.value <= 3e5);
+}
+function extractHousingBooleans(text, facts) {
+  const ownsFalse = clauseHits(text, OWNS_HOME_FALSE);
+  const ownsTrue = clauseHits(text, OWNS_HOME_TRUE, (hit) => !/租/.test(hit.text));
+  const owns = booleanFact("ownsHome", ownsTrue, ownsFalse, "");
+  if (owns) {
+    if (owns.state === "CONFLICT") {
+      owns.clarification = `\u4F60\u524D\u9762\u540C\u6642\u63D0\u5230\u300C${quote(ownsFalse, 0)}\u300D\u8207\u300C${quote(ownsTrue, 0)}\u300D\uFF0C\u8ACB\u78BA\u8A8D\uFF1A\u672C\u4EBA\u6216\u4F9D\u6CD5\u5217\u8A08\u7684\u5BB6\u5EAD\u6210\u54E1\u76EE\u524D\u662F\u5426\u6301\u6709\u4F4F\u5B85\uFF1F`;
+    }
+    facts.ownsHome = owns;
+  }
+  const aidFalse = clauseHits(text, OTHER_AID_FALSE, (hit) => !/托育|育兒/.test(text.slice(Math.max(0, hit.start - 2), hit.end)));
+  const aidTrue = clauseHits(text, OTHER_AID_TRUE);
+  const aid = booleanFact("receivesOtherHousingAid", aidTrue, aidFalse, "");
+  if (aid) {
+    if (aid.state === "CONFLICT") {
+      aid.clarification = `\u4F60\u524D\u9762\u540C\u6642\u63D0\u5230\u300C${quote(aidFalse, 0)}\u300D\u8207\u300C${quote(aidTrue, 0)}\u300D\uFF0C\u8ACB\u78BA\u8A8D\uFF1A\u76EE\u524D\u662F\u5426\u6B63\u5728\u9818\u53D6\u5176\u4ED6\u653F\u5E9C\u4F4F\u5B85\u88DC\u8CBC\u6216\u79DF\u91D1\u88DC\u8CBC\uFF1F`;
+    }
+    facts.receivesOtherHousingAid = aid;
+  }
+}
+function extractHousingFactsTyped(text) {
+  const facts = {};
+  const locations = extractLocations(text);
+  const result = { facts, locations };
+  const move = /(?:搬到|搬去|搬至|搬往)/.exec(text);
+  const moveIndex = move ? move.index : text.length;
+  const registration = locations.find((loc) => loc.role === "REGISTRATION" && loc.city);
+  if (registration?.city) {
+    facts.registeredCity = { field: "registeredCity", state: "KNOWN_VALUE", value: registration.city, spans: [registration], source: registration.district && !registration.cityHint.length ? "DISTRICT_INFERENCE" : "EXPLICIT" };
+  }
+  const moveLoc = locations.find((loc) => loc.role === "MOVE" && loc.city);
+  if (moveLoc?.city) {
+    result.whatIfCity = moveLoc.city;
+    result.whatIfDistrict = moveLoc.district;
+    const sentenceEnd = (() => {
+      const after = text.slice(moveLoc.start).search(/[。？?！!]/);
+      return after === -1 ? text.length : moveLoc.start + after;
+    })();
+    const whatIfRent = rentHits(text, moveLoc.start, sentenceEnd)[0];
+    if (whatIfRent) result.whatIfMonthlyRent = whatIfRent.value;
+  }
+  const beforeMove = locations.filter((loc) => loc.start < moveIndex);
+  const rentals = beforeMove.filter((loc) => loc.role === "RENTAL" && loc.city);
+  const distinctRentalCities = [...new Set(rentals.map((loc) => loc.city))];
+  const comparison = /比較|比租|分開|分別|兩處|兩地|兩邊/.test(text);
+  const rents = rentHits(text, 0, moveLoc ? moveLoc.start : text.length);
+  let residence;
+  const competingRentals = !moveLoc && !comparison && distinctRentalCities.length >= 2;
+  if (competingRentals) {
+    facts.city = {
+      field: "city",
+      state: "CONFLICT",
+      candidates: distinctRentalCities,
+      spans: rentals,
+      source: "EXPLICIT",
+      clarification: `\u4F60\u63D0\u5230\u5728${distinctRentalCities.join("\u8207")}\u90FD\u6709\u79DF\u5C4B\uFF0C\u8ACB\u554F\u672C\u6B21\u7533\u8ACB\u4F7F\u7528\u7684\u662F\u54EA\u4E00\u500B\u7E23\u5E02\u7684\u79DF\u7D04\uFF1F`
+    };
+  } else if (rentals.length) {
+    residence = rentals[0];
+  } else {
+    const plain = beforeMove.filter((loc) => loc.role === "LOCATION" && loc.city);
+    const cities = [...new Set(plain.map((loc) => loc.city))];
+    if (cities.length === 1) residence = plain[0];
+  }
+  if (!moveLoc && comparison && distinctRentalCities.length >= 2) {
+    const second = rentals.find((loc) => loc.city !== rentals[0].city);
+    result.whatIfCity = second.city;
+    result.whatIfDistrict = second.district;
+    result.dualCityComparison = true;
+    const firstRent = rents.find((hit) => hit.start > rentals[0].start && hit.start < second.start) ?? rents[0];
+    const secondRent = rents.find((hit) => hit.start > second.start && hit !== firstRent) ?? rents.find((hit) => hit !== firstRent);
+    if (firstRent) facts.monthlyRent = { field: "monthlyRent", state: "KNOWN_VALUE", value: firstRent.value, spans: [firstRent], source: "EXPLICIT" };
+    if (secondRent) result.whatIfMonthlyRent = secondRent.value;
+  } else if (rents.length) {
+    const values = [...new Set(rents.map((hit) => hit.value))];
+    if (values.length === 1) {
+      facts.monthlyRent = { field: "monthlyRent", state: "KNOWN_VALUE", value: values[0], spans: [rents[0]], source: "EXPLICIT" };
+    } else {
+      facts.monthlyRent = {
+        field: "monthlyRent",
+        state: "CONFLICT",
+        candidates: values,
+        spans: rents,
+        source: "EXPLICIT",
+        clarification: `\u4F60\u63D0\u5230\u7684\u6708\u79DF\u91D1\u6709 ${values.map((v) => v.toLocaleString()).join(" \u8207 ")} \u5143\u5169\u7A2E\uFF0C\u8ACB\u78BA\u8A8D\u4F9D\u79DF\u7D04\u4F60\u672C\u4EBA\u5BE6\u969B\u6BCF\u6708\u8CA0\u64D4\u7684\u79DF\u91D1\u3002`
+      };
+    }
+  }
+  if (residence?.city) {
+    facts.city = {
+      field: "city",
+      state: "KNOWN_VALUE",
+      value: residence.city,
+      spans: [residence],
+      source: residence.cityHint.length ? "EXPLICIT" : "DISTRICT_INFERENCE"
+    };
+    if (residence.district) result.district = residence.district;
+  } else if (!competingRentals) {
+    const ambiguous = beforeMove.find((loc) => (loc.role === "RENTAL" || loc.role === "LOCATION") && !loc.city);
+    if (ambiguous) {
+      facts.city = {
+        field: "city",
+        state: "UNKNOWN",
+        spans: [ambiguous],
+        source: "EXPLICIT",
+        note: "AMBIGUOUS_PLACE_NAME",
+        clarification: `\u300C${ambiguous.text}\u300D\u53EF\u80FD\u4F4D\u65BC\u4E0D\u540C\u7E23\u5E02\uFF0C\u8ACB\u554F\u60A8\u7684\u79DF\u5C4B\u8655\u4F4D\u65BC\u54EA\u500B\u7E23\u5E02\uFF1F`
+      };
+    }
+  }
+  const ntpcLink = locations.find((loc) => loc.city === "\u65B0\u5317\u5E02" && (loc.role === "WORK_STUDY" || loc.role === "REGISTRATION"));
+  if (ntpcLink || /(?:在新北(?:市)?(?:上班|工作|唸書|念書|讀書|就學|就業)|工作在新北)/.test(text)) {
+    facts.newTaipeiResidenceStudyWork = {
+      field: "newTaipeiResidenceStudyWork",
+      state: "KNOWN_TRUE",
+      value: true,
+      spans: ntpcLink ? [ntpcLink] : [],
+      source: "EXPLICIT"
+    };
+  }
+  extractAge(text, facts);
+  extractIncome(text, facts);
+  extractHousingBooleans(text, facts);
+  markHedged(text, facts, "ownsHome", /房屋持有|有房|房產|自有住宅|名下[^，。]{0,6}房|家裡[^，。]{0,4}房/);
+  markHedged(text, facts, "receivesOtherHousingAid", /(?:住宅|租金|租屋)?(?:補助|補貼|協助)/, /托育|育兒/);
+  return result;
+}
+var HARD_SEPARATORS, SENTENCE_SEPARATORS, CN_DIGIT, FOREIGN_UNIT, DISTRICTS, NO_BARE, DISTRICT_INDEX, DISTRICT_NAMES, CITY_TOKENS, NOT_A_PLACE_AFTER, WITHDRAWN, HEDGE, RENT_CUE, INCOME_CUE, HOME_NOUN, OWNS_HOME_FALSE, OWNS_HOME_TRUE, OTHER_AID_FALSE, OTHER_AID_TRUE;
+var init_fact_extraction = __esm({
+  "src/fact-extraction.ts"() {
+    "use strict";
+    init_taiwan_cities();
+    HARD_SEPARATORS = /* @__PURE__ */ new Set(["\uFF0C", "\u3002", "\uFF1B", ";", "\uFF01", "!", "\uFF1F", "?", "\n", "\uFF1A", "\uFE30"]);
+    SENTENCE_SEPARATORS = /* @__PURE__ */ new Set(["\u3002", "\uFF01", "!", "\uFF1F", "?", "\n", "\uFF1B", ";"]);
+    CN_DIGIT = { \u96F6: 0, \u4E00: 1, \u4E8C: 2, \u5169: 2, \u4E09: 3, \u56DB: 4, \u4E94: 5, \u516D: 6, \u4E03: 7, \u516B: 8, \u4E5D: 9 };
+    FOREIGN_UNIT = /^\s*(?:歲|個月|月大|年|胎|小時|人|口|坪|%|％|次|天|週|周|間|戶)/;
+    DISTRICTS = {
+      \u81FA\u5317\u5E02: ["\u4E2D\u6B63", "\u5927\u540C", "\u4E2D\u5C71", "\u677E\u5C71", "\u5927\u5B89", "\u842C\u83EF", "\u4FE1\u7FA9", "\u58EB\u6797", "\u5317\u6295", "\u5167\u6E56", "\u5357\u6E2F", "\u6587\u5C71"],
+      \u65B0\u5317\u5E02: [
+        "\u677F\u6A4B",
+        "\u4E09\u91CD",
+        "\u4E2D\u548C",
+        "\u6C38\u548C",
+        "\u65B0\u838A",
+        "\u65B0\u5E97",
+        "\u6A39\u6797",
+        "\u9DAF\u6B4C",
+        "\u4E09\u5CFD",
+        "\u6DE1\u6C34",
+        "\u6C50\u6B62",
+        "\u745E\u82B3",
+        "\u571F\u57CE",
+        "\u8606\u6D32",
+        "\u4E94\u80A1",
+        "\u6CF0\u5C71",
+        "\u6797\u53E3",
+        "\u6DF1\u5751",
+        "\u77F3\u7887",
+        "\u576A\u6797",
+        "\u4E09\u829D",
+        "\u77F3\u9580",
+        "\u516B\u91CC",
+        "\u5E73\u6EAA",
+        "\u96D9\u6EAA",
+        "\u8CA2\u5BEE",
+        "\u91D1\u5C71",
+        "\u842C\u91CC",
+        "\u70CF\u4F86"
+      ],
+      \u6843\u5712\u5E02: ["\u6843\u5712", "\u4E2D\u58E2", "\u5927\u6EAA", "\u694A\u6885", "\u8606\u7AF9", "\u5927\u5712", "\u9F9C\u5C71", "\u516B\u5FB7", "\u9F8D\u6F6D", "\u5E73\u93AE", "\u65B0\u5C4B", "\u89C0\u97F3", "\u5FA9\u8208"],
+      \u81FA\u4E2D\u5E02: [
+        "\u4E2D",
+        "\u6771",
+        "\u5357",
+        "\u897F",
+        "\u5317",
+        "\u5317\u5C6F",
+        "\u897F\u5C6F",
+        "\u5357\u5C6F",
+        "\u592A\u5E73",
+        "\u5927\u91CC",
+        "\u9727\u5CF0",
+        "\u70CF\u65E5",
+        "\u8C50\u539F",
+        "\u540E\u91CC",
+        "\u77F3\u5CA1",
+        "\u6771\u52E2",
+        "\u548C\u5E73",
+        "\u65B0\u793E",
+        "\u6F6D\u5B50",
+        "\u5927\u96C5",
+        "\u795E\u5CA1",
+        "\u5927\u809A",
+        "\u6C99\u9E7F",
+        "\u9F8D\u4E95",
+        "\u68A7\u68F2",
+        "\u6E05\u6C34",
+        "\u5927\u7532",
+        "\u5916\u57D4",
+        "\u5927\u5B89"
+      ],
+      \u81FA\u5357\u5E02: [
+        "\u4E2D\u897F",
+        "\u6771",
+        "\u5357",
+        "\u5317",
+        "\u5B89\u5E73",
+        "\u5B89\u5357",
+        "\u6C38\u5EB7",
+        "\u6B78\u4EC1",
+        "\u65B0\u5316",
+        "\u5DE6\u93AE",
+        "\u7389\u4E95",
+        "\u6960\u897F",
+        "\u5357\u5316",
+        "\u4EC1\u5FB7",
+        "\u95DC\u5EDF",
+        "\u9F8D\u5D0E",
+        "\u5B98\u7530",
+        "\u9EBB\u8C46",
+        "\u4F73\u91CC",
+        "\u897F\u6E2F",
+        "\u4E03\u80A1",
+        "\u5C07\u8ECD",
+        "\u5B78\u7532",
+        "\u5317\u9580",
+        "\u65B0\u71DF",
+        "\u5F8C\u58C1",
+        "\u767D\u6CB3",
+        "\u6771\u5C71",
+        "\u516D\u7532",
+        "\u4E0B\u71DF",
+        "\u67F3\u71DF",
+        "\u9E7D\u6C34",
+        "\u5584\u5316",
+        "\u5927\u5167",
+        "\u5C71\u4E0A",
+        "\u65B0\u5E02",
+        "\u5B89\u5B9A"
+      ],
+      \u9AD8\u96C4\u5E02: [
+        "\u6960\u6893",
+        "\u5DE6\u71DF",
+        "\u9F13\u5C71",
+        "\u4E09\u6C11",
+        "\u9E7D\u57D5",
+        "\u524D\u91D1",
+        "\u65B0\u8208",
+        "\u82D3\u96C5",
+        "\u524D\u93AE",
+        "\u65D7\u6D25",
+        "\u5C0F\u6E2F",
+        "\u9CF3\u5C71",
+        "\u6797\u5712",
+        "\u5927\u5BEE",
+        "\u5927\u6A39",
+        "\u5927\u793E",
+        "\u4EC1\u6B66",
+        "\u9CE5\u677E",
+        "\u5CA1\u5C71",
+        "\u6A4B\u982D",
+        "\u71D5\u5DE2",
+        "\u7530\u5BEE",
+        "\u963F\u84EE",
+        "\u8DEF\u7AF9",
+        "\u6E56\u5167",
+        "\u8304\u8423",
+        "\u6C38\u5B89",
+        "\u5F4C\u9640",
+        "\u6893\u5B98",
+        "\u65D7\u5C71",
+        "\u7F8E\u6FC3",
+        "\u516D\u9F9C",
+        "\u7532\u4ED9",
+        "\u6749\u6797",
+        "\u5167\u9580",
+        "\u8302\u6797",
+        "\u6843\u6E90",
+        "\u90A3\u746A\u590F"
+      ],
+      \u57FA\u9686\u5E02: ["\u4EC1\u611B", "\u4FE1\u7FA9", "\u4E2D\u6B63", "\u4E2D\u5C71", "\u5B89\u6A02", "\u6696\u6696", "\u4E03\u5835"],
+      \u65B0\u7AF9\u5E02: ["\u6771", "\u5317", "\u9999\u5C71"],
+      \u5609\u7FA9\u5E02: ["\u6771", "\u897F"]
+    };
+    NO_BARE = /* @__PURE__ */ new Set([
+      "\u4E2D",
+      "\u6771",
+      "\u5357",
+      "\u897F",
+      "\u5317",
+      "\u6843\u5712",
+      "\u4E2D\u6B63",
+      "\u4E2D\u5C71",
+      "\u4FE1\u7FA9",
+      "\u4EC1\u611B",
+      "\u5927\u540C",
+      "\u592A\u5E73",
+      "\u548C\u5E73",
+      "\u6E05\u6C34",
+      "\u5B89\u5B9A",
+      "\u5C71\u4E0A",
+      "\u5927\u5167",
+      "\u5C07\u8ECD",
+      "\u5317\u9580",
+      "\u6C38\u5B89",
+      "\u65B0\u8208",
+      "\u5927\u6A39",
+      "\u4EC1\u5FB7",
+      "\u5FA9\u8208",
+      "\u89C0\u97F3",
+      "\u6771\u5C71",
+      "\u65B0\u5C4B",
+      "\u65B0\u5E02",
+      "\u4E2D\u897F",
+      "\u9E7D\u6C34",
+      "\u5F4C\u9640",
+      "\u6A4B\u982D",
+      "\u5927\u809A",
+      "\u6A39\u6797",
+      "\u6DF1\u5751",
+      "\u77F3\u9580",
+      "\u5B89\u6A02",
+      "\u6696\u6696",
+      "\u91D1\u5C71",
+      "\u842C\u91CC",
+      "\u6CF0\u5C71",
+      "\u9999\u5C71",
+      "\u9F8D\u4E95",
+      "\u5927\u5B89"
+    ]);
+    DISTRICT_INDEX = (() => {
+      const index = /* @__PURE__ */ new Map();
+      for (const [city, names] of Object.entries(DISTRICTS)) {
+        for (const name of names) {
+          const list = index.get(name) ?? [];
+          list.push(city);
+          index.set(name, list);
+        }
+      }
+      return index;
+    })();
+    DISTRICT_NAMES = [...DISTRICT_INDEX.keys()].sort((a, b) => b.length - a.length);
+    CITY_TOKENS = (() => {
+      const tokens = /* @__PURE__ */ new Set();
+      for (const city of TAIWAN_CITIES) {
+        tokens.add(city);
+        tokens.add(city.slice(0, -1));
+        if (city.startsWith("\u81FA")) {
+          tokens.add("\u53F0" + city.slice(1));
+          tokens.add("\u53F0" + city.slice(1, -1));
+        }
+      }
+      return [...tokens].sort((left, right) => right.length - left.length);
+    })();
+    NOT_A_PLACE_AFTER = /^(?:路|街|大道|國小|國中|高中|大學|站|里|村|捷運|醫院|公園|堂|鄉|鎮|號|段|巷|線|港口)/;
+    WITHDRAWN = /撤回|不再納入|不再看|不再考慮|不納入|取消|不算|作廢/;
+    HEDGE = /(?:是否|有沒有|有無|不確定|不知道|不清楚|沒弄清楚|弄不清|說不清|可能|也許|或許|還沒(?:有)?確認|尚未確認|未確認|還沒查|口頭)/;
+    RENT_CUE = /(?:月租|租金|房租|租屋|租房|一個月|租)(?!補|約|客|戶|賃|金補|金加碼|屋補)/;
+    INCOME_CUE = /(?:月薪|月收入|月所得|月入|月收|薪水|薪資|所得|收入)/;
+    HOME_NOUN = "(?:\u623F\u5B50|\u623F\u5C4B|\u623F\u7522|\u4F4F\u5B85|\u81EA\u5B85|\u81EA\u6709\u5C4B|\u5C4B|\u623F)";
+    OWNS_HOME_FALSE = new RegExp(`(?:\u6C92\u6709|\u6C92|\u7121|\u672A\u6301\u6709|\u4E26\u7121|\u4E0D\u6301\u6709|\u540D\u4E0B\u7121)(?:\u4EFB\u4F55)?(?:\u81EA\u6709|\u81EA\u5DF1\u7684)?${HOME_NOUN}(?![\u79DF\u88DC\u8CBC\u9593\u6771\u5BA2\u50F9])`);
+    OWNS_HOME_TRUE = /(?<![沒無未自])(?:持有|擁有|有)(?:一|1|兩|2)?(?:間|棟|戶|整間|套)?[^，。；租,沒無未不]{0,14}?(?:住宅|房子|房屋|房產|自宅|自有屋)(?![租補貼])|(?<![沒無未是否自])有房(?![租補貼間])/;
+    OTHER_AID_FALSE = /(?:沒有|沒|未曾|未|無|並未|不曾)(?:有)?(?:在)?(?:領|領取|請領|申請|享有|接受)?(?:過)?(?:任何)?(?:其他|另外|別的)?(?:的)?(?:政府)?(?:住宅|租金|租屋|房租)?(?:補助|補貼|協助)/;
+    OTHER_AID_TRUE = /(?<![沒未無])(?:現領|正在領|目前(?:每月)?(?:都)?(?:在)?領|有在領|有領|已領|領有|仍在領|還在領)(?:取)?[^，。；,]{0,8}?(?:租金補貼|住宅補貼|住宅補助|租屋補助|租補|租金補助|住宅協助)/;
+  }
+});
+
+// src/intent.ts
+function polarityOf(text, clause, start, end, term) {
+  const before = text.slice(clause.start, start);
+  const after = text.slice(end, clause.end);
+  if (NEGATED_BEFORE.test(before) || NEGATED_AFTER.test(after)) return "NEGATED";
+  const near = before.slice(-8);
+  if ((STATUS_BEFORE.test(near) || STATUS_LIST.test(before)) && !/(?:想|要|可以|能否|能不能|可不可以)(?:同時)?(?:請)?(?:領|領取|請領|申請)?\s*$/.test(near)) {
+    return "STATUS_FACT";
+  }
+  void term;
+  return "INTENT";
+}
+function findTopicMentions(goal) {
+  const text = goal.normalize("NFKC");
+  const lower = text.toLowerCase();
+  const clauses = splitClauses(text);
+  const taken = new Array(text.length).fill(false);
+  const mentions = [];
+  for (const { topic, term } of ALL_TERMS) {
+    const needle = term.toLowerCase();
+    let from = 0;
+    for (; ; ) {
+      const index = lower.indexOf(needle, from);
+      if (index === -1) break;
+      from = index + needle.length;
+      let overlap = false;
+      for (let i = index; i < index + needle.length; i += 1) if (taken[i]) {
+        overlap = true;
+        break;
+      }
+      if (overlap) continue;
+      if (term === "\u4E2D\u592E" && !/^[^，。；,]{0,6}?(?:租|住宅)/.test(text.slice(index + needle.length))) continue;
+      for (let i = index; i < index + needle.length; i += 1) taken[i] = true;
+      const clause = clauses.find((c) => index >= c.start && index < c.end) ?? { start: 0, end: text.length, text };
+      mentions.push({ topic, term, start: index, end: index + needle.length, polarity: polarityOf(text, clause, index, index + needle.length, term) });
+    }
+  }
+  return mentions.sort((left, right) => left.start - right.start);
+}
+function analyzeRequestIntent(goal) {
+  const mentions = findTopicMentions(goal);
+  const has = (topic, polarity) => mentions.some((m) => m.topic === topic && m.polarity === polarity);
+  const any = (topic, polarities) => mentions.some((m) => m.topic === topic && polarities.includes(m.polarity));
+  const housingSubsidyIntent = has("HOUSING_SUBSIDY", "INTENT") || has("CENTRAL_RENT", "INTENT") || has("LOCAL_RENT_PROGRAM", "INTENT");
+  const housingContext = any("HOUSING_CONTEXT", ["INTENT", "STATUS_FACT"]);
+  const housingNegated = (has("HOUSING_SUBSIDY", "NEGATED") || has("HOUSING_CONTEXT", "NEGATED")) && !housingSubsidyIntent;
+  const housing = !housingNegated && (housingSubsidyIntent || housingContext);
+  const centralIntent = has("CENTRAL_RENT", "INTENT");
+  const centralNegated = has("CENTRAL_RENT", "NEGATED") && !centralIntent;
+  const localProgramIntent = has("LOCAL_RENT_PROGRAM", "INTENT");
+  const localOnly = localProgramIntent && !centralIntent;
+  const childcareAllowance = has("CHILDCARE_ALLOWANCE", "INTENT");
+  const childcareSubsidy = has("CHILDCARE_SUBSIDY", "INTENT");
+  const childcareNegated = (has("CHILDCARE_ALLOWANCE", "NEGATED") || has("CHILDCARE_SUBSIDY", "NEGATED") || has("CHILDCARE_CONTEXT", "NEGATED")) && !childcareAllowance && !childcareSubsidy;
+  const childcareContext = !childcareNegated && (any("CHILDCARE_CONTEXT", ["INTENT", "STATUS_FACT"]) || any("CHILDCARE_ALLOWANCE", ["STATUS_FACT"]) || any("CHILDCARE_SUBSIDY", ["STATUS_FACT"]));
+  const unsupported = UNSUPPORTED_TOPICS.filter((topic) => has(topic, "INTENT"));
+  return {
+    mentions,
+    housing,
+    housingNegated,
+    centralIntent,
+    centralNegated,
+    localProgramIntent,
+    localOnly,
+    childcareAllowance,
+    childcareSubsidy,
+    childcareContext,
+    childcareNegated,
+    unsupported
+  };
+}
+var TOPICS, ALL_TERMS, NEGATED_BEFORE, NEGATED_AFTER, STATUS_BEFORE, STATUS_LIST, UNSUPPORTED_TOPICS;
+var init_intent = __esm({
+  "src/intent.ts"() {
+    "use strict";
+    init_fact_extraction();
+    TOPICS = [
+      { topic: "CENTRAL_RENT", terms: ["300\u5104", "\u4E09\u767E\u5104", "\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC", "\u4E2D\u592E\u79DF\u91D1\u88DC\u8CBC", "\u4E2D\u592E\u79DF\u88DC", "\u4E2D\u592E"] },
+      {
+        topic: "LOCAL_RENT_PROGRAM",
+        terms: ["\u81FA\u5317\u5E78\u798F\u79DF", "\u53F0\u5317\u5E78\u798F\u79DF", "\u5E78\u798F\u79DF", "\u9752\u5E74\u79DF\u91D1\u88DC\u8CBC", "\u9752\u5E74\u79DF\u88DC", "\u9752\u5E74\u79DF\u91D1\u52A0\u78BC", "\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9", "\u5730\u65B9\u79DF\u88DC", "\u5730\u65B9\u52A0\u78BC", "\u5730\u65B9\u65B9\u6848", "\u5730\u65B9\u7684\u52A0\u78BC", "\u81EA\u8FA6\u5730\u65B9\u79DF\u88DC", "\u81EA\u8FA6", "\u52A0\u78BC"]
+      },
+      { topic: "HOUSING_SUBSIDY", terms: ["\u79DF\u91D1\u88DC\u8CBC", "\u79DF\u5C4B\u88DC\u52A9", "\u79DF\u91D1\u88DC\u52A9", "\u79DF\u88DC", "\u4F4F\u5B85\u88DC\u8CBC", "\u79DF\u5C4B\u88DC\u8CBC"] },
+      { topic: "HOUSING_CONTEXT", terms: ["\u79DF\u5C4B", "\u79DF\u623F", "\u6708\u79DF", "\u623F\u79DF", "\u79DF\u91D1", "\u79DF\u7D04", "\u79DF\u5BA2", "\u5408\u79DF", "rent", "housing", "lease"] },
+      { topic: "UNSUPPORTED_HOUSING", terms: ["\u539F\u4F4F\u6C11\u65CF\u79DF\u91D1\u88DC\u8CBC", "\u539F\u4F4F\u6C11\u79DF\u91D1\u88DC\u8CBC", "\u5305\u79DF\u4EE3\u7BA1", "\u8CFC\u5C4B\u8CB8\u6B3E", "\u9752\u5E74\u8CFC\u5C4B", "\u4FEE\u7E55\u4F4F\u5B85"] },
+      { topic: "CHILDCARE_ALLOWANCE", terms: ["\u80B2\u5152\u6D25\u8CBC", "\u80B2\u5152", "0\u5230\u672A\u6EFF2\u6B72", "0\u52302\u6B72", "0\u81F3\u672A\u6EFF2\u6B72", "\u672A\u6EFF2\u6B72", "\u672A\u6EFF\u4E8C\u6B72", "0-2\u6B72"] },
+      { topic: "CHILDCARE_SUBSIDY", terms: ["\u6258\u80B2\u8CBB\u7528\u88DC\u52A9", "\u6E96\u516C\u5171\u6258\u80B2\u88DC\u52A9", "\u516C\u5171\u6258\u80B2\u88DC\u52A9", "\u6258\u80B2\u88DC\u52A9", "\u6258\u80B2\u88DC\u8CBC", "\u6258\u80B2\u8CBB\u7528"] },
+      { topic: "UNSUPPORTED_CHILDCARE", terms: ["\u751F\u80B2\u6D25\u8CBC", "\u751F\u80B2\u734E\u52F5", "\u751F\u80B2\u88DC\u52A9", "\u5C31\u5B78\u88DC\u52A9", "\u5E7C\u5152\u5712\u88DC\u52A9", "\u80B2\u5B30\u7559\u8077\u505C\u85AA", "parental leave"] },
+      { topic: "CHILDCARE_CONTEXT", terms: ["\u5BF6\u5BF6", "\u5B30\u5152", "\u5E7C\u5152", "\u6258\u5B30", "\u4FDD\u6BCD", "\u4FDD\u59C6", "\u80B2\u5B30", "\u6258\u80B2", "\u6E96\u516C\u5171", "\u751F\u80B2", "childcare", "child care"] },
+      { topic: "LONG_TERM_CARE", terms: ["\u9577\u7167", "\u9577\u671F\u7167\u9867", "\u5C45\u5BB6\u670D\u52D9", "\u5C45\u5BB6\u7167\u9867\u670D\u52D9"] },
+      { topic: "FARMER_ALLOWANCE", terms: ["\u8001\u5E74\u8FB2\u6C11\u798F\u5229\u6D25\u8CBC", "\u8001\u8FB2\u6D25\u8CBC", "\u8FB2\u4FDD", "\u8FB2\u6C11", "\u6F01\u6C11"] },
+      { topic: "VOCATIONAL_TRAINING", terms: ["\u8077\u8A13\u751F\u6D3B\u6D25\u8CBC", "\u8077\u696D\u8A13\u7DF4\u751F\u6D3B\u6D25\u8CBC", "\u8077\u8A13", "\u8077\u696D\u8A13\u7DF4"] },
+      {
+        topic: "OTHER_WELFARE",
+        terms: ["\u8001\u4EBA", "\u8EAB\u5FC3\u969C\u7919", "\u6025\u96E3\u6551\u52A9", "\u5931\u696D", "\u5E74\u91D1", "\u52DE\u4FDD", "\u5065\u4FDD", "\u91CD\u967D", "\u656C\u8001", "\u5047\u7259", "\u5B78\u8CB8", "\u5C31\u5B78\u8CB8\u6B3E", "\u734E\u5B78\u91D1"]
+      }
+    ];
+    ALL_TERMS = TOPICS.flatMap((def) => def.terms.map((term) => ({ topic: def.topic, term }))).sort((left, right) => right.term.length - left.term.length);
+    NEGATED_BEFORE = /(?:不是要問|不是問|不是要查|不問|不查|不看|不用(?:幫我)?(?:看|查|問|評估)?|不要|不需要|不必|不考慮|並非)[^，。；,]{0,10}$/;
+    NEGATED_AFTER = /^[^，。；,]{0,12}?(?:都)?(?:跟我|與我|和我)?(?:無關|沒關係|不相關|不需要|不用|不必|不考慮)/;
+    STATUS_BEFORE = /(?:(?:沒有|沒|未曾|未|無|還沒|尚未|並未)(?:在)?(?:請)?(?:領|領取|請領|申請|使用)?|(?:正在|現在|現|已|有在|有|目前(?:每月)?(?:都)?(?:在)?|仍在|還在)(?:請)?(?:領|領取|請領|申請|使用))(?:過)?(?:任何)?(?:其他|另一項|另一筆|另外)?(?:政府)?(?:的)?\s*$/;
+    STATUS_LIST = /(?:沒有|沒|未|無|並未|還沒|尚未)[^，。；,]{0,10}(?:或|和|及|、|與|也沒有|也沒|也未)\s*$/;
+    UNSUPPORTED_TOPICS = ["LONG_TERM_CARE", "FARMER_ALLOWANCE", "VOCATIONAL_TRAINING", "OTHER_WELFARE", "UNSUPPORTED_CHILDCARE", "UNSUPPORTED_HOUSING"];
+  }
+});
+
+// src/coverage.ts
+function notCoveredComponents(intent) {
+  return intent.unsupported.map((topic) => TOPIC_COMPONENTS[topic]).filter((component) => Boolean(component)).map((component) => ({ ...component, status: "NOT_COVERED" }));
+}
+function outsideVerifiedCoverage(intent) {
+  const components = intent ? notCoveredComponents(intent) : [];
+  const referrals = components.map((component) => component.referral).filter((ref) => Boolean(ref));
+  const unique = referrals.filter((ref, index) => referrals.findIndex((other) => other.url === ref.url) === index);
+  return {
+    status: "NOT_COVERED",
+    domain: "OTHER",
+    reason: "UNSUPPORTED_DOMAIN_NOT_IMPLEMENTED",
+    message: OUTSIDE_VERIFIED_COVERAGE_MESSAGE,
+    officialReferrals: unique.length ? unique : GENERAL_WELFARE_REFERRALS,
+    ...components.length ? { components } : {}
+  };
+}
+function isLocalOnlyHousingQuery(goal) {
+  const intent = analyzeRequestIntent(goal);
+  return intent.localOnly && !intent.housingNegated;
+}
+function asksHousing(intent) {
+  return intent.mentions.some(
+    (m) => m.polarity === "INTENT" && (m.topic === "HOUSING_SUBSIDY" || m.topic === "CENTRAL_RENT" || m.topic === "LOCAL_RENT_PROGRAM")
+  );
+}
+function asksChildcare(intent) {
+  return intent.childcareAllowance || intent.childcareSubsidy || intent.unsupported.includes("UNSUPPORTED_CHILDCARE");
+}
+function detectBenefitDomain(goal) {
+  const intent = analyzeRequestIntent(goal);
+  const childcare = asksChildcare(intent);
+  const housing = asksHousing(intent) && !intent.housingNegated;
+  if (childcare) return "CHILDCARE";
+  if (housing) return "HOUSING";
+  if (intent.housing) return "HOUSING";
+  if (intent.childcareContext) return "CHILDCARE";
+  return "HOUSING";
+}
+function housingCityOf(goal) {
+  const extracted = extractHousingFactsTyped(goal.normalize("NFKC")).facts.city;
+  if (extracted?.state === "KNOWN_VALUE" && typeof extracted.value === "string") return extracted.value;
+  const normalizedText = goal.replace(/台/g, "\u81FA");
+  return TAIWAN_CITIES.find((c) => normalizedText.includes(c));
+}
+function assessQueryCoverage(goal) {
+  const text = goal.toLowerCase();
+  const intent = analyzeRequestIntent(goal);
+  const extraComponents = notCoveredComponents(intent);
+  const withComponents = (assessment, components) => components.length ? { ...assessment, components } : assessment;
+  if (detectBenefitDomain(goal) === "CHILDCARE") {
+    const allowanceAsked = intent.childcareAllowance || !intent.childcareSubsidy && !intent.unsupported.includes("UNSUPPORTED_CHILDCARE");
+    if (!allowanceAsked) {
+      return withComponents(
+        {
+          status: "NOT_COVERED",
+          domain: "CHILDCARE",
+          reason: "CHILDCARE_POLICY_NOT_IMPLEMENTED",
+          message: CHILDCARE_NOT_IMPLEMENTED_MESSAGE,
+          officialReferrals: CHILDCARE_NOT_IMPLEMENTED_REFERRALS
+        },
+        [
+          ...intent.childcareSubsidy ? [{ ...CHILDCARE_SUBSIDY_COMPONENT, status: "NOT_COVERED" }] : [],
+          ...extraComponents
+        ]
+      );
+    }
+    const components = [
+      {
+        key: "CHILDCARE_ALLOWANCE_UNDER_2",
+        label: "\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\uFF08115\u5E74\u5EA6\uFF09",
+        status: "COVERED",
+        message: "\u53EF\u9032\u884C\u8CC7\u683C\u9810\u5BE9\u3001\u80CE\u6B21\u91D1\u984D\u8A66\u7B97\u8207\u7533\u8FA6\u5C0E\u822A\u3002"
+      },
+      ...intent.childcareSubsidy ? [{ ...CHILDCARE_SUBSIDY_COMPONENT, status: "NOT_COVERED" }] : [],
+      ...extraComponents
+    ];
+    return withComponents(
+      {
+        status: "COVERED",
+        domain: "CHILDCARE",
+        reason: "CHILDCARE_UNDER2_ALLOWANCE_IN_SCOPE",
+        message: "\u76EE\u524D\u7248\u672C\u5DF2\u652F\u63F4\u300C\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\uFF08115\u5E74\u5EA6\uFF09\u300D\u4E4B\u8CC7\u683C\u9810\u5BE9\u3001\u80CE\u6B21\u91D1\u984D\u8A66\u7B97\u8207\u7533\u8FA6\u5C0E\u822A\u3002",
+        officialReferrals: [
+          {
+            label: "\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7DB2",
+            agency: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72",
+            url: "https://twbaby.sfaa.gov.tw/"
+          }
+        ]
+      },
+      components.length > 1 ? components : []
+    );
+  }
+  const housingRequested = intent.housing && !intent.housingNegated;
+  if (!housingRequested && (intent.unsupported.length > 0 || intent.housingNegated || intent.childcareNegated)) {
+    return outsideVerifiedCoverage(intent);
+  }
+  if (
+    // Explicit unsupported housing programme; only an explicit central request keeps a supported part.
+    UNSUPPORTED_HOUSING_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase())) && !intent.centralIntent
+  ) {
+    return {
+      status: "NOT_COVERED",
+      domain: "RENTAL_SUBSIDY",
+      reason: "UNSUPPORTED_HOUSING_POLICY_NOT_IMPLEMENTED",
+      message: "\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u300C300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\uFF08\u542B\u96D9\u5317\u8207\u6843\u5712\u5E02\u53D7\u7406\u5C0E\u822A\uFF09\u300D\u3001\u300C\u81FA\u5317\u5E02\u81FA\u5317\u5E78\u798F\u79DF\u52A0\u78BC\u300D\u8207\u300C\u65B0\u5317\u5E02\u9752\u5E74\u79DF\u91D1\u88DC\u8CBC\u300D\uFF0C\u5C1A\u672A\u6DB5\u84CB\u6843\u5712\u5E02\u7368\u7ACB\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9\u3001\u539F\u4F4F\u6C11\u65CF\u5C08\u6848\u79DF\u91D1\u88DC\u8CBC\u3001\u793E\u6703\u4F4F\u5B85\u5305\u79DF\u4EE3\u7BA1\u6216\u8CFC\u5C4B\u8CB8\u6B3E\u88DC\u8CBC\u3002\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002",
+      officialReferrals: [
+        NLMA_REFERRAL,
+        {
+          label: "\u6843\u5712\u5E02\u653F\u5E9C\u4F4F\u5B85\u767C\u5C55\u8655\u5B98\u65B9\u7DB2\u7AD9",
+          agency: "\u6843\u5712\u5E02\u653F\u5E9C\u4F4F\u5B85\u767C\u5C55\u8655",
+          url: "https://ohd.tycg.gov.tw/"
+        }
+      ]
+    };
+  }
+  const matchedCity = housingCityOf(goal);
+  if (matchedCity && !ALL_COVERED_HOUSING_CITIES.includes(matchedCity)) {
+    if (isLocalOnlyHousingQuery(goal)) {
+      return withComponents(
+        {
+          status: "NOT_COVERED",
+          domain: "RENTAL_SUBSIDY",
+          reason: "UNSUPPORTED_CITY_HOUSING_POLICY_NOT_IMPLEMENTED",
+          message: `\u76EE\u524D\u7248\u672C\u5C1A\u672A\u6DB5\u84CB${matchedCity}\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9\u6216\u52A0\u78BC\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u7E23\u5E02\u5730\u65B9\u65B9\u6848\u4E4B\u8CC7\u683C\u5224\u5B9A\u3002\u5168\u570B\u9069\u7528\u4E4B\u4E2D\u592E\u79DF\u91D1\u88DC\u8CBC\u53EF\u53E6\u884C\u9810\u5BE9\u3002\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002`,
+          officialReferrals: [NLMA_REFERRAL]
+        },
+        extraComponents
+      );
+    }
+    return {
+      status: "COVERED",
+      domain: "RENTAL_SUBSIDY",
+      reason: "CENTRAL_ONLY_LOCAL_NOT_COVERED",
+      message: `\u53EF\u9810\u5BE9\u5168\u570B\u9069\u7528\u4E4B\u300C300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\u300D\u90E8\u5206\u689D\u4EF6\uFF1B${matchedCity}\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9\u6216\u52A0\u78BC\u5C1A\u672A\u6DB5\u84CB\uFF0C\u4E0D\u4F5C\u6210\u5730\u65B9\u65B9\u6848\u5224\u5B9A\u3002`,
+      officialReferrals: [NLMA_REFERRAL],
+      components: [
+        {
+          key: "CENTRAL_RENT_115",
+          label: "300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\uFF08\u5168\u570B\u9069\u7528\uFF09",
+          status: "COVERED",
+          message: "\u53EF\u9810\u5BE9\u5DF2\u5BE6\u4F5C\u4E4B\u90E8\u5206\u689D\u4EF6\u3002"
+        },
+        {
+          key: "LOCAL_RENT_PROGRAM",
+          label: `${matchedCity}\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9\u6216\u52A0\u78BC`,
+          status: "NOT_COVERED",
+          message: `${matchedCity}\u5730\u65B9\u65B9\u6848\u5C1A\u672A\u7D0D\u5165\u672C\u7CFB\u7D71\uFF0C\u4E0D\u4F5C\u6210\u5730\u65B9\u65B9\u6848\u5224\u5B9A\uFF1B\u8ACB\u4EE5\u8A72\u7E23\u5E02\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002`
+        },
+        ...extraComponents
+      ]
+    };
+  }
+  return withComponents(
+    {
+      status: "COVERED",
+      domain: "RENTAL_SUBSIDY",
+      reason: "RENTAL_SUBSIDY_IN_SCOPE",
+      message: "\u76EE\u524D\u7248\u672C\u53EF\u9032\u884C\u79DF\u5C4B\u88DC\u52A9\u7684\u90E8\u5206\u689D\u4EF6\u9810\u5BE9\u8207\u7533\u8FA6\u5C0E\u822A\u3002",
+      officialReferrals: []
+    },
+    extraComponents.length ? [
+      {
+        key: "RENTAL_SUBSIDY",
+        label: "\u79DF\u5C4B\u88DC\u52A9\uFF08\u5DF2\u5BE6\u4F5C\u90E8\u5206\u689D\u4EF6\uFF09",
+        status: "COVERED",
+        message: "\u53EF\u9032\u884C\u90E8\u5206\u689D\u4EF6\u9810\u5BE9\u8207\u7533\u8FA6\u5C0E\u822A\u3002"
+      },
+      ...extraComponents
+    ] : []
+  );
+}
+var COVERED_LOCAL_CITIES, COVERED_CENTRAL_NAVIGATION_CITIES, ALL_COVERED_HOUSING_CITIES, UNSUPPORTED_HOUSING_KEYWORDS, OUTSIDE_VERIFIED_COVERAGE_MESSAGE, GENERAL_WELFARE_REFERRALS, TOPIC_COMPONENTS, CHILDCARE_SUBSIDY_COMPONENT, CHILDCARE_NOT_IMPLEMENTED_MESSAGE, CHILDCARE_NOT_IMPLEMENTED_REFERRALS, NLMA_REFERRAL;
+var init_coverage = __esm({
+  "src/coverage.ts"() {
+    "use strict";
+    init_taiwan_cities();
+    init_intent();
+    init_fact_extraction();
+    COVERED_LOCAL_CITIES = ["\u81FA\u5317\u5E02", "\u65B0\u5317\u5E02"];
+    COVERED_CENTRAL_NAVIGATION_CITIES = ["\u6843\u5712\u5E02"];
+    ALL_COVERED_HOUSING_CITIES = [
+      ...COVERED_LOCAL_CITIES,
+      ...COVERED_CENTRAL_NAVIGATION_CITIES
+    ];
+    UNSUPPORTED_HOUSING_KEYWORDS = [
+      "\u6843\u5712\u5E02\u5730\u65B9\u52A0\u78BC",
+      "\u6843\u5712\u5730\u65B9\u52A0\u78BC",
+      "\u6843\u5712\u5E02\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9",
+      "\u6843\u5712\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9",
+      "\u539F\u4F4F\u6C11\u65CF\u79DF\u91D1\u88DC\u8CBC",
+      "\u539F\u4F4F\u6C11\u79DF\u91D1\u88DC\u8CBC",
+      "\u5305\u79DF\u4EE3\u7BA1",
+      "\u8CFC\u5C4B\u8CB8\u6B3E",
+      "\u9752\u5E74\u8CFC\u5C4B",
+      "\u4FEE\u7E55\u4F4F\u5B85"
+    ];
+    OUTSIDE_VERIFIED_COVERAGE_MESSAGE = "\u60A8\u67E5\u8A62\u7684\u653F\u7B56\uFF0F\u9818\u57DF\u4E0D\u5728\u76EE\u524D\u5DF2\u9A57\u8B49\u7684\u6DB5\u84CB\u7BC4\u570D\u5167\uFF08Requested policy/domain is outside current verified coverage\uFF09\u3002\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u7279\u5B9A\u79DF\u5C4B\u88DC\u8CBC\u8207\u672A\u6EFF2\u6B72\u80B2\u5152\u6D25\u8CBC\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u9805\u88DC\u52A9\u4E4B\u8CC7\u683C\u5224\u5B9A\uFF0C\u4E5F\u4E0D\u6703\u6539\u4EE5\u79DF\u5C4B\u88DC\u8CBC\u56DE\u7B54\u3002\u9019\u4E0D\u4EE3\u8868\u60A8\u7121\u6CD5\u7533\u8ACB\uFF0C\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002";
+    GENERAL_WELFARE_REFERRALS = [
+      {
+        label: "\u885B\u751F\u798F\u5229\u90E8 1957 \u798F\u5229\u8AEE\u8A62\u5C08\u7DDA",
+        agency: "\u885B\u751F\u798F\u5229\u90E8",
+        url: "https://1957.mohw.gov.tw/"
+      }
+    ];
+    TOPIC_COMPONENTS = {
+      LONG_TERM_CARE: {
+        key: "LONG_TERM_CARE",
+        label: "\u9577\u671F\u7167\u9867\u670D\u52D9\uFF08\u9577\u7167\uFF09",
+        message: "\u9577\u7167\u670D\u52D9\u4E0D\u5728\u672C\u7CFB\u7D71\u6DB5\u84CB\u7BC4\u570D\uFF0C\u4E0D\u4F5C\u8CC7\u683C\u5224\u5B9A\uFF1B\u8ACB\u6D3D 1966 \u9577\u7167\u670D\u52D9\u5C08\u7DDA\u6216\u885B\u798F\u90E8\u9577\u7167\u5C08\u5340\u3002",
+        referral: { label: "\u885B\u751F\u798F\u5229\u90E8\u9577\u7167\u5C08\u5340\uFF081966 \u9577\u7167\u670D\u52D9\u5C08\u7DDA\uFF09", agency: "\u885B\u751F\u798F\u5229\u90E8", url: "https://1966.gov.tw/" }
+      },
+      FARMER_ALLOWANCE: {
+        key: "FARMER_ALLOWANCE",
+        label: "\u8001\u5E74\u8FB2\u6C11\u798F\u5229\u6D25\u8CBC",
+        message: "\u8001\u5E74\u8FB2\u6C11\u798F\u5229\u6D25\u8CBC\u4E0D\u5728\u672C\u7CFB\u7D71\u6DB5\u84CB\u7BC4\u570D\uFF0C\u4E0D\u4F5C\u8CC7\u683C\u5224\u5B9A\uFF1B\u4E3B\u8CAC\u6A5F\u95DC\u70BA\u52DE\u52D5\u90E8\u52DE\u5DE5\u4FDD\u96AA\u5C40\u3002",
+        referral: { label: "\u52DE\u52D5\u90E8\u52DE\u5DE5\u4FDD\u96AA\u5C40", agency: "\u52DE\u52D5\u90E8\u52DE\u5DE5\u4FDD\u96AA\u5C40", url: "https://www.bli.gov.tw/" }
+      },
+      VOCATIONAL_TRAINING: {
+        key: "VOCATIONAL_TRAINING",
+        label: "\u8077\u696D\u8A13\u7DF4\u751F\u6D3B\u6D25\u8CBC",
+        message: "\u8077\u696D\u8A13\u7DF4\u751F\u6D3B\u6D25\u8CBC\u4E0D\u5728\u672C\u7CFB\u7D71\u6DB5\u84CB\u7BC4\u570D\uFF0C\u4E0D\u4F5C\u8CC7\u683C\u5224\u5B9A\uFF1B\u8ACB\u6D3D\u52DE\u52D5\u90E8\u52DE\u52D5\u529B\u767C\u5C55\u7F72\u3002",
+        referral: { label: "\u52DE\u52D5\u90E8\u52DE\u52D5\u529B\u767C\u5C55\u7F72", agency: "\u52DE\u52D5\u90E8\u52DE\u52D5\u529B\u767C\u5C55\u7F72", url: "https://www.wda.gov.tw/" }
+      },
+      OTHER_WELFARE: {
+        key: "OTHER_WELFARE",
+        label: "\u5176\u4ED6\u793E\u6703\u798F\u5229\u9805\u76EE",
+        message: "\u6B64\u9805\u798F\u5229\u4E0D\u5728\u672C\u7CFB\u7D71\u6DB5\u84CB\u7BC4\u570D\uFF0C\u4E0D\u4F5C\u8CC7\u683C\u5224\u5B9A\uFF1B\u8ACB\u6D3D\u4E3B\u7BA1\u6A5F\u95DC\u6216 1957 \u798F\u5229\u8AEE\u8A62\u5C08\u7DDA\u3002",
+        referral: GENERAL_WELFARE_REFERRALS[0]
+      },
+      UNSUPPORTED_CHILDCARE: {
+        key: "UNSUPPORTED_CHILDCARE",
+        label: "\u751F\u80B2\uFF0F\u5C31\u5B78\uFF0F\u80B2\u5B30\u7559\u8077\u505C\u85AA\u7B49\u5176\u4ED6\u80B2\u5152\u76F8\u95DC\u7D66\u4ED8",
+        message: "\u6B64\u9805\u7D66\u4ED8\u4E0D\u5728\u672C\u7CFB\u7D71\u6DB5\u84CB\u7BC4\u570D\uFF0C\u4E0D\u4F5C\u8CC7\u683C\u5224\u5B9A\uFF1B\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002"
+      }
+    };
+    CHILDCARE_SUBSIDY_COMPONENT = {
+      key: "CHILDCARE_SUBSIDY",
+      label: "\u6258\u80B2\u8CBB\u7528\u88DC\u52A9\uFF08\u516C\u5171\u5316\uFF0F\u6E96\u516C\u5171\u6258\u80B2\uFF09",
+      message: "\u6258\u80B2\u8CBB\u7528\u88DC\u52A9\u5C1A\u672A\u7D0D\u5165\u672C\u7CFB\u7D71\u898F\u5247\uFF0C\u4E0D\u4F5C\u8CC7\u683C\u5224\u5B9A\u6216\u91D1\u984D\u8A66\u7B97\uFF1B\u8ACB\u6D3D\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72\u6216\u6236\u7C4D\u5730\u5730\u65B9\u653F\u5E9C\u3002",
+      referral: {
+        label: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72\uFF0D\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u8207\u6258\u80B2\u88DC\u52A9\u5C08\u5340",
+        agency: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72",
+        url: "https://www.sfaa.gov.tw/SFAA/Pages/Detail.aspx?nodeid=415&pid=7582"
+      }
+    };
+    CHILDCARE_NOT_IMPLEMENTED_MESSAGE = "\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u300C\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u300D\uFF0C\u5C1A\u672A\u6DB5\u84CB\u6258\u80B2\u88DC\u52A9\u3001\u751F\u80B2\u734E\u52F5\u91D1\u3001\u5C31\u5B78\u88DC\u52A9\u6216\u80B2\u5B30\u7559\u8077\u505C\u85AA\u6D25\u8CBC\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u9805\u88DC\u52A9\u4E4B\u8CC7\u683C\u5224\u5B9A\u3002\u9019\u4E0D\u4EE3\u8868\u60A8\u7121\u6CD5\u7533\u8ACB\uFF0C\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002";
+    CHILDCARE_NOT_IMPLEMENTED_REFERRALS = [
+      {
+        label: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72\uFF0D\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u8207\u6258\u80B2\u88DC\u52A9\u5C08\u5340",
+        agency: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72",
+        url: "https://www.sfaa.gov.tw/SFAA/Pages/Detail.aspx?nodeid=415&pid=7582"
+      },
+      {
+        label: "\u80B2\u6709\u672A\u6EFF2\u6B72\u5152\u7AE5\u80B2\u5152\u6D25\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7DB2",
+        agency: "\u885B\u751F\u798F\u5229\u90E8\u793E\u6703\u53CA\u5BB6\u5EAD\u7F72",
+        url: "https://twbaby.sfaa.gov.tw/"
+      }
+    ];
+    NLMA_REFERRAL = {
+      label: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72\uFF0D300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7CFB\u7D71",
+      agency: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72",
+      url: "https://has.nlma.gov.tw/subsidyOnline/"
+    };
   }
 });
 

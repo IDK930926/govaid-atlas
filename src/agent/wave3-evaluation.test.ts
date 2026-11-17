@@ -21,8 +21,11 @@ test("Wave 3 — End-to-End Bounded Agent Evaluation covers categories A–H wit
   assert.equal(byId["CAT-C"]?.actualAgentStatus, "WAITING_FOR_HUMAN");
   assert.equal(byId["CAT-C"]?.actualEligibilityStatus, "UNCERTAIN");
   assert.equal(byId["CAT-D"]?.actualEligibilityStatus, "NOT_COVERED");
-  assert.equal(byId["CAT-E"]?.actualAgentStatus, "NOT_COVERED");
-  assert.equal(byId["CAT-E"]?.actualEligibilityStatus, "NOT_COVERED");
+  // Gate 4B partial-scope decomposition: supported allowance part waits for the child age,
+  // the 托育補助 part is NOT_COVERED, and no rental tool ever runs.
+  assert.equal(byId["CAT-E"]?.actualAgentStatus, "WAITING_FOR_HUMAN");
+  assert.equal(byId["CAT-E"]?.actualEligibilityStatus, "UNCERTAIN");
+  assert.notEqual(byId["CAT-E"]?.actualEligibilityStatus, "PASS");
   assert.equal(byId["CAT-F"]?.proposalsRejected, 1);
   assert.equal(byId["CAT-F"]?.actualEligibilityStatus, "PARTIAL_CHECK");
   assert.equal(byId["CAT-G"]?.fallbackUsedCount, 1);

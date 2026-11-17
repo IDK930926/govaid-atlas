@@ -894,6 +894,7 @@ function App() {
                 onAnswer={respondToHuman}
                 onReset={resetDemo}
               />
+              <ScopeComponentsNotice run={agentRun}/>
             </div>
 
             <ContextPanel
@@ -1299,7 +1300,7 @@ function ProviderBadge({kind, info, error}: {kind: string; info: ProviderInfo; e
 }
 
 function shortPlace(scenario: {city?: string; district?: string}): string {
-  return `${(scenario.city ?? "").replace("市", "")}${(scenario.district ?? "").replace("區", "")}`;
+  return `${(scenario.city ?? "").replace("市", "")}${(scenario.district ?? "").replace(/(..)區$/, "$1")}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1650,6 +1651,36 @@ function HumanGateControls({
         </p>
       )}
     </form>
+  );
+}
+
+/**
+ * Mixed-scope request: the supported part keeps its workflow while each part outside
+ * coverage is listed separately with its official referral (never silently dropped).
+ */
+export function ScopeComponentsNotice({run}: {run: AgentRun}) {
+  const components = run.coverage?.components ?? [];
+  const outside = components.filter((component) => component.status === "NOT_COVERED");
+  if (outside.length === 0 || run.status === "NOT_COVERED") return null;
+  const supported = components.filter((component) => component.status === "COVERED");
+  return (
+    <aside className="scope-notice" aria-label="查詢範圍拆分">
+      <p className="scope-notice-title">本次查詢包含多個部分</p>
+      {supported.length > 0 && (
+        <p className="scope-notice-supported">本系統處理：{supported.map((component) => component.label).join("、")}</p>
+      )}
+      <ul className="scope-notice-list">
+        {outside.map((component) => (
+          <li key={component.key}>
+            <strong>未涵蓋（不作判定）：{component.label}</strong>
+            <span>{component.message}</span>
+            {component.referral?.url && (
+              <a href={component.referral.url} target="_blank" rel="noopener noreferrer">{component.referral.label} ↗</a>
+            )}
+          </li>
+        ))}
+      </ul>
+    </aside>
   );
 }
 
@@ -2105,6 +2136,7 @@ function ResultView({
 
   return (
     <div className="result phase-enter">
+      <ScopeComponentsNotice run={run}/>
       {/* 1 — Verdict summary */}
       <section className="summary" aria-labelledby="result-title">
         <header className="summary-head">

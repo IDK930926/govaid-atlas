@@ -332,10 +332,26 @@ test("TRACE-D — NOT_COVERED (Childcare & Taoyuan) never produces PASS", async 
   );
   childcareRun.runId = "trace-d-not-covered";
 
-  assert.equal(childcareRun.status, "NOT_COVERED");
-  assert.equal(childcareRun.trace[0]?.coverageStatus, "NOT_COVERED");
-  assert.equal(childcareRun.trace[0]?.eligibilityStatus, "NOT_COVERED");
+  // Gate 4B: allowance + 托育補助 decomposes — the 托育補助 part is NOT_COVERED, the allowance
+  // part stays in its own workflow, and the rental tool proposal is rejected. Never PASS.
+  assert.equal(childcareRun.domain, "CHILDCARE");
+  assert.notEqual(childcareRun.state?.overallEligibilityStatus, "PASS");
   assert.equal(childcareRun.trace[0]?.proposalRejected, true);
+  assert.match(childcareRun.trace[0]?.rejectionReason ?? "", /DOMAIN_MISMATCH/);
+  const subsidyComponent = childcareRun.coverage?.components?.find((component) => component.key === "CHILDCARE_SUBSIDY");
+  assert.equal(subsidyComponent?.status, "NOT_COVERED");
+  assert.match(subsidyComponent?.referral?.url ?? "", /^https:\/\/www\.sfaa\.gov\.tw\//, "subsidy referral stays visible");
+  assert.equal(
+    childcareRun.coverage?.components?.find((component) => component.key === "CHILDCARE_ALLOWANCE_UNDER_2")?.status,
+    "COVERED",
+    "supported allowance part remains independently evaluable"
+  );
+  assert.ok(
+    !childcareRun.auditTrail.some(
+      (event) => event.action === "AGENT_TOOL_REQUESTED" && (event.input as { toolName?: string })?.toolName === "evaluate_central_rules"
+    ),
+    "no rental tool may run on a childcare request"
+  );
 
   const taoyuanRun = runAgenticGoldenCase(
     "我住在桃園市桃園區，想確認地方租屋補助",

@@ -31,7 +31,7 @@ export const MISSING_FIELD_QUESTIONS: Record<SupportedMissingField, string> = {
   ownsHome: "本人是否持有住宅？",
   receivesOtherHousingAid: "請問您目前是否領有其他政府住宅補貼？",
   city: "請問您的租屋所在地位於哪個縣市？",
-  monthlyIncome: "請問您的家庭平均月所得約是多少？",
+  monthlyIncome: "請問您家庭成員平均每人每月所得約是多少？（非全戶合計）",
   age: "請問申請人目前的年齡是幾歲？",
   centralRentApproved: "請問您的中央擴大租金補貼是否已核准？",
   newTaipeiResidenceStudyWork: "請問您是否符合在新北市設籍、就學或就業之條件？",
