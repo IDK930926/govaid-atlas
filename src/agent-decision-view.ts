@@ -123,3 +123,30 @@ export function describeAgentDecision(run: AgentRun): AgentDecisionView | null {
     decidedBy: "採用模型提案",
   };
 }
+
+/**
+ * Scope-explicit model usage for the CURRENT case only, derived from its own trace.
+ * The provider/model configured for the deployment is a separate fact (目前可用模型) and a
+ * planner latency may only be shown for this case when this case's model call returned a plan.
+ */
+export type CaseModelUse = {
+  /** e.g. "本案決策：未呼叫模型" */
+  label: string;
+  /** true only when this case received a model plan (so a planner latency belongs to it). */
+  modelPlanned: boolean;
+};
+
+export function describeCaseModelUse(run: AgentRun): CaseModelUse | null {
+  const view = describeAgentDecision(run);
+  if (!view) return null;
+  switch (view.kind) {
+    case "SYSTEM_ONLY":
+      return { label: "本案決策：未呼叫模型（系統規則）", modelPlanned: false };
+    case "MODEL_UNAVAILABLE":
+      return { label: "本案決策：模型未提供提案，改用系統規則", modelPlanned: false };
+    case "MODEL_REJECTED":
+      return { label: "本案決策：已呼叫模型，提案經驗證駁回", modelPlanned: true };
+    default:
+      return { label: "本案決策：已呼叫模型並採用提案", modelPlanned: true };
+  }
+}

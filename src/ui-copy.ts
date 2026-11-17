@@ -184,6 +184,22 @@ export const workflowSteps: {key: string; zh: string; en: string}[] = [
   {key: "decision", zh: "決策護照", en: "Decision"},
 ];
 
+// Childcare has no relocation / scenario comparison: its 4th stage is the eligibility and
+// benefit-amount check. Presentation only — the agent state machine is unchanged.
+export const childcareWorkflowSteps: {key: string; zh: string; en: string}[] = workflowSteps.map((step) =>
+  step.key === "compare" ? {key: "eligibility", zh: "資格與金額", en: "Eligibility"} : step
+);
+
+// Single-address housing navigation (e.g. Taoyuan) has no relocation comparison either.
+export const singleScenarioWorkflowSteps: {key: string; zh: string; en: string}[] = workflowSteps.map((step) =>
+  step.key === "compare" ? {key: "evaluate", zh: "資格評估", en: "Evaluate"} : step
+);
+
+export function workflowStepsFor(domain?: string, hasComparison = true): {key: string; zh: string; en: string}[] {
+  if (domain === "CHILDCARE") return childcareWorkflowSteps;
+  return hasComparison ? workflowSteps : singleScenarioWorkflowSteps;
+}
+
 export const statusCopy: Record<string, BilingualCopy> = {
   ...agentStatusCopy,
   PASS: {zh: "通過", en: "PASS"},
