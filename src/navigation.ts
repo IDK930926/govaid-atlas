@@ -64,12 +64,24 @@ export function estimateRentalSubsidyComparison(
     };
   }
 
-  const statusOf = (policyId: string) =>
-    result.policyResults.find((policy) => policy.policyId === policyId)?.eligibilityStatus;
+  const policyOf = (policyId: string) =>
+    result.policyResults.find((policy) => policy.policyId === policyId);
+  // A program whose answered condition cannot be resolved (e.g. location of an owned home)
+  // is not estimated either: showing an amount would imply the condition is likely met.
+  const isPendingBlocked = (policyId: string) =>
+    Boolean(policyOf(policyId)?.evaluations.some((evaluation) => evaluation.blocksEstimate));
   const options = metadata.options.filter((option) => {
-    const status = statusOf(option.policyId);
-    return status !== "FAIL" && status !== "NOT_COVERED";
+    const status = policyOf(option.policyId)?.eligibilityStatus;
+    return status !== "FAIL" && status !== "NOT_COVERED" && !isPendingBlocked(option.policyId);
   });
+  const hasPendingExclusion = metadata.options.some((option) => isPendingBlocked(option.policyId));
+  if (options.length === 0 && hasPendingExclusion) {
+    return {
+      maxSubsidy: "不提供估算：已涵蓋之補助方案資格未通過，或自有住宅條件仍待確認",
+      outOfPocket: "不適用（無可估算之補助）",
+      note: "資格未通過或條件待確認之方案不列入補助後租金試算。",
+    };
+  }
   if (options.length === 0) {
     return {
       maxSubsidy: "不適用：本情境已涵蓋之補助方案資格皆未通過",
@@ -96,7 +108,9 @@ export function estimateRentalSubsidyComparison(
   const note = city === "臺北市" && registeredCity === "臺北市"
     ? "此估算僅列中央 R1，未估算須依資格核定的北市 R6 加碼。"
     : options.length < metadata.options.length
-      ? "已排除本情境資格未通過之方案。"
+      ? hasPendingExclusion
+        ? "已排除資格未通過或自有住宅條件待確認之方案。"
+        : "已排除本情境資格未通過之方案。"
       : metadata.note;
 
   return {
@@ -277,7 +291,7 @@ const TAIPEI_RENT_REQUIRED_DOCUMENTS: RequiredDocumentItem[] = [
 const NEW_TAIPEI_RENT_REQUIRED_DOCUMENTS: RequiredDocumentItem[] = [
   {
     documentId: "DOC-NEWTAIPEI-FORM",
-    title: "115年度新北市青年租金補貼申請書（線上申請者免附紙本）",
+    title: "116年度新北市青年租金補貼申請書（線上申請者免附紙本）",
     required: true,
     sourceId: "R7",
     verificationStatus: "VERIFIED",
@@ -510,32 +524,34 @@ export function getApplicationGuide(
       };
     }
 
+    // policyId keeps its historical "_115" suffix (stable id used by benchmark cases); the
+    // programme content is the 116年度 edition (新北城住字第1151855676號公告, 115/9/23).
     case "NEW_TAIPEI_RENT_115": {
-      const validFrom = "2025-10-01";
-      const validTo = "2026-12-31";
+      const validFrom = "2026-10-01";
+      const validTo = "2027-12-31";
       const { applicationStatus, validityStatus } = resolveAvailability("OPEN", validFrom, validTo, options);
 
       return {
         policyId: "NEW_TAIPEI_RENT_115",
-        programTitle: "115年度新北市青年租金補貼",
+        programTitle: "116年度新北市青年租金補貼",
         domain: "HOUSING",
         jurisdiction: "新北市",
         administeringAgency: "新北市政府城鄉發展局（住宅發展科）",
         applicationStatus,
-        applicationPeriod: "114年10月1日起至 115年12月31日止（依公告受理期間辦理）",
-        deadlineDate: "2026-12-31",
+        applicationPeriod: "115年10月1日起至 116年12月31日止，或至年度經費用罄為止（新北城住字第1151855676號公告）",
+        deadlineDate: "2027-12-31",
         validityStatus,
         validFrom,
         validTo,
         estimatedMonthlyBenefitNtd: options?.estimatedMonthlyBenefitNtd ?? null,
-        benefitAmountFormula: "依單身、新婚或育有未成年子女家庭類別核發每月租金補貼；實際金額以新北市政府城鄉發展局核定為準",
+        benefitAmountFormula: "每月補貼：單身 3,500 元、新婚 4,500 元、育（孕）有未成年子女 1 人 5,000 元／2 人 6,000 元／3 人以上 7,000 元（116年度公告）；實際金額以新北市政府城鄉發展局核定為準",
         requiredDocuments: NEW_TAIPEI_RENT_REQUIRED_DOCUMENTS,
         applicationMethods: [
           "線上申辦：至「新北市住宅補貼資訊服務網－青年租金補貼」（https://nths.ntpc.gov.tw/FC）線上填寫並上傳應備文件",
           "紙本郵寄申辦：下載紙本申請書填妥後，連同應備文件影本掛號郵寄至「220242 新北市板橋區中山路一段161號1樓 新北市政府城鄉發展局住宅發展科收」（信封註明申請青年租金補貼）",
         ],
         onlineApplicationUrl: "https://nths.ntpc.gov.tw/FC",
-        formUrl: "https://www.shulin.ris.ca.ntpc.gov.tw/Content/Upload/file/20251001/6389492414785848483467433.pdf",
+        formUrl: "https://www.planning.ntpc.gov.tw/uploaddowndoc?file=planningapply/202610010853260.pdf&filedisplay=116%E5%B9%B4%E5%BA%A6%E6%96%B0%E5%8C%97%E5%B8%82%E9%9D%92%E5%B9%B4%E7%A7%9F%E9%87%91%E8%A3%9C%E8%B2%BC%E7%94%B3%E8%AB%8B%E6%9B%B8.pdf&flag=doc",
         officeInformation: "新北市政府城鄉發展局住宅發展科：220242 新北市板橋區中山路一段161號1樓",
         contactInformation: "新北市青年租金補貼諮詢專線：(02) 8979-8800 或新北市境內撥 1999",
         officialSources: sourcesFor(["R7"]),
@@ -549,7 +565,8 @@ export function getApplicationGuide(
           "至新北市住宅補貼資訊服務網（https://nths.ntpc.gov.tw/FC）或以掛號郵寄提出申請",
         ],
         warnings: [
-          "目前已完成部分資格條件檢查，年齡（年滿18歲至未滿40歲）、家庭年所得與財產限額仍以新北市政府城鄉發展局審核為準。",
+          "本系統未檢核：年齡（年滿18歲至未滿40歲）、116年度家庭所得門檻（家庭年收入低於145萬元，且每人每月平均收入低於62,125元）與不動產持有狀況，仍以新北市政府城鄉發展局審核為準。",
+          "受理至116年12月31日或年度經費用罄為止；115年度方案已於115年10月1日停止受理。",
         ],
         disclaimer: OFFICIAL_FINAL_DECISION_DISCLAIMER,
       };

@@ -292,7 +292,10 @@ test("B5 — ownsHome=true: central FAIL stops the path; no submission step, no 
   assert.match(taipeiEstimate.outOfPocket, /不適用/);
   const newTaipeiEstimate = estimateRentalSubsidyComparison(actualResult, "臺北市");
   assert.ok(!newTaipeiEstimate.maxSubsidy.includes("中央 R1"), "failed central R1 must not be used");
-  assert.match(newTaipeiEstimate.outOfPocket, /NT\$10,000/, "only the non-failed R7 option remains (13,500 − 3,500)");
+  // R7 also excludes applicants whose household owns a home in 新北/臺北/桃園/基隆 (official 115
+  // application form, 申請條件 3). Home location is unknown, so R7 is pending and not estimated.
+  assert.ok(!newTaipeiEstimate.maxSubsidy.includes("新北青年 R7"), "pending R7 must not be estimated");
+  assert.match(newTaipeiEstimate.outOfPocket, /不適用/);
 });
 
 test("B5 — a dependency FAIL shows the upstream reason, not a still-pending question (Gate C)", () => {
@@ -352,9 +355,12 @@ test("B6 — supported and generic requests are unchanged (no over-correction)",
   assert.equal(assessQueryCoverage("我想申請租屋補助").status, "COVERED");
   assert.equal(assessQueryCoverage("檢查補助資格").status, "COVERED");
   assert.equal(assessQueryCoverage("我想申請育兒津貼").status, "COVERED");
+  // Gate 2F: national central scheme stays in scope; the city's local scheme does not.
   const taichungRental = assessQueryCoverage("我想申請臺中市租屋補助");
-  assert.equal(taichungRental.status, "NOT_COVERED");
+  assert.equal(taichungRental.status, "COVERED");
+  assert.equal(taichungRental.reason, "CENTRAL_ONLY_LOCAL_NOT_COVERED");
   assert.equal(taichungRental.domain, "RENTAL_SUBSIDY");
+  assert.equal(assessQueryCoverage("我想申請臺中市地方租屋補助").status, "NOT_COVERED");
 });
 
 // ---------------------------------------------------------------- B7 API validation

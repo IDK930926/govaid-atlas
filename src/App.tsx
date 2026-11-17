@@ -5,6 +5,7 @@ import {
   benchmarkCopy,
   getExecutedRuleSummaries,
   getMissingUserFieldLabels,
+  getPendingConditionLabel,
   getPolicyCoverageLimitation,
   getVerifiedRuleLabels,
   resultCopy,
@@ -31,6 +32,7 @@ import {
 
 import {
   createRuntimeMetrics,
+  describeCloudCost,
   measureSync,
   recordProviderRun,
   recordRuntimeCall,
@@ -40,7 +42,9 @@ import {
 } from "./metrics";
 
 import {runBenchmark} from "./benchmark";
+import {describeAgentDecision} from "./agent-decision-view";
 import {finalBenchmark} from "./benchmark-final";
+import {evaluationScopeRows} from "./evaluation-scope";
 import {estimateRentalSubsidyComparison} from "./navigation";
 
 import centralRulesJson from "./policies/central-rent-115.json";
@@ -57,6 +61,13 @@ import type {
 import {evaluateRules} from "./rules";
 import type {ScenarioResult} from "./scenario";
 import type {DecisionPassport} from "./passport";
+import {
+  CHILDCARE_SCOPE_LABEL,
+  displayedPassportPrograms,
+  displayedPassportRisks,
+  displayedPassportScenarios,
+  passportHasWhatIf,
+} from "./scenario-view";
 
 import {
   createAgentRun,
@@ -509,6 +520,9 @@ function App() {
     const freshApplicant = currentDraft.applicant;
     const selectedActualScenario = currentDraft.actualScenario;
     const selectedWhatIfScenario = currentDraft.whatIfScenario;
+    // No explicit relocation / option-B request => the case has no what-if; any mirror
+    // the engine evaluates must never surface as a comparison.
+    const caseHasWhatIf = currentDraft.domain === "HOUSING" && !currentDraft.whatIfMirrorsActual;
 
     inferenceStartedAt.current = performance.now();
     setElapsedSeconds(0);
@@ -632,6 +646,7 @@ function App() {
     const run = runAgenticGoldenCase(goal, freshApplicant, selectedActualScenario, selectedWhatIfScenario, plannerResult, {
       includePassport: true,
       domain: currentDraft.domain,
+      whatIfMirrorsActual: currentDraft.whatIfMirrorsActual,
       ...(currentDraft.requiredFields ? { requiredFields: [...currentDraft.requiredFields] } : {}),
     });
     if (inferenceRecord) {
@@ -653,7 +668,7 @@ function App() {
       getCompletedToolResult<DecisionPassport>(run, "generate_decision_passport") ??
       getCompletedToolResult<DecisionPassport>(run, "generate_childcare_passport");
     if (actual) setActualResult(actual);
-    if (whatIf) setWhatIfResult(whatIf);
+    setWhatIfResult(caseHasWhatIf && whatIf ? whatIf : null);
     if (completedPassport) setPassport(completedPassport);
     // Planner latency is only meaningful when the model actually returned a plan; a fast
     // failure followed by the rule-based fallback must read N/A, not "0.0 s".
@@ -695,9 +710,10 @@ function App() {
     const completedPassport =
       getCompletedToolResult<DecisionPassport>(resumed, "generate_decision_passport") ??
       getCompletedToolResult<DecisionPassport>(resumed, "generate_childcare_passport");
-    if (actual && whatIf && completedPassport) {
+    if (actual && completedPassport) {
       setActualResult(actual);
-      setWhatIfResult(whatIf);
+      // The engine only evaluates a what-if when the case defines a distinct one.
+      setWhatIfResult(draft.domain === "HOUSING" && !draft.whatIfMirrorsActual && whatIf ? whatIf : null);
       setPassport(completedPassport);
     } else if (completedPassport) {
       setPassport(completedPassport);
@@ -935,6 +951,7 @@ function App() {
             )}
             {governanceTab === "AUDIT" && (
               <AuditPanel
+                caseId={agentRun.status === "IDLE" ? undefined : agentRun.caseId}
                 events={displayedAuditTrail}
                 debug={{status: agentRun.status, currentStep: agentRun.currentStep, lastToolCall: agentRun.lastToolCall, providerError, plan: agentRun.plan, decision: agentRun.lastDecision, centralEvaluation, auditTrail: displayedAuditTrail}}
                 running={agentRunning}
@@ -1131,7 +1148,7 @@ function StartView({
                       <span>情境二 · 目標搬遷</span>
                       <select
                         id="scenario-what-if-city"
-                        value={draft.whatIfScenario.city ?? ""}
+                        value={draft.whatIfMirrorsActual ? "" : draft.whatIfScenario.city ?? ""}
                         onChange={(e) => onFieldEdit("whatIfCity", e.target.value)}
                         disabled={running}
                       >
@@ -1433,10 +1450,38 @@ const stepStateText: Record<StepState, string> = {
   BLOCKED: "未完成",
 };
 
+// Proposal → Validation → Next state, from the structured trace only (no model reasoning).
+export function AgentDecisionLine({run, compact = false}: {run: AgentRun; compact?: boolean}) {
+  const view = describeAgentDecision(run);
+  if (!view) return null;
+  const rejected = view.kind === "MODEL_REJECTED";
+  return (
+    <section
+      className={"agent-decision" + (compact ? " is-compact" : "") + " is-" + view.kind.toLowerCase().replace(/_/g, "-")}
+      aria-label="Agent 決策"
+    >
+      <p className="agent-decision-title">
+        Agent 決策 <span lang="en">Decision</span>
+        <span className="agent-decision-by">{view.decidedBy}</span>
+      </p>
+      <ol className="agent-decision-flow">
+        {view.proposal && (
+          <li><span className="ad-label">模型提案 <span lang="en">Proposal</span></span><span className="ad-value">{view.proposal}</span></li>
+        )}
+        <li className={rejected ? "ad-rejected" : view.kind === "MODEL_ACCEPTED" ? "ad-passed" : undefined}>
+          <span className="ad-label">系統驗證 <span lang="en">Validation</span></span><span className="ad-value">{view.validation}</span>
+        </li>
+        <li><span className="ad-label">下一步 <span lang="en">Next</span></span><span className="ad-value">{view.next}</span></li>
+      </ol>
+    </section>
+  );
+}
+
 function JourneyStepper({run, running}: {run: AgentRun; running: boolean}) {
   const steps = buildJourney(run, running);
   return (
-    <nav className="journey dim-when-gated" aria-labelledby="journey-title">
+    <div className="journey">
+    <nav className="dim-when-gated" aria-labelledby="journey-title">
       <div className="col-head">
         <h2 id="journey-title">Agent 執行步驟</h2>
         <span className="en-companion" lang="en">Agent Journey</span>
@@ -1456,6 +1501,8 @@ function JourneyStepper({run, running}: {run: AgentRun; running: boolean}) {
         ))}
       </ol>
     </nav>
+    <AgentDecisionLine run={run}/>
+    </div>
   );
 }
 
@@ -1832,7 +1879,7 @@ function ContextPanel({
 
 const policyLabels: Record<string, {name: string; short: string; detail: string}> = {
   CENTRAL_RENT_115: {name: "中央租屋補助", short: "中央方案", detail: "中央擴大租金補貼（115年度）"},
-  NEW_TAIPEI_RENT_115: {name: "新北地方方案", short: "新北方案", detail: "新北市青年租金補貼（115年度）"},
+  NEW_TAIPEI_RENT_115: {name: "新北地方方案", short: "新北方案", detail: "新北市青年租金補貼（116年度）"},
   TAIPEI_RENT_115: {name: "臺北地方方案", short: "臺北方案", detail: "臺北幸福租－租金加碼補貼（115年度）"},
   TAOYUAN_CENTRAL_RENT_115: {name: "桃園市受理方案", short: "桃園受理", detail: "300億元中央擴大租金補貼（桃園市政府住宅發展處協辦受理）"},
   CHILDCARE_ALLOWANCE_UNDER_2_115: {name: "未滿2歲育兒津貼", short: "育兒津貼", detail: "衛生福利部育有未滿2歲兒童育兒津貼（115年度）"},
@@ -1875,6 +1922,11 @@ function describeGap(evaluations: RuleEvaluation[]): string | null {
   if (failures) {
     return failures;
   }
+  // A safety-relevant unresolved condition (e.g. where an owned home is) outranks missing data.
+  const blocking = evaluations.find((evaluation) => evaluation.status === "UNCERTAIN" && evaluation.blocksEstimate);
+  if (blocking) {
+    return getPendingConditionLabel(blocking);
+  }
   const gap = evaluations.find((evaluation) => evaluation.status === "UNCERTAIN")
     ?? undefined;
   if (!gap) {
@@ -1904,21 +1956,20 @@ function hasTaipeiStudyWithTaoyuanRegistration(passport: DecisionPassport, goal:
     && extractFactsFromGoal(goal, "HOUSING").studyCity === "臺北市";
 }
 
-function buildVerdicts(
+export function buildVerdicts(
   passport: DecisionPassport,
+  hasWhatIf: boolean,
   newTaipeiStudentHint = false,
   dualCityComparison = false,
 ): ProgramVerdict[] {
-  const scenarios = [
-    {
-      label: `${dualCityComparison ? "方案 A" : "目前住址"} · ${shortPlace(passport.actual)}`,
-      data: passport.actual,
-    },
-    {
-      label: `${dualCityComparison ? "方案 B" : "搬遷假設"} · ${shortPlace(passport.whatIf)}`,
-      data: passport.whatIf,
-    },
-  ];
+  const scenarios = displayedPassportScenarios(passport, hasWhatIf).map((scenario) => ({
+    label: passport.domain === "CHILDCARE"
+      ? CHILDCARE_SCOPE_LABEL
+      : scenario.kind === "ACTUAL"
+        ? `${dualCityComparison ? "方案 A" : "目前住址"} · ${shortPlace(scenario.data)}`
+        : `${dualCityComparison ? "方案 B" : "搬遷假設"} · ${shortPlace(scenario.data)}`,
+    data: scenario.data,
+  }));
   const order: string[] = [];
   const byPolicy = new Map<string, {
     label: string;
@@ -2012,7 +2063,12 @@ function ResultView({
   const dualCityComparison = passport.domain !== "CHILDCARE"
     && extractFactsFromGoal(run.goal, "HOUSING").dualCityComparison === true;
   const newTaipeiStudentHint = hasTaipeiStudyWithTaoyuanRegistration(passport, run.goal);
-  const verdicts = buildVerdicts(passport, newTaipeiStudentHint, dualCityComparison);
+  // Housing: a what-if exists only when the run kept one (see analysis start). Childcare
+  // keeps its existing single-scenario display path unchanged.
+  const hasWhatIf = passportHasWhatIf(passport, whatIf !== null);
+  const verdicts = buildVerdicts(passport, hasWhatIf, newTaipeiStudentHint, dualCityComparison);
+  const displayedPrograms = displayedPassportPrograms(passport, hasWhatIf);
+  const displayedRisks = displayedPassportRisks(passport, hasWhatIf);
   const certain = verdicts.filter((verdict) => verdict.status === "PASS" || verdict.status === "FAIL");
   const partial = verdicts.filter((verdict) => verdict.status === "PARTIAL_CHECK");
   const missingFields = verdicts.filter((verdict) => verdict.status === "UNCERTAIN" && verdict.missingFields.length > 0);
@@ -2022,7 +2078,8 @@ function ResultView({
   const toolsAfterResume = run.auditTrail
     .slice(Math.max(resumeIndex, 0))
     .filter((event) => event.action === "AGENT_TOOL_COMPLETED").length;
-  const passportPrograms = [...passport.actual.programs, ...passport.whatIf.programs];
+  // Only the scenarios this case actually displays (a Taoyuan-only case has no Taipei what-if).
+  const passportPrograms = displayedPrograms;
   const passportRuleSummaries = [...new Set(passportPrograms.flatMap((program) =>
     getExecutedRuleSummaries(program.ruleResults).map((summary) => `${policyName(program.policyId)}：${summary}`)
   ))];
@@ -2030,12 +2087,13 @@ function ResultView({
     getMissingUserFieldLabels(program.ruleResults).map((field) => `${policyName(program.policyId)}：${field}`)
   ))];
   const passportOfficialReviews = [...new Map(partial.map((verdict) => [verdict.policyId, verdict])).values()];
-  const evidence = [...passport.actual.programs, ...passport.whatIf.programs]
+  const evidence = displayedPrograms
     .flatMap((program) => program.evidence)
     .filter((item, index, array) => array.findIndex((candidate) => candidate.sourceId === item.sourceId) === index)
     .sort((left, right) => left.sourceId.localeCompare(right.sourceId, "en", {numeric: true}));
   const generatedAt = new Date(passport.generatedAt).toLocaleString("zh-TW", {hour12: false});
-  const guides = passport.applicationGuides ?? [];
+  const guides = (passport.applicationGuides ?? [])
+    .filter((guide) => hasWhatIf || displayedPrograms.some((program) => program.policyId === guide.policyId));
 
   return (
     <div className="result phase-enter">
@@ -2051,6 +2109,7 @@ function ResultView({
               <> · 預估每月津貼 <strong>NT${passport.childcare.estimatedMonthlyBenefitNtd.toLocaleString()}</strong></>
             )}
           </p>
+          <AgentDecisionLine run={run} compact/>
         </header>
 
         <ul className="verdict-band" aria-label="各方案結果">
@@ -2086,7 +2145,7 @@ function ResultView({
                   <li key={verdict.policyId + verdict.scope}>
                     <strong>{policyName(verdict.policyId)}</strong>
                     {verdict.status === "PASS"
-                      ? `：${verdict.scope === "兩個地址皆適用" ? "依目前條件" : verdict.scope}在目前資料下通過條件檢查${
+                      ? `：${verdict.scope === "兩個地址皆適用" || verdict.scope === CHILDCARE_SCOPE_LABEL ? "依目前條件" : verdict.scope}在目前資料下通過條件檢查${
                           passport.childcare?.benefitTierLabel ? `（${passport.childcare.benefitTierLabel}）` : ""
                         }`
                       : `：不符合（${verdict.gap ?? "條件不符"}）。依目前已實作規則判定，不代表官方駁回。`}
@@ -2244,7 +2303,7 @@ function ResultView({
             <h3 id="ps-navigation"><span className="doc-num" aria-hidden="true">03</span>申辦導航（應備文件、受理機關與申請連結）</h3>
             <div className="panel-stack">
               {guides.map((guide) => {
-                const programs = [...passport.actual.programs, ...passport.whatIf.programs]
+                const programs = displayedPrograms
                   .filter((program) => program.policyId === guide.policyId);
                 const verdict = programs.find((program) => program.status === "FAIL")
                   ?? programs.find((program) => program.status === "UNCERTAIN")
@@ -2327,7 +2386,7 @@ function ResultView({
 
         <section className="doc-section" aria-labelledby="ps-risks">
           <h3 id="ps-risks"><span className="doc-num" aria-hidden="true">04</span>風險提醒與排除條件</h3>
-          <ul className="risks">{passport.risks
+          <ul className="risks">{displayedRisks
             .filter((item) => item !== PARTIAL_CHECK_NOTE)
             .map((item) => <li key={item}>{item}</li>)}</ul>
         </section>
@@ -2663,11 +2722,13 @@ function SafetyPanel({
 }
 
 function AuditPanel({
+  caseId,
   events,
   debug,
   running,
   onRunGolden,
 }: {
+  caseId?: string;
   events: AuditEvent[];
   debug: unknown;
   running: boolean;
@@ -2680,6 +2741,9 @@ function AuditPanel({
           <h3 id="audit-title">稽核紀錄 · {events.length}</h3>
           <span className="en-companion" lang="en">Audit Trail</span>
         </div>
+        {caseId && events.length > 0 && (
+          <p className="muted small">案件編號 <code>{caseId}</code>（與決策護照一致）</p>
+        )}
         {events.length === 0 ? (
           <p className="muted">尚無執行紀錄。開始分析後，每一次模型呼叫、工具呼叫與人工確認都會記錄在這裡。</p>
         ) : (
@@ -2737,9 +2801,7 @@ function RuntimePanel({
     : execution.fallbackActive
       ? `true${execution.fallbackReason ? ` (${execution.fallbackReason})` : ""}`
       : "false";
-  const cost = metrics.estimatedCostUsd === null
-    ? null
-    : metrics.estimatedCostUsd === 0 ? "$0" : `$${metrics.estimatedCostUsd.toFixed(2)}`;
+  const cost = describeCloudCost(metrics, known ? providerInfo.model : null);
   return (
     <div className="panel-stack">
       <section className="gov-card" aria-labelledby="runtime-title">
@@ -2801,7 +2863,7 @@ function RuntimePanel({
           <Metric label="LLM Calls" value={metrics.llmCalls}/>
           <Metric label="Input Tokens" value={metrics.inputTokens}/>
           <Metric label="Output Tokens" value={metrics.outputTokens}/>
-          <Metric label="Cloud API Cost" value={cost}/>
+          <Metric label="Cloud API Cost (Estimated)" value={cost}/>
           <Metric label="Provider failovers" value={metrics.fallbackCount}/>
         </div>
         <p className="muted">LLM 負責規劃與工具調度；資格結果一律由規則引擎判斷。</p>
@@ -2846,8 +2908,14 @@ function EvaluationPanel({deterministic}: {deterministic: ReturnType<typeof runB
   const coverage = metrics.find((metric) => metric.key === "evidenceCoverage");
   const sides = [
     {key: "llmContext" as const, title: "LLM + Context", sub: "一般 LLM ＋ 政策文件"},
-    {key: "govaidAtlas" as const, title: "GovAid Atlas", sub: "Agent ＋ 規則引擎 ＋ 人工確認"},
+    {key: "govaidAtlas" as const, title: "GovAid Atlas", sub: "規則引擎評估（不含 LLM 規劃）"},
   ];
+  const scopeRows = evaluationScopeRows({
+    regressionPassed: deterministic.summary.passedCases,
+    regressionTotal: deterministic.summary.totalCases,
+    benchmarkCaseCount: finalBenchmark.caseCount,
+    manualBaseline: finalBenchmark.manualBaseline,
+  });
   return (
     <div className="panel-stack">
       <section className="gov-card" aria-labelledby="eval-title">
@@ -2890,6 +2958,15 @@ function EvaluationPanel({deterministic}: {deterministic: ReturnType<typeof runB
           過度確定率只計算 5 個安全關鍵案例。GovAid Atlas 數據來自規則引擎評估，不含完整 Agent 流程耗時。
           人工基準測試：<strong>{finalBenchmark.manualBaseline === "PENDING" ? "進行中 (Manual Pending)" : finalBenchmark.manualBaseline}</strong>
         </p>
+        <h4 className="runtime-subtitle">各項數據量測範圍 <span lang="en">What each figure measures</span></h4>
+        <dl className="eval-scope">
+          {scopeRows.map((row) => (
+            <div key={row.key} className={"eval-scope-row eval-scope-" + row.status.toLowerCase()}>
+              <dt>{row.label} <small lang="en">{row.en}</small></dt>
+              <dd><strong>{row.value}</strong> <span className="muted small">{row.note}</span></dd>
+            </div>
+          ))}
+        </dl>
       </section>
 
       <details className="gov-card">

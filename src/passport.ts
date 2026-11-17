@@ -36,6 +36,7 @@ import {
 } from "./coverage";
 
 import type { RuleEvaluationOptions } from "./rules";
+import { humanizeRuleReason } from "./ui-copy";
 
 type DecisionStatus = EligibilityStatus;
 
@@ -53,6 +54,9 @@ export type PassportProgram = {
   applicationGuide?: ApplicationGuide;
   coverageNote?: string;
 };
+
+export const WHAT_IF_RISK_NOTE =
+  "WHAT-IF 為假設搬遷情境，不代表目前已取得該地址之補助資格";
 
 export type PassportScenario = {
   type: "ACTUAL" | "WHAT_IF";
@@ -131,8 +135,11 @@ function missingMessage(
     case "TAIPEI-115-CENTRAL-001":
       return "確認中央租金補貼是否已核准";
 
+    case "NEWTAIPEI-115-HOME-001":
+      return "確認自有住宅（含家庭成員持有）是否位於新北市、臺北市、桃園市或基隆市；位於上述縣市即不符合新北青年租金補貼";
+
     default:
-      return evaluation.reason;
+      return humanizeRuleReason(evaluation);
   }
 }
 
@@ -166,13 +173,14 @@ function buildProgram(
         item !== undefined
     );
 
+  // Public passport wording; raw reasons stay in ruleResults for the audit trail.
   const passedConditions = policy.evaluations
     .filter((ev) => ev.status === "PASS")
-    .map((ev) => ev.reason);
+    .map(humanizeRuleReason);
   const failedConditions = [
     ...policy.evaluations
       .filter((ev) => ev.status === "FAIL")
-      .map((ev) => ev.reason),
+      .map(humanizeRuleReason),
     // Upstream dependency FAIL (e.g. local program requiring central approval).
     ...(policy.blockedByPolicyId && policy.coverageNote ? [policy.coverageNote] : []),
   ];
@@ -192,19 +200,23 @@ function buildProgram(
     }) ?? undefined;
 
   // FAIL: keep agency/contact/evidence for reference, but no submission steps.
+  // An answered condition that cannot be resolved (PolicyRule.mismatchStatus) must not show an amount.
+  const estimateBlocked = policy.evaluations.some((evaluation) => evaluation.blocksEstimate);
   const applicationGuide = baseGuide && ineligible
     ? {
         ...baseGuide,
         estimatedMonthlyBenefitNtd: null,
         nextSteps: [stopStep(baseGuide.programTitle, failedConditions)],
       }
-    : baseGuide;
+    : baseGuide && estimateBlocked
+      ? { ...baseGuide, estimatedMonthlyBenefitNtd: null }
+      : baseGuide;
 
   return {
     policyId: policy.policyId,
     programTitle: applicationGuide?.programTitle ?? policy.policyId,
     status,
-    estimatedMonthlyBenefitNtd: ineligible ? null : applicationGuide?.estimatedMonthlyBenefitNtd ?? null,
+    estimatedMonthlyBenefitNtd: ineligible || estimateBlocked ? null : applicationGuide?.estimatedMonthlyBenefitNtd ?? null,
     benefitSummary: applicationGuide?.benefitAmountFormula,
     ruleResults: policy.evaluations,
     passedConditions,
@@ -349,9 +361,7 @@ export function buildDecisionPassport(
     risks.push(PARTIAL_CHECK_NOTE);
   }
 
-  risks.push(
-    "WHAT-IF 為假設搬遷情境，不代表目前已取得該地址之補助資格"
-  );
+  risks.push(WHAT_IF_RISK_NOTE);
 
   const applicationGuides = unique(
     [...actual.programs, ...whatIf.programs]

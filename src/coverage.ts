@@ -266,18 +266,30 @@ export function assessQueryCoverage(goal: string): CoverageAssessment {
   // Check if query explicitly targets an unsupported city for housing / rental subsidy
   const matchedCity = TAIWAN_CITIES.find((c) => normalizedText.includes(c));
   if (housingQuery && matchedCity && !(ALL_COVERED_HOUSING_CITIES as readonly string[]).includes(matchedCity)) {
+    const nlmaReferral = {
+      label: "內政部國土管理署－300億元中央擴大租金補貼線上申請系統",
+      agency: "內政部國土管理署",
+      url: "https://has.nlma.gov.tw/subsidyOnline/",
+    };
+    // Asking only about the city's own scheme: nothing in scope can answer it.
+    if (isLocalOnlyHousingQuery(normalizedText)) {
+      return {
+        status: "NOT_COVERED",
+        domain: "RENTAL_SUBSIDY",
+        reason: "UNSUPPORTED_CITY_HOUSING_POLICY_NOT_IMPLEMENTED",
+        message: `目前版本尚未涵蓋${matchedCity}地方租屋補助或加碼，因此無法作成該縣市地方方案之資格判定。全國適用之中央租金補貼可另行預審。請以主管機關官方公告為準。`,
+        officialReferrals: [nlmaReferral],
+      };
+    }
+    // The 300億元中央擴大租金補貼 (R1) is a national programme accepted by every city/county
+    // government, so its encoded conditions still apply; only the city's local layer is
+    // outside coverage (reported per scenario as LOCAL_COVERAGE_BOUNDARY = NOT_COVERED).
     return {
-      status: "NOT_COVERED",
+      status: "COVERED",
       domain: "RENTAL_SUBSIDY",
-      reason: "UNSUPPORTED_CITY_HOUSING_POLICY_NOT_IMPLEMENTED",
-      message: `目前版本僅涵蓋雙北及桃園市（受理導航）之租金補貼，尚未完整涵蓋${matchedCity}地方租屋補助，因此無法作成該縣市補助之資格判定。請以主管機關官方公告為準。`,
-      officialReferrals: [
-        {
-          label: "內政部國土管理署－300億元中央擴大租金補貼線上申請系統",
-          agency: "內政部國土管理署",
-          url: "https://has.nlma.gov.tw/subsidyOnline/",
-        },
-      ],
+      reason: "CENTRAL_ONLY_LOCAL_NOT_COVERED",
+      message: `可預審全國適用之「300億元中央擴大租金補貼」部分條件；${matchedCity}地方租屋補助或加碼尚未涵蓋，不作成地方方案判定。`,
+      officialReferrals: [nlmaReferral],
     };
   }
 
@@ -341,7 +353,7 @@ export function assessCityCoverage(
   return {
     status: "NOT_COVERED",
     city: normalized,
-    message: `目前版本尚未完整涵蓋${normalized}此類補助，因此無法作成完整資格判定。請以該縣市主管機關官方公告為準。`,
+    message: `目前版本尚未涵蓋${normalized}地方租屋補助或加碼，不作成地方方案判定（全國適用之中央方案另行預審）。請以該縣市主管機關官方公告為準。`,
   };
 }
 

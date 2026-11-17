@@ -142,6 +142,8 @@ export type AgentWorkflowState = {
 export type AgentRun = {
   id: string;
   runId: string;
+  /** Public case identifier shown on the Decision Passport; derived from runId (no personal data). */
+  caseId?: string;
   domain?: BenefitDomain;
   status: AgentStatus;
   goal: string;

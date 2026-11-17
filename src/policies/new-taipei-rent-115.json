@@ -1,24 +1,37 @@
 [
   {
     "ruleId": "NEWTAIPEI-115-LOCAL-001",
-    "program": "115新北市青年租金補貼",
+    "program": "116新北市青年租金補貼",
     "field": "newTaipeiResidenceStudyWork",
     "operator": "equals",
     "expected": true,
     "required": true,
     "sourceId": "R7",
-    "validFrom": "2025-10-01",
-    "validTo": "2026-12-31"
+    "validFrom": "2026-10-01",
+    "validTo": "2027-12-31"
   },
   {
     "ruleId": "NEWTAIPEI-115-AID-001",
-    "program": "115新北市青年租金補貼",
+    "program": "116新北市青年租金補貼",
     "field": "receivesOtherHousingAid",
     "operator": "equals",
     "expected": false,
     "required": true,
     "sourceId": "R7",
-    "validFrom": "2025-10-01",
-    "validTo": "2026-12-31"
+    "validFrom": "2026-10-01",
+    "validTo": "2027-12-31"
+  },
+  {
+    "ruleId": "NEWTAIPEI-115-HOME-001",
+    "program": "116新北市青年租金補貼",
+    "field": "ownsHome",
+    "operator": "equals",
+    "expected": false,
+    "required": true,
+    "sourceId": "R7",
+    "validFrom": "2026-10-01",
+    "validTo": "2027-12-31",
+    "mismatchStatus": "UNCERTAIN",
+    "mismatchReason": "自有住宅所在縣市（新北青年租金補貼R7限申請人及家庭成員於新北市、臺北市、桃園市及基隆市均無自有住宅）"
   }
 ]

@@ -846,6 +846,10 @@ function outsideVerifiedCoverage() {
     officialReferrals: GENERAL_WELFARE_REFERRALS
   };
 }
+function isLocalOnlyHousingQuery(goal) {
+  const text = goal.toLowerCase();
+  return text.includes("\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9") || text.includes("\u5730\u65B9\u52A0\u78BC");
+}
 function detectBenefitDomain(goal) {
   const text = goal.toLowerCase();
   if (CHILDCARE_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
@@ -917,18 +921,26 @@ function assessQueryCoverage(goal) {
   }
   const matchedCity = TAIWAN_CITIES.find((c) => normalizedText.includes(c));
   if (housingQuery && matchedCity && !ALL_COVERED_HOUSING_CITIES.includes(matchedCity)) {
+    const nlmaReferral = {
+      label: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72\uFF0D300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7CFB\u7D71",
+      agency: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72",
+      url: "https://has.nlma.gov.tw/subsidyOnline/"
+    };
+    if (isLocalOnlyHousingQuery(normalizedText)) {
+      return {
+        status: "NOT_COVERED",
+        domain: "RENTAL_SUBSIDY",
+        reason: "UNSUPPORTED_CITY_HOUSING_POLICY_NOT_IMPLEMENTED",
+        message: `\u76EE\u524D\u7248\u672C\u5C1A\u672A\u6DB5\u84CB${matchedCity}\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9\u6216\u52A0\u78BC\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u7E23\u5E02\u5730\u65B9\u65B9\u6848\u4E4B\u8CC7\u683C\u5224\u5B9A\u3002\u5168\u570B\u9069\u7528\u4E4B\u4E2D\u592E\u79DF\u91D1\u88DC\u8CBC\u53EF\u53E6\u884C\u9810\u5BE9\u3002\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002`,
+        officialReferrals: [nlmaReferral]
+      };
+    }
     return {
-      status: "NOT_COVERED",
+      status: "COVERED",
       domain: "RENTAL_SUBSIDY",
-      reason: "UNSUPPORTED_CITY_HOUSING_POLICY_NOT_IMPLEMENTED",
-      message: `\u76EE\u524D\u7248\u672C\u50C5\u6DB5\u84CB\u96D9\u5317\u53CA\u6843\u5712\u5E02\uFF08\u53D7\u7406\u5C0E\u822A\uFF09\u4E4B\u79DF\u91D1\u88DC\u8CBC\uFF0C\u5C1A\u672A\u5B8C\u6574\u6DB5\u84CB${matchedCity}\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9\uFF0C\u56E0\u6B64\u7121\u6CD5\u4F5C\u6210\u8A72\u7E23\u5E02\u88DC\u52A9\u4E4B\u8CC7\u683C\u5224\u5B9A\u3002\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002`,
-      officialReferrals: [
-        {
-          label: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72\uFF0D300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\u7DDA\u4E0A\u7533\u8ACB\u7CFB\u7D71",
-          agency: "\u5167\u653F\u90E8\u570B\u571F\u7BA1\u7406\u7F72",
-          url: "https://has.nlma.gov.tw/subsidyOnline/"
-        }
-      ]
+      reason: "CENTRAL_ONLY_LOCAL_NOT_COVERED",
+      message: `\u53EF\u9810\u5BE9\u5168\u570B\u9069\u7528\u4E4B\u300C300\u5104\u5143\u4E2D\u592E\u64F4\u5927\u79DF\u91D1\u88DC\u8CBC\u300D\u90E8\u5206\u689D\u4EF6\uFF1B${matchedCity}\u5730\u65B9\u79DF\u5C4B\u88DC\u52A9\u6216\u52A0\u78BC\u5C1A\u672A\u6DB5\u84CB\uFF0C\u4E0D\u4F5C\u6210\u5730\u65B9\u65B9\u6848\u5224\u5B9A\u3002`,
+      officialReferrals: [nlmaReferral]
     };
   }
   if (UNSUPPORTED_GENERAL_KEYWORDS.some((keyword) => text.includes(keyword.toLowerCase()))) {
@@ -1081,6 +1093,125 @@ var init_navigation = __esm({
   }
 });
 
+// src/ui-copy.ts
+var agentStatusCopy, statusCopy, currentStepCopy, auditCopy;
+var init_ui_copy = __esm({
+  "src/ui-copy.ts"() {
+    "use strict";
+    agentStatusCopy = {
+      IDLE: { zh: "\u5F85\u547D", en: "Idle" },
+      PLANNING: { zh: "\u898F\u5283\u4E2D", en: "Planning" },
+      RUNNING_TOOL: { zh: "\u57F7\u884C\u5DE5\u5177", en: "Running tool" },
+      WAITING_FOR_HUMAN: { zh: "\u7B49\u5F85\u4EBA\u5DE5\u78BA\u8A8D", en: "Waiting for human" },
+      RESUMING: { zh: "\u7E7C\u7E8C\u57F7\u884C", en: "Resuming" },
+      COMPLETED: { zh: "\u5DF2\u5B8C\u6210", en: "Completed" },
+      FAILED: { zh: "\u57F7\u884C\u5931\u6557", en: "Failed" },
+      ABORTED: { zh: "\u5DF2\u5B89\u5168\u4E2D\u6B62", en: "Aborted" },
+      HUMAN_REVIEW_REQUIRED: { zh: "\u9700\u8981\u4EBA\u5DE5\u5BE9\u67E5", en: "Human review required" },
+      NOT_COVERED: { zh: "\u5C1A\u672A\u6DB5\u84CB", en: "Not covered" }
+    };
+    statusCopy = {
+      ...agentStatusCopy,
+      PASS: { zh: "\u901A\u904E", en: "PASS" },
+      FAIL: { zh: "\u4E0D\u901A\u904E", en: "FAIL" },
+      UNCERTAIN: { zh: "\u5F85\u78BA\u8A8D", en: "UNCERTAIN" },
+      PARTIAL_CHECK: { zh: "\u5DF2\u5B8C\u6210\u7CFB\u7D71\u53EF\u9A57\u8B49\u9805\u76EE", en: "PARTIAL_CHECK" },
+      NOT_COVERED: { zh: "\u5C1A\u672A\u6DB5\u84CB", en: "NOT_COVERED" },
+      PENDING: { zh: "\u7B49\u5F85\u4E2D", en: "PENDING" },
+      ACTIVE: { zh: "\u57F7\u884C\u4E2D", en: "ACTIVE" },
+      DONE: { zh: "\u5B8C\u6210", en: "DONE" },
+      BLOCKED: { zh: "\u53D7\u963B", en: "BLOCKED" },
+      AVAILABLE: { zh: "\u53EF\u7528", en: "AVAILABLE" },
+      UNAVAILABLE: { zh: "\u7121\u6CD5\u4F7F\u7528", en: "UNAVAILABLE" },
+      UNKNOWN: { zh: "\u6AA2\u67E5\u4E2D", en: "CHECKING" },
+      CLEAR: { zh: "\u7121\u885D\u7A81", en: "Clear" },
+      CONFLICT: { zh: "\u767C\u73FE\u885D\u7A81", en: "Conflict" },
+      CONTINUE: { zh: "\u7E7C\u7E8C\u57F7\u884C", en: "Continue" },
+      ALLOWED: { zh: "\u5141\u8A31\u5B58\u53D6", en: "Allowed" },
+      ACCESS_DENIED: { zh: "\u62D2\u7D55\u5B58\u53D6", en: "Access denied" }
+    };
+    currentStepCopy = {
+      IDLE: {
+        title: { zh: "\u6E96\u5099\u958B\u59CB", en: "Ready to begin" },
+        description: { zh: "\u8F38\u5165\u7533\u8ACB\u76EE\u6A19\uFF0C\u958B\u59CB\u898F\u5283\u88DC\u52A9\u5C0E\u822A\u3002", en: "Enter a goal to start your benefit navigation." }
+      },
+      PLANNING: {
+        title: agentStatusCopy.PLANNING,
+        description: { zh: "Agent \u6B63\u5728\u7406\u89E3\u76EE\u6A19\u4E26\u898F\u5283\u5DE5\u5177\u57F7\u884C\u9806\u5E8F\u3002", en: "The agent is understanding the goal and planning tool execution." }
+      },
+      RUNNING_TOOL: {
+        title: agentStatusCopy.RUNNING_TOOL,
+        description: { zh: "\u4F9D\u898F\u5247\u5F15\u64CE\u8207\u5B98\u65B9\u8B49\u64DA\u6AA2\u67E5\u5FC5\u8981\u689D\u4EF6\u3002", en: "Checking required conditions against rules and official evidence." }
+      },
+      WAITING_FOR_HUMAN: {
+        title: { zh: "\u9700\u8981\u4EBA\u5DE5\u78BA\u8A8D", en: "Human confirmation required" },
+        description: { zh: "\u5FC5\u8981\u689D\u4EF6\u5C1A\u672A\u78BA\u8A8D\uFF0CAgent \u5DF2\u66AB\u505C\u63A8\u8AD6\u3002", en: "A required condition is still unknown, so the agent has paused." }
+      },
+      RESUMING: {
+        title: agentStatusCopy.RESUMING,
+        description: { zh: "\u5DF2\u6536\u5230\u4EBA\u5DE5\u78BA\u8A8D\uFF0C\u91CD\u65B0\u57F7\u884C\u898F\u5247\u6AA2\u67E5\u3002", en: "Human input received; running the rules again." }
+      },
+      COMPLETED: {
+        title: { zh: "\u6C7A\u7B56\u8B77\u7167\u5DF2\u7522\u51FA", en: "Decision passport ready" },
+        description: { zh: "\u60C5\u5883\u6BD4\u8F03\u8207\u653F\u7B56\u4F9D\u64DA\u5DF2\u6574\u7406\uFF0C\u672A\u78BA\u8A8D\u689D\u4EF6\u4ECD\u4FDD\u7559\u5F85\u78BA\u8A8D\u72C0\u614B\u3002", en: "Scenarios and evidence are ready; unknown conditions remain uncertain." }
+      },
+      FAILED: {
+        title: agentStatusCopy.FAILED,
+        description: { zh: "\u672C\u6B21\u57F7\u884C\u672A\u80FD\u5B8C\u6210\uFF0C\u8ACB\u6AA2\u67E5\u9664\u932F\u8CC7\u8A0A\u5F8C\u91CD\u8A66\u3002", en: "This run could not finish. Check debug details before retrying." }
+      },
+      ABORTED: {
+        title: agentStatusCopy.ABORTED,
+        description: { zh: "\u5DF2\u9054\u5B89\u5168\u6B65\u6578\u4E0A\u9650\u4E26\u4E2D\u6B62\u57F7\u884C\u3002", en: "Execution aborted safely after reaching the step limit." }
+      },
+      HUMAN_REVIEW_REQUIRED: {
+        title: agentStatusCopy.HUMAN_REVIEW_REQUIRED,
+        description: { zh: "\u653F\u7B56\u8CC7\u6599\u9700\u8981\u4EBA\u5DE5\u67E5\u6838\uFF0CAgent \u5DF2\u505C\u6B62\u78BA\u5B9A\u5F0F\u5224\u65B7\u3002", en: "Policy information needs human review; definitive judgment has paused." }
+      },
+      NOT_COVERED: {
+        title: { zh: "\u76EE\u524D\u7248\u672C\u5C1A\u672A\u6DB5\u84CB\u6B64\u985E\u88DC\u52A9", en: "Not covered in current version" },
+        description: { zh: "\u7CFB\u7D71\u5C1A\u672A\u5167\u5EFA\u6B64\u9805\u88DC\u52A9\u4E4B\u5B8C\u6574\u898F\u5247\uFF0C\u7121\u6CD5\u4F5C\u6210\u8CC7\u683C\u5224\u5B9A\uFF1B\u8ACB\u4EE5\u4E3B\u7BA1\u6A5F\u95DC\u5B98\u65B9\u516C\u544A\u70BA\u6E96\u3002", en: "This policy is not yet encoded in the current version; please refer to official announcements." }
+      }
+    };
+    auditCopy = {
+      CASE_CREATED: { zh: "\u5EFA\u7ACB\u6848\u4EF6", en: "Case created" },
+      INITIAL_EVALUATION: { zh: "\u521D\u6B65\u898F\u5247\u6AA2\u67E5", en: "Initial evaluation" },
+      HUMAN_CONFIRMATION_REQUIRED: { zh: "\u8981\u6C42\u4EBA\u5DE5\u78BA\u8A8D", en: "Human confirmation required" },
+      FIELD_CONFIRMED: { zh: "\u5DF2\u78BA\u8A8D\u8CC7\u6599", en: "Field confirmed" },
+      ROLE_CHANGED: { zh: "\u5207\u63DB\u89D2\u8272", en: "Role changed" },
+      ACCESS_DENIED: statusCopy.ACCESS_DENIED,
+      MASKED_PROFILE_ACCESSED: { zh: "\u5B58\u53D6\u906E\u7F69\u8CC7\u6599", en: "Masked profile accessed" },
+      SENSITIVE_PROFILE_ACCESSED: { zh: "\u5B58\u53D6\u500B\u4EBA\u8CC7\u6599", en: "Profile accessed" },
+      ACTUAL_SCENARIO_EVALUATED: { zh: "\u5BE6\u969B\u60C5\u5883\u8A55\u4F30\u5B8C\u6210", en: "Actual scenario evaluated" },
+      WHAT_IF_SCENARIO_EVALUATED: { zh: "\u5047\u8A2D\u60C5\u5883\u8A55\u4F30\u5B8C\u6210", en: "What-if scenario evaluated" },
+      DECISION_PASSPORT_GENERATED: { zh: "\u7522\u51FA\u6C7A\u7B56\u8B77\u7167", en: "Passport generated" },
+      POLICY_CONFLICT_CHECK: { zh: "\u653F\u7B56\u885D\u7A81\u6AA2\u67E5", en: "Policy conflict check" },
+      HUMAN_REVIEW_REQUIRED: statusCopy.HUMAN_REVIEW_REQUIRED,
+      AGENT_RUN_STARTED: { zh: "\u4EE3\u7406\u555F\u52D5", en: "Agent started" },
+      AGENT_PLAN_CREATED: { zh: "\u5EFA\u7ACB\u57F7\u884C\u8A08\u756B", en: "Plan created" },
+      AGENT_LLM_CALL_COMPLETED: { zh: "\u6A21\u578B\u63A8\u8AD6\u5B8C\u6210", en: "Model call completed" },
+      AGENT_LLM_CALL_FAILED: { zh: "\u6A21\u578B\u63A8\u8AD6\u5931\u6557", en: "Model call failed" },
+      AGENT_TOOL_REQUESTED: { zh: "\u547C\u53EB\u5DE5\u5177", en: "Tool requested" },
+      AGENT_TOOL_COMPLETED: { zh: "\u5DE5\u5177\u57F7\u884C\u5B8C\u6210", en: "Tool completed" },
+      AGENT_WAITING_FOR_HUMAN: { zh: "\u7B49\u5F85\u4EBA\u5DE5\u78BA\u8A8D", en: "Waiting for human" },
+      AGENT_RESUMED: { zh: "\u6062\u5FA9\u4EE3\u7406\u57F7\u884C", en: "Agent resumed" },
+      AGENT_COMPLETED: { zh: "\u4EE3\u7406\u57F7\u884C\u5B8C\u6210", en: "Agent completed" },
+      AGENT_NOT_COVERED: { zh: "\u8D85\u51FA\u76EE\u524D\u6DB5\u84CB\u7BC4\u570D", en: "Outside coverage boundary" },
+      AGENT_PROPOSAL_REJECTED: { zh: "\u62D2\u7D55\u4E0D\u5B89\u5168\u898F\u5283\u63D0\u6848", en: "Proposal rejected" },
+      // No proposal existed in these two cases, so they must never read as "rejected".
+      AGENT_PLANNER_TIMEOUT_FALLBACK: { zh: "\u898F\u5283\u5668\u903E\u6642 \u2014 \u555F\u7528\u78BA\u5B9A\u6027\u5099\u63F4\u6D41\u7A0B", en: "Planner timeout \u2014 deterministic fallback activated" },
+      AGENT_PLANNER_UNAVAILABLE_FALLBACK: { zh: "\u898F\u5283\u5668\u7121\u6CD5\u4F7F\u7528 \u2014 \u555F\u7528\u78BA\u5B9A\u6027\u5099\u63F4\u6D41\u7A0B", en: "Planner unavailable \u2014 deterministic fallback activated" },
+      DETERMINISTIC_WORKFLOW_COMPLETED: { zh: "\u78BA\u5B9A\u6027\u6D41\u7A0B\u5B8C\u6210", en: "Deterministic workflow completed" },
+      AGENT_PROVIDER_SELECTED: { zh: "\u9078\u5B9A\u6A21\u578B\u4F9B\u61C9\u8005", en: "Provider selected" },
+      AGENT_PROVIDER_CALL_STARTED: { zh: "\u958B\u59CB\u547C\u53EB\u6A21\u578B", en: "Provider call started" },
+      AGENT_PROVIDER_CALL_COMPLETED: { zh: "\u6A21\u578B\u56DE\u50B3\u898F\u5283\u63D0\u6848", en: "Provider returned a proposal" },
+      AGENT_PROVIDER_CALL_FAILED: { zh: "\u6A21\u578B\u547C\u53EB\u5931\u6557", en: "Provider call failed" },
+      AGENT_PROVIDER_FALLBACK: { zh: "\u5207\u63DB\u81F3\u4E0B\u4E00\u500B\u6A21\u578B\u4F9B\u61C9\u8005", en: "Falling back to next provider" },
+      AGENT_PROVIDER_UNAVAILABLE: { zh: "\u6240\u6709\u6A21\u578B\u7686\u7121\u6CD5\u4F7F\u7528", en: "All providers unavailable" },
+      AGENT_HUMAN_INPUT_INVALID: { zh: "\u4EBA\u5DE5\u8F38\u5165\u683C\u5F0F\u7121\u6548", en: "Invalid human input" }
+    };
+  }
+});
+
 // src/passport.ts
 var init_passport = __esm({
   "src/passport.ts"() {
@@ -1089,6 +1220,7 @@ var init_passport = __esm({
     init_navigation();
     init_status();
     init_coverage();
+    init_ui_copy();
   }
 });
 

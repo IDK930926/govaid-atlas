@@ -176,20 +176,23 @@ test("REFERRAL-01 — Unsupported childcare query returns NOT_COVERED with offic
   assert.ok(Array.isArray(run.coverage?.officialReferrals) && run.coverage!.officialReferrals.length > 0);
 });
 
-test("REFERRAL-02 — Unsupported city housing query returns NOT_COVERED with official housing referral", () => {
+test("REFERRAL-02 — Uncovered-city housing query: national central scheme in scope, local scheme NOT_COVERED, NLMA referral kept", () => {
+  // Gate 2F: R1 (300億元中央擴大租金補貼) is national, so only the city's local layer is out of scope.
   const goal = "我想申請臺中市租屋補助";
   const coverage = assessQueryCoverage(goal);
 
-  assert.equal(coverage.status, "NOT_COVERED");
+  assert.equal(coverage.status, "COVERED");
+  assert.equal(coverage.reason, "CENTRAL_ONLY_LOCAL_NOT_COVERED");
   assert.equal(coverage.domain, "RENTAL_SUBSIDY");
-  assert.ok(Array.isArray(coverage.officialReferrals) && coverage.officialReferrals.length > 0);
+  assert.match(coverage.message, /臺中市地方租屋補助或加碼尚未涵蓋/);
   const nlmaReferral = coverage.officialReferrals.find((r) => r.agency?.includes("國土管理署"));
   assert.ok(nlmaReferral, "Must refer to NLMA central rental subsidy online system");
   assert.ok(nlmaReferral.url?.includes("has.nlma.gov.tw"), "Must link to official NLMA portal");
 
-  const run = runAgenticGoldenCase(goal, { age: 28 }, dummyScenario, dummyWhatIf);
-  assert.equal(run.status, "NOT_COVERED");
-  assert.ok(run.coverage?.officialReferrals.some((r) => r.agency?.includes("國土管理署")));
+  // Asking only about the city's own scheme is still entirely outside coverage.
+  const localOnly = runAgenticGoldenCase("我想申請臺中市地方租屋補助", { age: 28 }, dummyScenario, dummyWhatIf);
+  assert.equal(localOnly.status, "NOT_COVERED");
+  assert.ok(localOnly.coverage?.officialReferrals.some((r) => r.agency?.includes("國土管理署")));
 });
 
 test("REFERRAL-03 — Supported childcare Under-2 Allowance routes normally and does NOT show NOT_COVERED", () => {

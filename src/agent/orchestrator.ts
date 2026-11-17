@@ -76,7 +76,33 @@ export type AgentLoopOptions = {
   ruleOptions?: RuleEvaluationOptionsWithScope;
   requiredFields?: SupportedMissingField[];
   plannerProposals?: Array<ProviderPlannerResult | Record<string, unknown> | null | undefined>;
+  /** Inject a run id (tests / replay); otherwise a fresh one is generated per analysis. */
+  runId?: string;
+  /** The case defines no relocation / option B; the what-if object only mirrors the actual address. */
+  whatIfMirrorsActual?: boolean;
 };
+
+/**
+ * A what-if is a real second scenario only when the user defined one that differs from the
+ * actual address (city, district or rent). Otherwise the engine must not evaluate it as a
+ * comparison: the passport's what-if slot simply mirrors the actual result.
+ */
+export function hasDistinctWhatIf(
+  actual: AddressScenario,
+  whatIf: AddressScenario,
+  whatIfMirrorsActual?: boolean
+): boolean {
+  if (whatIfMirrorsActual) return false;
+  return (
+    (actual.city ?? "") !== (whatIf.city ?? "") ||
+    (actual.district ?? "") !== (whatIf.district ?? "") ||
+    actual.monthlyRent !== whatIf.monthlyRent
+  );
+}
+
+function mirrorAsWhatIf(actual: ScenarioResult): ScenarioResult {
+  return { ...actual, scenario: { ...actual.scenario, type: "WHAT_IF" } };
+}
 
 type InternalExecutionState = {
   domain: BenefitDomain;
@@ -88,6 +114,10 @@ type InternalExecutionState = {
   completedTools: AgentToolName[];
   executedAtSignature: Set<string>;
   includePassport: boolean;
+  /** Public case id of the run (Decision Passport and audit trail agree on it). */
+  caseId: string;
+  /** False when the what-if only mirrors the actual address (see hasDistinctWhatIf). */
+  distinctWhatIf: boolean;
   ruleOptions?: RuleEvaluationOptionsWithScope;
   conflictStatus?: "CLEAR" | "CONFLICT";
   centralEvaluations?: RuleEvaluation[];
@@ -134,12 +164,26 @@ export function buildSafePlan(goal: string, domain: BenefitDomain = detectBenefi
   ].map((step, index) => `${index + 1}. ${step} — ${goal}`);
 }
 
-export function createAgentRun(goal: string, maxSteps = MAX_AGENT_STEPS): AgentRun {
-  const id = `agent-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
+/**
+ * Public case id for a run. Deterministic in the runId (so tests can inject one), unique per
+ * analysis because every new analysis creates a new run, and free of personal data.
+ */
+export function caseIdForRun(runId: string): string {
+  return `GA-${runId.replace(/^agent-/, "").toUpperCase()}`;
+}
+
+function caseIdOf(run: AgentRun): string {
+  return run.caseId ?? caseIdForRun(run.runId ?? run.id);
+}
+
+export function createAgentRun(goal: string, maxSteps = MAX_AGENT_STEPS, runId?: string): AgentRun {
+  const id = runId ?? `agent-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
   const domain = detectBenefitDomain(goal);
+  const caseId = caseIdForRun(id);
   return {
     id,
     runId: id,
+    caseId,
     domain,
     status: "IDLE",
     goal,
@@ -153,7 +197,7 @@ export function createAgentRun(goal: string, maxSteps = MAX_AGENT_STEPS): AgentR
         timestamp: new Date().toISOString(),
         actor: "SYSTEM",
         action: "AGENT_RUN_STARTED",
-        input: { goal, domain },
+        input: { goal, domain, caseId },
       },
     ],
     trace: [],
@@ -246,6 +290,9 @@ export function validatePlannerProposal(
     centralStatus?: EligibilityStatus;
     childcareStatus?: EligibilityStatus;
     overallEligibilityStatus?: EligibilityStatus | "HUMAN_REVIEW_REQUIRED";
+    conflictStatus?: "CLEAR" | "CONFLICT";
+    /** Omitted by callers that predate the flag: treated as a distinct what-if. */
+    distinctWhatIf?: boolean;
   }
 ): ProposalValidationResult {
   if (!rawProposal || typeof rawProposal !== "object") {
@@ -287,6 +334,18 @@ export function validatePlannerProposal(
   }
 
   const domain: BenefitDomain = state.domain ?? "HOUSING";
+
+  // The policy-conflict review path is entered only from deterministic state (a validated
+  // detect_policy_conflict result). A model proposal alone cannot manufacture a conflict;
+  // rejecting it lets the deterministic selector route by actual state (Human Gate or next tool).
+  if (nextAction === "HUMAN_REVIEW_REQUIRED" && state.conflictStatus !== "CONFLICT") {
+    return {
+      valid: false,
+      validationStage: "STATE_TRANSITION_VALIDATION",
+      proposalRejected: true,
+      rejectionReason: "HUMAN_REVIEW_WITHOUT_VALIDATED_CONFLICT",
+    };
+  }
 
   if (nextAction === "CALL_TOOL") {
     if (typeof candidate.toolName !== "string" || !candidate.toolName.trim()) {
@@ -367,6 +426,15 @@ export function validatePlannerProposal(
 
   const toolName = nextAction === "CALL_TOOL" ? (candidate.toolName as AgentToolName) : undefined;
   const sig = computeStateSignature(state.applicant, state.actualScenario, state.whatIfScenario);
+
+  if (toolName === "evaluate_what_if_scenario" && state.distinctWhatIf === false) {
+    return {
+      valid: false,
+      validationStage: "STATE_TRANSITION_VALIDATION",
+      proposalRejected: true,
+      rejectionReason: "NO_DISTINCT_WHAT_IF_SCENARIO",
+    };
+  }
 
   if (toolName && state.executedAtSignature.has(`${sig}:${toolName}`)) {
     return {
@@ -454,7 +522,7 @@ export function validatePlannerProposal(
     if (
       toolName === "generate_decision_passport" &&
       (!state.completedTools.includes("evaluate_actual_scenario") ||
-        !state.completedTools.includes("evaluate_what_if_scenario"))
+        (state.distinctWhatIf !== false && !state.completedTools.includes("evaluate_what_if_scenario")))
     ) {
       return {
         valid: false,
@@ -768,7 +836,7 @@ function selectDeterministicToolDecision(state: InternalExecutionState): AgentDe
     };
   }
 
-  if (!state.completedTools.includes("evaluate_what_if_scenario")) {
+  if (state.distinctWhatIf && !state.completedTools.includes("evaluate_what_if_scenario")) {
     return {
       reasoningSummary: "Evaluate WHAT-IF address scenario.",
       nextAction: "CALL_TOOL",
@@ -886,14 +954,18 @@ function buildToolArguments(
     case "generate_decision_passport":
       return {
         args: {
-          caseId: "CASE-P0-001",
+          caseId: state.caseId,
           profile: state.applicant,
           actual: state.actualScenarioResult,
-          whatIf: state.whatIfScenarioResult,
+          // No distinct what-if: the passport's second slot mirrors the actual result
+          // (hidden by the result view) instead of a second evaluation.
+          whatIf: state.distinctWhatIf || !state.actualScenarioResult
+            ? state.whatIfScenarioResult
+            : mirrorAsWhatIf(state.actualScenarioResult),
           options: state.ruleOptions,
         },
         safeSummary: {
-          caseId: "CASE-P0-001",
+          caseId: state.caseId,
           actualCity: state.actualScenario.city ?? null,
           whatIfCity: state.whatIfScenario.city ?? null,
         },
@@ -902,13 +974,13 @@ function buildToolArguments(
     case "generate_childcare_passport":
       return {
         args: {
-          caseId: "CASE-CHILDCARE-001",
+          caseId: state.caseId,
           profile: state.applicant,
           childcareResult: state.childcareResult,
           options: state.ruleOptions,
         },
         safeSummary: {
-          caseId: "CASE-CHILDCARE-001",
+          caseId: state.caseId,
           domain: "CHILDCARE",
         },
         auditVersion: "CHILDCARE-PASSPORT",
@@ -1520,7 +1592,7 @@ export function runAgenticGoldenCase(
   options?: AgentLoopOptions
 ): AgentRun {
   const maxSteps = options?.maxSteps ?? MAX_AGENT_STEPS;
-  let run = createAgentRun(goal, maxSteps);
+  let run = createAgentRun(goal, maxSteps, options?.runId);
   const coverage = assessQueryCoverage(goal);
   const domain: BenefitDomain =
     options?.domain ?? (coverage.domain === "CHILDCARE" ? "CHILDCARE" : "HOUSING");
@@ -1624,11 +1696,23 @@ export function runAgenticGoldenCase(
     completedTools: [],
     executedAtSignature: new Set<string>(),
     includePassport: options?.includePassport ?? false,
+    caseId: caseIdOf(run),
+    distinctWhatIf: domain === "HOUSING" && hasDistinctWhatIf(actualScenario, whatIfScenario, options?.whatIfMirrorsActual),
     ruleOptions: {
       ...options?.ruleOptions,
       ...(isLocalOnlyHousingQuery(goal) ? { localOnly: true } : {}),
     },
   };
+  if (domain === "HOUSING" && !state.distinctWhatIf) {
+    run = appendAuditTrail(
+      run,
+      "WHAT_IF_NOT_DISTINCT",
+      { actualCity: actualScenario.city ?? null },
+      { evaluated: false, reason: "No distinct relocation / option-B scenario was defined." },
+      "AGENTIC-PLAN",
+      "SYSTEM"
+    );
+  }
 
   const proposals: Array<ProviderPlannerResult | Record<string, unknown> | null | undefined> =
     options?.plannerProposals ?? (plannerResult ? [plannerResult] : []);
@@ -1984,7 +2068,7 @@ export function resumeAgentRun(
     );
 
     const passportResult = callTool("generate_childcare_passport", {
-      caseId: "CASE-CHILDCARE-001",
+      caseId: caseIdOf(nextRun),
       profile: applicant,
       childcareResult: childcareEval,
       options: options?.ruleOptions,
@@ -2043,7 +2127,7 @@ export function resumeAgentRun(
       plannerProposal: { nextAction: "COMPLETE" },
       plannerReasoningSummary: nextRun.lastDecision.reasoningSummary,
       selectedTool: "generate_childcare_passport",
-      toolArgumentsSafeSummary: { caseId: "CASE-CHILDCARE-001" },
+      toolArgumentsSafeSummary: { caseId: caseIdOf(nextRun) },
       validationResult: "VALID",
       proposalRejected: false,
       rejectionReason: null,
@@ -2139,34 +2223,56 @@ export function resumeAgentRun(
     "ACTUAL-SCENARIO"
   );
 
-  const whatIfResult = callTool("evaluate_what_if_scenario", {
-    profile: applicant,
-    scenario: whatIfScenario,
-    options: options?.ruleOptions,
-  });
-  nextRun.lastToolCall = "evaluate_what_if_scenario";
-  nextRun = appendAuditTrail(
-    nextRun,
-    "AGENT_TOOL_REQUESTED",
-    { toolName: "evaluate_what_if_scenario" },
-    undefined,
-    "WHAT-IF-SCENARIO",
-    "AGENT"
-  );
-  nextRun = appendAuditTrail(
-    nextRun,
-    "AGENT_TOOL_COMPLETED",
-    { toolName: "evaluate_what_if_scenario" },
-    whatIfResult,
-    "WHAT-IF-SCENARIO"
-  );
+  const distinctWhatIf = hasDistinctWhatIf(actualScenario, whatIfScenario, options?.whatIfMirrorsActual);
+  let whatIfResult: ToolExecutionResult;
+  if (distinctWhatIf) {
+    whatIfResult = callTool("evaluate_what_if_scenario", {
+      profile: applicant,
+      scenario: whatIfScenario,
+      options: options?.ruleOptions,
+    });
+    nextRun.lastToolCall = "evaluate_what_if_scenario";
+    nextRun = appendAuditTrail(
+      nextRun,
+      "AGENT_TOOL_REQUESTED",
+      { toolName: "evaluate_what_if_scenario" },
+      undefined,
+      "WHAT-IF-SCENARIO",
+      "AGENT"
+    );
+    nextRun = appendAuditTrail(
+      nextRun,
+      "AGENT_TOOL_COMPLETED",
+      { toolName: "evaluate_what_if_scenario" },
+      whatIfResult,
+      "WHAT-IF-SCENARIO"
+    );
+  } else {
+    // No relocation / option B was defined: nothing to compare, so no second evaluation runs.
+    whatIfResult = {
+      ...actualResult,
+      toolName: "evaluate_what_if_scenario",
+      summary: "No distinct what-if scenario; not evaluated (mirrors the actual address).",
+      result: mirrorAsWhatIf(actualResult.result as ScenarioResult),
+    };
+    nextRun = appendAuditTrail(
+      nextRun,
+      "WHAT_IF_NOT_DISTINCT",
+      { actualCity: actualScenario.city ?? null },
+      { evaluated: false, reason: "No distinct relocation / option-B scenario was defined." },
+      "WHAT-IF-SCENARIO",
+      "SYSTEM"
+    );
+  }
 
   const evidenceResult = callTool("get_policy_evidence", {
     evaluations: [
       ...((actualResult.result as { policyResults?: Array<{ evaluations?: unknown[] }> } | undefined)?.policyResults ?? [])
         .flatMap((policy) => policy.evaluations ?? []),
-      ...((whatIfResult.result as { policyResults?: Array<{ evaluations?: unknown[] }> } | undefined)?.policyResults ?? [])
-        .flatMap((policy) => policy.evaluations ?? []),
+      ...(distinctWhatIf
+        ? ((whatIfResult.result as { policyResults?: Array<{ evaluations?: unknown[] }> } | undefined)?.policyResults ?? [])
+            .flatMap((policy) => policy.evaluations ?? [])
+        : []),
     ],
   });
   nextRun.lastToolCall = "get_policy_evidence";
@@ -2187,7 +2293,7 @@ export function resumeAgentRun(
   );
 
   const passportResult = callTool("generate_decision_passport", {
-    caseId: "CASE-P0-001",
+    caseId: caseIdOf(nextRun),
     profile: applicant,
     actual: actualResult.result,
     whatIf: whatIfResult.result,
@@ -2253,7 +2359,7 @@ export function resumeAgentRun(
     plannerProposal: { nextAction: "COMPLETE" },
     plannerReasoningSummary: nextRun.lastDecision.reasoningSummary,
     selectedTool: "generate_decision_passport",
-    toolArgumentsSafeSummary: { caseId: "CASE-P0-001" },
+    toolArgumentsSafeSummary: { caseId: caseIdOf(nextRun) },
     validationResult: "VALID",
     proposalRejected: false,
     rejectionReason: null,
@@ -2284,7 +2390,7 @@ export function runBoundedAgentLoop(
   options?: AgentLoopOptions
 ): AgentRun {
   const maxSteps = options?.maxSteps ?? MAX_AGENT_STEPS;
-  let run = createAgentRun(goal, maxSteps);
+  let run = createAgentRun(goal, maxSteps, options?.runId);
   const domain = options?.domain ?? detectBenefitDomain(goal);
   const requiredFields = deriveRequiredFields(applicant, actualScenario, options?.requiredFields, domain);
   const completedTools: AgentToolName[] = [];

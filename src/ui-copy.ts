@@ -34,6 +34,7 @@ const ruleResultLabels: Record<string, string> = {
   "TAOYUAN-115-INCOME-001": "桃園市家庭平均月所得門檻",
   "NEWTAIPEI-115-LOCAL-001": "新北市設籍／就學／就業條件",
   "NEWTAIPEI-115-AID-001": "其他住宅補助條件",
+  "NEWTAIPEI-115-HOME-001": "新北／臺北／桃園／基隆無自有住宅條件",
   "TAIPEI-115-REGISTERED-001": "臺北市設籍條件",
   "TAIPEI-115-CENTRAL-001": "中央租金補貼核定條件",
   "CHILDCARE-115-AGE-001": "兒童未滿 24 個月",
@@ -77,21 +78,55 @@ export function getExecutedRuleSummaries(evaluations: readonly RuleEvaluation[])
     .filter((summary): summary is string => summary !== undefined))];
 }
 
+/**
+ * Public wording for one rule result (Decision Passport text). The raw RuleEvaluation keeps its
+ * technical reason for the audit trail; users never see field identifiers such as "ownsHome".
+ */
+export function humanizeRuleReason(evaluation: RuleEvaluation): string {
+  const reason = evaluation.reason;
+  if (evaluation.status === "FAIL" && reason.includes("不符合規則")) {
+    return failReasonCopy[evaluation.ruleId] ?? `${ruleResultLabels[evaluation.ruleId] ?? "已編碼條件"}：不符合`;
+  }
+  if (evaluation.status === "PASS" && reason.includes("通過規則")) {
+    return `${ruleResultLabels[evaluation.ruleId] ?? "已編碼條件"}：通過`;
+  }
+  const missing = reason.match(/缺少必要資料：([A-Za-z][A-Za-z0-9]*)$/)?.[1];
+  if (missing) {
+    return `尚未提供：${applicantFieldLabels[missing] ?? "必要資料"}`;
+  }
+  return reason;
+}
+
+// An answered condition the profile cannot resolve (it blocks any estimate). Shown before
+// ordinary missing data because it decides whether the program can apply at all.
+const pendingConditionLabels: Record<string, string> = {
+  "NEWTAIPEI-115-HOME-001": "自有住宅（含家庭成員）是否位於新北／臺北／桃園／基隆",
+};
+
+export function getPendingConditionLabel(evaluation: RuleEvaluation): string {
+  return pendingConditionLabels[evaluation.ruleId] ?? evaluation.reason;
+}
+
 export function getMissingUserFieldLabels(evaluations: readonly RuleEvaluation[]): string[] {
-  return [...new Set(evaluations
-    .filter((evaluation) => evaluation.status === "UNCERTAIN")
+  const uncertain = evaluations.filter((evaluation) => evaluation.status === "UNCERTAIN");
+  const pending = uncertain
+    .filter((evaluation) => evaluation.blocksEstimate)
+    .map(getPendingConditionLabel);
+  const missing = uncertain
+    .filter((evaluation) => !evaluation.blocksEstimate)
     .map((evaluation) => {
       const field = evaluation.reason.match(/缺少必要資料：([A-Za-z][A-Za-z0-9]*)$/)?.[1];
       return field ? applicantFieldLabels[field] ?? field : undefined;
     })
-    .filter((label): label is string => label !== undefined))];
+    .filter((label): label is string => label !== undefined);
+  return [...new Set([...pending, ...missing])];
 }
 
 export const policyCoverageLimitations: Record<string, string> = {
   CENTRAL_RENT_115:
     "目前僅預審無自有住宅及未重複領取住宅補助等已編碼條件；其他法定資格仍由主管機關依正式申請資料核定。",
   NEW_TAIPEI_RENT_115:
-    "目前僅預審新北市設籍／就學／就業及未重複領取住宅補助等已編碼條件；完整資格仍由主管機關核定。",
+    "目前僅預審新北市設籍／就學／就業、新北／臺北／桃園／基隆無自有住宅及未重複領取住宅補助等已編碼條件；年齡與 116 年度家庭所得門檻未由本系統檢核，完整資格仍由主管機關核定。",
   TAIPEI_RENT_115:
     "目前僅預審臺北市設籍及中央租金補貼核定條件；完整資格仍由主管機關核定。",
   TAOYUAN_CENTRAL_RENT_115:
