@@ -2091,6 +2091,13 @@ var init_ui_copy = __esm({
   }
 });
 
+// src/guidance.ts
+var init_guidance = __esm({
+  "src/guidance.ts"() {
+    "use strict";
+  }
+});
+
 // src/passport.ts
 var init_passport = __esm({
   "src/passport.ts"() {
@@ -2100,6 +2107,8 @@ var init_passport = __esm({
     init_status();
     init_coverage();
     init_ui_copy();
+    init_guidance();
+    init_guidance();
   }
 });
 

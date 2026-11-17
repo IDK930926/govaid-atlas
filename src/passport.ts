@@ -37,6 +37,13 @@ import {
 
 import type { RuleEvaluationOptions } from "./rules";
 import { humanizeRuleReason } from "./ui-copy";
+import {
+  applyVerdictToGuide,
+  guidanceModeFor,
+  officialReferenceStep,
+  passportGuidanceNote,
+  stopStep,
+} from "./guidance";
 
 type DecisionStatus = EligibilityStatus;
 
@@ -91,6 +98,9 @@ export type DecisionPassport = {
 
   nextSteps: string[];
 
+  /** One conditional notice shown above nextSteps (UNCERTAIN / PARTIAL_CHECK); absent otherwise. */
+  guidanceNote?: string;
+
   disclaimer: string;
 };
 
@@ -143,12 +153,7 @@ function missingMessage(
   }
 }
 
-export function stopStep(programTitle: string, failedConditions: string[]): string {
-  const reason = failedConditions.length
-    ? failedConditions.map((condition) => condition.replace(/。$/, "")).join("；")
-    : "已編碼條件未通過";
-  return `「${programTitle}」流程已停止：${reason}。本情境不建議送件申請此方案；如對判定有疑義，請洽受理機關確認。`;
-}
+export { stopStep } from "./guidance";
 
 function buildProgram(
   policy: PolicyResult,
@@ -199,18 +204,17 @@ function buildProgram(
       missingItems: missingConditions,
     }) ?? undefined;
 
-  // FAIL: keep agency/contact/evidence for reference, but no submission steps.
+  // Verdict-aware guide (src/guidance.ts): FAIL keeps agency/contact/evidence for reference but no
+  // submission steps or amount; UNCERTAIN/PARTIAL_CHECK get one passport-level guidanceNote.
   // An answered condition that cannot be resolved (PolicyRule.mismatchStatus) must not show an amount.
   const estimateBlocked = policy.evaluations.some((evaluation) => evaluation.blocksEstimate);
-  const applicationGuide = baseGuide && ineligible
-    ? {
-        ...baseGuide,
-        estimatedMonthlyBenefitNtd: null,
-        nextSteps: [stopStep(baseGuide.programTitle, failedConditions)],
-      }
-    : baseGuide && estimateBlocked
-      ? { ...baseGuide, estimatedMonthlyBenefitNtd: null }
-      : baseGuide;
+  const applicationGuide = baseGuide
+    ? applyVerdictToGuide(baseGuide, {
+        status,
+        failedConditions,
+        estimateBlocked,
+      })
+    : undefined;
 
   return {
     policyId: policy.policyId,
@@ -406,15 +410,19 @@ export function buildDecisionPassport(
   );
   risks.push(...upstreamNotes);
 
+  const genericSubmissionSteps = [
+    "確認所有使用者自述資料與租賃契約書載明事項",
+    "依各方案應備文件清單備妥租約影本、存摺封面及戶籍／就學就業證明",
+    "送件前再次查核受理機關最新官方公告版本",
+  ];
+
   const nextSteps = unique(
     pursuablePrograms.length > 0
       ? [
           ...stopSteps,
           ...missingItems,
           ...guideActionSteps,
-          "確認所有使用者自述資料與租賃契約書載明事項",
-          "依各方案應備文件清單備妥租約影本、存摺封面及戶籍／就學就業證明",
-          "送件前再次查核受理機關最新官方公告版本",
+          ...genericSubmissionSteps,
         ]
       : [
           ...stopSteps,
@@ -446,6 +454,8 @@ export function buildDecisionPassport(
 
     nextSteps,
 
+    guidanceNote: passportGuidanceNote(pursuablePrograms.map((program) => program.status)),
+
     disclaimer: OFFICIAL_FINAL_DECISION_DISCLAIMER,
   };
 }
@@ -455,18 +465,26 @@ export function buildChildcareDecisionPassport(
   applicant: ApplicantProfile,
   childcareResult: ChildcareEvaluationResult
 ): DecisionPassport {
-  const guide = childcareResult.applicationGuide;
+  const status = childcareResult.eligibilityStatus;
+  const ineligible = guidanceModeFor(status) === "STOPPED";
+  // Same verdict-aware contract as the housing passport (src/guidance.ts).
+  const guide = applyVerdictToGuide(childcareResult.applicationGuide, {
+    status,
+    failedConditions: childcareResult.failedConditions,
+  });
   const program: PassportProgram = {
     policyId: childcareResult.policyId,
     programTitle: childcareResult.programTitle,
-    status: childcareResult.eligibilityStatus,
-    estimatedMonthlyBenefitNtd: childcareResult.estimatedMonthlyBenefitNtd,
-    benefitSummary:
-      childcareResult.benefitTierLabel ?? guide.benefitAmountFormula,
+    status,
+    estimatedMonthlyBenefitNtd: ineligible ? null : childcareResult.estimatedMonthlyBenefitNtd,
+    benefitSummary: ineligible
+      ? undefined
+      : childcareResult.benefitTierLabel ?? guide.benefitAmountFormula,
     ruleResults: childcareResult.evaluations,
     passedConditions: childcareResult.passedConditions,
     failedConditions: childcareResult.failedConditions,
-    missingConditions: childcareResult.missingConditions,
+    // A failed program has nothing left to fill in.
+    missingConditions: ineligible ? [] : childcareResult.missingConditions,
     evidence: childcareResult.evidence,
     applicationGuide: guide,
   };
@@ -478,22 +496,24 @@ export function buildChildcareDecisionPassport(
       : "全國適用（依兒童戶籍地公所受理）",
     city: applicant.childRegisteredCity ?? applicant.registeredCity,
     monthlyRent: 0,
-    overallStatus: childcareResult.eligibilityStatus,
+    overallStatus: status,
     programs: [program],
   };
 
   const risks: string[] = [...guide.warnings];
-  if (childcareResult.eligibilityStatus === "UNCERTAIN") {
+  if (status === "UNCERTAIN") {
     risks.unshift("仍有育兒津貼必要條件尚未確認，請先補充缺漏欄位後再確認預審結果");
   }
   if (childcareResult.exclusionReasons.length > 0) {
     risks.unshift(...childcareResult.exclusionReasons);
   }
 
-  const nextSteps = unique([
-    ...childcareResult.missingConditions,
-    ...guide.nextSteps,
-  ]);
+  const missingItems = ineligible ? [] : [...childcareResult.missingConditions];
+  const nextSteps = unique(
+    ineligible
+      ? [...guide.nextSteps, officialReferenceStep(guide)]
+      : [...missingItems, ...guide.nextSteps]
+  );
 
   return {
     caseId,
@@ -509,9 +529,10 @@ export function buildChildcareDecisionPassport(
     },
     childcare: childcareResult,
     applicationGuides: [guide],
-    missingItems: [...childcareResult.missingConditions],
+    missingItems,
     risks: unique(risks),
     nextSteps,
+    guidanceNote: passportGuidanceNote(ineligible ? [] : [status]),
     disclaimer: childcareResult.disclaimer,
   };
 }
