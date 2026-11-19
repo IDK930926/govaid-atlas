@@ -395,6 +395,35 @@ a {
   color: var(--ink-2);
 }
 
+/* Mid-width desktops (1241–1599 px, e.g. 1280 / 1366 / 1440): the five steps plus the
+   Human Gate phase pill need more width than the bar has, so compress spacing — never
+   hide steps. `safe center` keeps an overflowing list from spilling under the brand. */
+@media (min-width: 1241px) and (max-width: 1599px) {
+  .topbar-inner {
+    gap: var(--s3);
+  }
+
+  .progress ol {
+    justify-content: safe center;
+    gap: 0;
+  }
+
+  .progress-step {
+    gap: 5px;
+    padding: var(--s1) 6px var(--s1) 3px;
+  }
+
+  .progress-step + .progress-step::before {
+    width: 8px;
+    margin: 0 4px 0 -4px;
+  }
+
+  .progress-num {
+    width: 20px;
+    height: 20px;
+  }
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;
@@ -415,6 +444,13 @@ a {
   font-size: var(--fs-caption);
   font-weight: 700;
   white-space: nowrap;
+}
+
+@media (min-width: 1241px) and (max-width: 1599px) {
+  .phase-pill {
+    margin-right: var(--s1);
+    padding: 0 10px;
+  }
 }
 
 .model-status-pill {
@@ -2121,10 +2157,23 @@ a {
   border-top: 0;
 }
 
+/* Index column holds only the numbered heading; every other child (notices, lists,
+   guide stacks) uses the wide content column. */
+.doc-section > h3 {
+  grid-column: 1;
+  align-self: start;
+}
+
+.doc-section > :not(h3) {
+  grid-column: 2;
+  min-width: 0;
+}
+
 .doc-section h3 {
   display: flex;
   align-items: baseline;
-  flex-wrap: wrap;
+  align-content: flex-start;
+  flex-wrap: nowrap;            /* number and title stay on one line; the title wraps beside it */
   min-width: 0;
   gap: 0 var(--s2);
   font-size: var(--fs-h3);
@@ -2138,6 +2187,7 @@ a {
 }
 
 .doc-num {
+  flex: none;
   width: 26px;
   font-family: var(--mono);
   font-size: var(--fs-caption);
@@ -2881,6 +2931,10 @@ a {
   .doc-section {
     grid-template-columns: 1fr;
     gap: var(--s3);
+  }
+
+  .doc-section > :not(h3) {
+    grid-column: 1;
   }
 }
 
