@@ -395,6 +395,35 @@ a {
   color: var(--ink-2);
 }
 
+/* Desktop (≥1241 px; 1920 is zoomed to a 1600 canvas): the five steps plus the
+   Human Gate phase pill need more width than the bar has, so compress spacing — never
+   hide steps. `safe center` keeps an overflowing list from spilling under the brand. */
+@media (min-width: 1241px) {
+  .topbar-inner {
+    gap: var(--s3);
+  }
+
+  .progress ol {
+    justify-content: safe center;
+    gap: 0;
+  }
+
+  .progress-step {
+    gap: 5px;
+    padding: var(--s1) 6px var(--s1) 3px;
+  }
+
+  .progress-step + .progress-step::before {
+    width: 8px;
+    margin: 0 4px 0 -4px;
+  }
+
+  .progress-num {
+    width: 20px;
+    height: 20px;
+  }
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;
@@ -415,6 +444,13 @@ a {
   font-size: var(--fs-caption);
   font-weight: 700;
   white-space: nowrap;
+}
+
+@media (min-width: 1241px) {
+  .phase-pill {
+    margin-right: var(--s1);
+    padding: 0 10px;
+  }
 }
 
 .model-status-pill {
@@ -1075,22 +1111,150 @@ a {
   color: var(--pass);
 }
 
-.ad-rejected .ad-value {
-  color: var(--warn);
+/* Validation status chip: text + glyph, never colour alone. Proposal rejection is an
+   Agent-control event, not a policy FAIL — so a dark neutral frame with red only on the ×. */
+.ad-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  margin: 2px 0;
+  font-size: var(--fs-small);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: var(--ink);
 }
 
-/* Result header: one horizontal line of three parts. */
+.ad-status-glyph {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.ad-rejected .ad-status-glyph {
+  border: 1.5px solid var(--fail);
+  color: var(--fail);
+  font-weight: 800;
+}
+
+.ad-passed .ad-status-glyph {
+  border: 1px solid var(--line-strong);
+  color: var(--pass);
+  font-size: 12px;
+}
+
+.ad-passed .ad-status {
+  font-weight: 700;
+  color: var(--ink-2);
+}
+
+.ad-caption {
+  font-size: var(--fs-micro);
+  font-weight: 600;
+  color: var(--brand);
+}
+
+.agent-decision.is-model-rejected .ad-proposal .ad-value {
+  color: var(--muted);
+  font-weight: 500;
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+  text-decoration-color: var(--line-strong);
+}
+
+.ad-rejected .ad-value {
+  color: var(--ink-2);
+}
+
+/* Result header: Proposal → Validation → Next state as a three-stage band. */
 .agent-decision.is-compact {
-  margin-top: var(--s3);
-  max-width: 880px;
+  margin-top: var(--s4);
+  padding: var(--s4);
+  border-left-width: 1px;
+  font-size: var(--fs-small);
 }
 
 .agent-decision.is-compact .agent-decision-flow {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 36px;
 }
 
-.agent-decision.is-compact .agent-decision-flow li + li {
+.agent-decision.is-compact .ad-step {
   position: relative;
+  align-content: start;
+  gap: var(--s1);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+
+.agent-decision.is-compact .ad-step + .ad-step::before {
+  content: "→";
+  position: absolute;
+  left: -28px;
+  top: 50%;
+  width: 20px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.agent-decision.is-compact .ad-label {
+  font-size: var(--fs-micro);
+  letter-spacing: 0.04em;
+}
+
+.agent-decision.is-compact .ad-value {
+  font-size: var(--fs-small);
+}
+
+/* Rejected: the validation stage is the focal point. */
+.agent-decision.is-compact .ad-rejected {
+  border: 2px solid var(--ink);
+  background: var(--surface);
+}
+
+.agent-decision.is-compact .ad-rejected .ad-status {
+  font-size: 18px;
+}
+
+.agent-decision.is-compact .ad-rejected .ad-status-glyph {
+  width: 24px;
+  height: 24px;
+  font-size: 17px;
+}
+
+/* Next state uses the brand teal: the system-selected safe path. */
+.agent-decision.is-compact .ad-next {
+  border-color: var(--brand-line);
+  border-left: 3px solid var(--brand);
+  background: var(--brand-soft);
+}
+
+.agent-decision.is-compact .ad-next .ad-value {
+  color: var(--brand-strong);
+}
+
+@media (max-width: 760px) {
+  .agent-decision.is-compact .agent-decision-flow {
+    grid-auto-flow: row;
+    gap: 28px;
+  }
+
+  .agent-decision.is-compact .ad-step + .ad-step::before {
+    content: "↓";
+    left: 50%;
+    top: -24px;
+    transform: translateX(-50%);
+  }
 }
 
 /* Supportive stepper: a thin rail, no boxes. */
@@ -2121,10 +2285,23 @@ a {
   border-top: 0;
 }
 
+/* Index column holds only the numbered heading; every other child (notices, lists,
+   guide stacks) uses the wide content column. */
+.doc-section > h3 {
+  grid-column: 1;
+  align-self: start;
+}
+
+.doc-section > :not(h3) {
+  grid-column: 2;
+  min-width: 0;
+}
+
 .doc-section h3 {
   display: flex;
   align-items: baseline;
-  flex-wrap: wrap;
+  align-content: flex-start;
+  flex-wrap: nowrap;            /* number and title stay on one line; the title wraps beside it */
   min-width: 0;
   gap: 0 var(--s2);
   font-size: var(--fs-h3);
@@ -2138,6 +2315,7 @@ a {
 }
 
 .doc-num {
+  flex: none;
   width: 26px;
   font-family: var(--mono);
   font-size: var(--fs-caption);
@@ -2487,6 +2665,143 @@ a {
 
 .kv dd a {
   overflow-wrap: anywhere;
+}
+
+/* Application guides: collapsed rows by default; expanded detail reads as label → content rows
+   instead of narrow tiles. */
+.gov-card {
+  gap: 0;
+  padding: 0;
+}
+
+.gov-card > summary.card-head {
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  list-style: none;
+}
+
+.gov-card > summary.card-head::-webkit-details-marker {
+  display: none;
+}
+
+.gov-card > summary.card-head h4 {
+  flex: 1;
+  font-size: var(--fs-body);
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.gov-card > summary.card-head::after {
+  content: "展開 ▾" / "";
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--brand);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.gov-card[open] > summary.card-head::after {
+  content: "收合 ▴" / "";
+}
+
+.gov-card > summary.card-head:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+  border-radius: var(--radius-lg);
+}
+
+.gov-card[open] > summary.card-head {
+  border-bottom: 1px solid var(--line);
+}
+
+.gov-card > :not(summary) {
+  margin-left: var(--s5);
+  margin-right: var(--s5);
+}
+
+.gov-card > :not(summary) + :not(summary) {
+  margin-top: var(--s3);
+}
+
+.gov-card > summary + * {
+  margin-top: var(--s4);
+}
+
+.gov-card > :last-child:not(summary) {
+  margin-bottom: var(--s5);
+}
+
+.gov-card .kv {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.gov-card .kv > div {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: var(--s4);
+  padding: 10px var(--s4);
+  border-radius: 0;
+  background: var(--surface);
+}
+
+.gov-card .kv > div + div {
+  border-top: 1px solid var(--line);
+}
+
+.gov-card .kv dt {
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  background: none;
+}
+
+.gov-card .kv dd {
+  min-width: 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+/* Decision Passport §02: remaining existing steps behind 查看全部. */
+.steps-group {
+  display: grid;
+  gap: var(--s2);
+}
+
+.steps-more > summary {
+  display: inline-flex;
+  margin-left: 32px;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--brand);
+  cursor: pointer;
+}
+
+.steps-more > summary:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.steps-more[open] > summary {
+  margin-bottom: var(--s2);
+}
+
+.steps-more .when-open,
+.steps-more[open] .when-closed {
+  display: none;
+}
+
+.steps-more[open] .when-open {
+  display: inline;
 }
 
 .kv-row {
@@ -2882,6 +3197,10 @@ a {
     grid-template-columns: 1fr;
     gap: var(--s3);
   }
+
+  .doc-section > :not(h3) {
+    grid-column: 1;
+  }
 }
 
 @media (max-width: 760px) {
@@ -3214,6 +3533,30 @@ a {
     min-width: 0;
   }
 
+  .gov-card > summary.card-head {
+    align-items: flex-start;
+    gap: var(--s2);
+    padding: var(--s3) var(--s4);
+  }
+
+  .gov-card > summary.card-head .guide-summary-status {
+    justify-items: start;
+  }
+
+  .gov-card > summary.card-head .guide-fail-reason {
+    text-align: left;
+  }
+
+  .gov-card > :not(summary) {
+    margin-left: var(--s4);
+    margin-right: var(--s4);
+  }
+
+  .gov-card .kv > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+
   .doc-head h2 {
     font-size: 24px;
   }
@@ -3293,3 +3636,165 @@ a {
 .scope-notice-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.4rem; }
 .scope-notice-list li { display: flex; flex-direction: column; gap: 0.15rem; }
 .scope-notice-list a { overflow-wrap: anywhere; }
+
+/* ---------- Actual vs What-if: location nodes + out-of-pocket emphasis ---------- */
+
+/* Location headers read as two nodes: ACTUAL solid, WHAT-IF dashed. */
+.ct-head .ct-col {
+  margin: var(--s2) 0;
+  padding: var(--s3) var(--s4);
+  border: 1.5px solid var(--brand);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.ct-head .ct-col-whatif {
+  border-style: dashed;
+  border-color: var(--ink-2);
+}
+
+.ct-head > .ct-col {
+  margin-left: var(--s3);
+  margin-right: var(--s3);
+}
+
+.ct-head > * + * {
+  border-left: 0;
+}
+
+.ct-head .ct-col-whatif::before {
+  left: -29px;
+}
+
+.ct-delta {
+  white-space: nowrap;
+}
+
+/* 預估實質自付 sits right under rent and is the headline figure. */
+.ct-row-oop {
+  background: var(--brand-soft);
+}
+
+.ct-row-oop > .ct-label {
+  color: var(--brand-strong);
+}
+
+.ct-oop-cell .ct-oop {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 預估最高補助: verbatim explanation folded under 估算依據. */
+.ct-basis > summary {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--brand);
+  cursor: pointer;
+}
+
+.ct-basis > summary:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.ct-basis[open] > summary {
+  margin-bottom: var(--s1);
+}
+
+.ct-basis > strong {
+  display: block;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+@media (max-width: 1024px) {
+  .ct-oop-cell .ct-oop {
+    font-size: 24px;
+  }
+}
+
+/* Mobile: ACTUAL ↓ WHAT-IF stacked, each value tagged with its scenario. */
+@media (max-width: 760px) {
+  .ct-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ct-row > * + * {
+    border-left: 0;
+  }
+
+  .ct-row > .ct-label {
+    padding: var(--s2) var(--s3);
+    background: var(--surface-2);
+    font-size: var(--fs-caption);
+    white-space: normal;
+  }
+
+  .ct-row-oop > .ct-label {
+    background: transparent;
+  }
+
+  .ct-row > .ct-cell {
+    padding: var(--s2) var(--s3) var(--s3);
+  }
+
+  .ct-row > .ct-cell + .ct-cell {
+    border-top: 1px dashed var(--line);
+  }
+
+  .ct-row:not(.ct-head) > .ct-cell::before {
+    display: block;
+    width: 100%;
+    margin-bottom: 2px;
+    font-size: var(--fs-micro);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+
+  .ct-row:not(.ct-head) > .ct-cell:nth-child(2)::before { content: "目前住址 · ACTUAL"; }
+  .ct-row:not(.ct-head) > .ct-cell:nth-child(3)::before { content: "搬遷假設 · WHAT-IF"; }
+  .is-dual-city .ct-row:not(.ct-head) > .ct-cell:nth-child(2)::before { content: "方案 A"; }
+  .is-dual-city .ct-row:not(.ct-head) > .ct-cell:nth-child(3)::before { content: "方案 B"; }
+
+  .ct-head > .ct-label {
+    display: none;
+  }
+
+  .ct-head {
+    padding: var(--s1) 0 var(--s2);
+  }
+
+  .ct-head > .ct-col {
+    margin: var(--s2) var(--s3) 0;
+    padding: var(--s3);
+  }
+
+  .ct-head > .ct-col + .ct-col {
+    margin-top: 26px;
+    border-top-width: 1.5px;
+  }
+
+  .ct-head .ct-col-whatif::before {
+    content: "↓";
+    display: grid;
+    left: 50%;
+    top: -22px;
+    width: auto;
+    height: auto;
+    transform: translateX(-50%);
+    border: 0;
+    background: none;
+    font-size: 16px;
+  }
+
+  .ct-oop-cell .ct-oop {
+    font-size: 22px;
+  }
+}

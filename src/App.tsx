@@ -1460,6 +1460,7 @@ export function AgentDecisionLine({run, compact = false}: {run: AgentRun; compac
   const view = describeAgentDecision(run);
   if (!view) return null;
   const rejected = view.kind === "MODEL_REJECTED";
+  const accepted = view.kind === "MODEL_ACCEPTED";
   return (
     <section
       className={"agent-decision" + (compact ? " is-compact" : "") + " is-" + view.kind.toLowerCase().replace(/_/g, "-")}
@@ -1471,12 +1472,24 @@ export function AgentDecisionLine({run, compact = false}: {run: AgentRun; compac
       </p>
       <ol className="agent-decision-flow">
         {view.proposal && (
-          <li><span className="ad-label">模型提案 <span lang="en">Proposal</span></span><span className="ad-value">{view.proposal}</span></li>
+          <li className="ad-step ad-proposal"><span className="ad-label">模型提案 <span lang="en">Proposal</span></span><span className="ad-value">{view.proposal}</span></li>
         )}
-        <li className={rejected ? "ad-rejected" : view.kind === "MODEL_ACCEPTED" ? "ad-passed" : undefined}>
-          <span className="ad-label">系統驗證 <span lang="en">Validation</span></span><span className="ad-value">{view.validation}</span>
+        <li className={"ad-step ad-validation" + (rejected ? " ad-rejected" : accepted ? " ad-passed" : "")}>
+          <span className="ad-label">系統驗證 <span lang="en">Validation</span></span>
+          {/* Visual status only (from the decision kind); the validation text below is unchanged. */}
+          {(rejected || accepted) && (
+            <span className="ad-status">
+              <span className="ad-status-glyph" aria-hidden="true">{rejected ? "×" : "✓"}</span>
+              <span lang="en">{rejected ? "REJECTED" : "VALIDATED"}</span> · {rejected ? "駁回" : "通過"}
+            </span>
+          )}
+          <span className="ad-value">{view.validation}</span>
         </li>
-        <li><span className="ad-label">下一步 <span lang="en">Next</span></span><span className="ad-value">{view.next}</span></li>
+        <li className="ad-step ad-next">
+          <span className="ad-label">下一步 <span lang="en">Next</span></span>
+          {!accepted && <span className="ad-caption" lang="en">System-selected safe next state</span>}
+          <span className="ad-value">{view.next}</span>
+        </li>
       </ol>
     </section>
   );
@@ -2168,6 +2181,25 @@ function ResultView({
           </p>
         )}
 
+        {/* 2 — Actual vs What-if (Housing only), directly under the verdict band */}
+        {actual && whatIf && passport.domain !== "CHILDCARE" && (
+          <section className="compare" aria-labelledby="compare-title">
+            <div className="section-head">
+              <h2 id="compare-title">{dualCityComparison ? "候選租屋比較" : "目前住址 vs 搬遷假設"}</h2>
+              <span className="en-companion" lang="en">
+                {dualCityComparison ? "OPTION A VS OPTION B" : "ACTUAL VS WHAT-IF"}
+              </span>
+            </div>
+            <CompareTable
+              actual={actual}
+              whatIf={whatIf}
+              dualCityComparison={dualCityComparison}
+              registeredCity={passport.applicantSnapshot.registeredCity}
+              newTaipeiStudentHint={newTaipeiStudentHint}
+            />
+          </section>
+        )}
+
         <div className="verdict-split">
           <div className="split-col split-certain">
             <h2>已驗證</h2>
@@ -2256,25 +2288,6 @@ function ResultView({
         </div>
       </section>
 
-      {/* 2 — Actual vs What-if (Housing only) */}
-      {actual && whatIf && passport.domain !== "CHILDCARE" && (
-        <section className="compare" aria-labelledby="compare-title">
-          <div className="section-head">
-            <h2 id="compare-title">{dualCityComparison ? "候選租屋比較" : "目前住址 vs 搬遷假設"}</h2>
-            <span className="en-companion" lang="en">
-              {dualCityComparison ? "OPTION A VS OPTION B" : "ACTUAL VS WHAT-IF"}
-            </span>
-          </div>
-          <CompareTable
-            actual={actual}
-            whatIf={whatIf}
-            dualCityComparison={dualCityComparison}
-            registeredCity={passport.applicantSnapshot.registeredCity}
-            newTaipeiStudentHint={newTaipeiStudentHint}
-          />
-        </section>
-      )}
-
       {/* 3 — Decision Passport (the take-away document) */}
       <article className="passport-doc" aria-labelledby="passport-title">
         <header className="doc-head">
@@ -2337,7 +2350,23 @@ function ResultView({
         <section className="doc-section" aria-labelledby="ps-next">
           <h3 id="ps-next"><span className="doc-num" aria-hidden="true">02</span>建議下一步</h3>
           {passport.guidanceNote && <p className="callout callout-warn" role="note">{passport.guidanceNote}</p>}
-          <ol className="steps">{passport.nextSteps.map((item) => <li key={item}>{item}</li>)}</ol>
+          {passport.nextSteps.length > NEXT_STEPS_PREVIEW + 1 ? (
+            // Presentation only: the first steps stay visible, the remaining existing steps are one click away.
+            <div className="steps-group">
+              <ol className="steps">{passport.nextSteps.slice(0, NEXT_STEPS_PREVIEW).map((item) => <li key={item}>{item}</li>)}</ol>
+              <details className="steps-more">
+                <summary>
+                  <span className="when-closed">查看全部 {passport.nextSteps.length} 個步驟</span>
+                  <span className="when-open">收合其餘步驟</span>
+                </summary>
+                <ol className="steps" start={NEXT_STEPS_PREVIEW + 1} style={{counterReset: `step ${NEXT_STEPS_PREVIEW}`}}>
+                  {passport.nextSteps.slice(NEXT_STEPS_PREVIEW).map((item) => <li key={item}>{item}</li>)}
+                </ol>
+              </details>
+            </div>
+          ) : (
+            <ol className="steps">{passport.nextSteps.map((item) => <li key={item}>{item}</li>)}</ol>
+          )}
         </section>
 
         {guides.length > 0 && (
@@ -2355,7 +2384,7 @@ function ResultView({
                   || (verdict?.status === "FAIL" ? verdict.failedConditions[0] ?? "" : "");
                 const ineligible = verdict?.status === "FAIL";
                 return (
-                  <details className="gov-card" key={guide.policyId} open={!ineligible}>
+                  <details className="gov-card" key={guide.policyId}>
                     <summary className="card-head">
                       <h4>{guide.programTitle}</h4>
                       <span className="guide-summary-status">
@@ -2485,6 +2514,9 @@ function ResultView({
   );
 }
 
+/** Decision Passport §02: how many next steps stay visible before 查看全部. */
+const NEXT_STEPS_PREVIEW = 3;
+
 type PolicyKind = "central" | "local";
 
 function policyKind(policyId: string): PolicyKind {
@@ -2551,10 +2583,22 @@ function ComparisonEstimateCell({
   field: "maxSubsidy" | "outOfPocket";
 }) {
   const estimate = estimateRentalSubsidyComparison(result, registeredCity);
+  if (field === "maxSubsidy") {
+    // The long tier explanation stays available verbatim, folded under 估算依據.
+    return (
+      <span role="cell" className="ct-cell ct-estimate-cell">
+        <details className="ct-basis">
+          <summary>估算依據</summary>
+          <strong>{estimate.maxSubsidy}</strong>
+        </details>
+        <small className="ct-estimate-note">級距參考，不代表已符合申請資格。</small>
+      </span>
+    );
+  }
   return (
-    <span role="cell" className="ct-cell ct-estimate-cell">
-      <strong>{estimate[field]}</strong>
-      <small className="ct-estimate-note">{field === "outOfPocket" ? estimate.note : "級距參考，不代表已符合申請資格。"}</small>
+    <span role="cell" className="ct-cell ct-estimate-cell ct-oop-cell">
+      <strong className="ct-oop">{estimate.outOfPocket}</strong>
+      <small className="ct-estimate-note">{estimate.note}</small>
     </span>
   );
 }
@@ -2581,7 +2625,7 @@ function CompareTable({
   return (
     <div className="compare-wrap">
       <div
-        className="compare-table"
+        className={"compare-table" + (dualCityComparison ? " is-dual-city" : "")}
         role="table"
         aria-label={dualCityComparison ? "候選租屋方案 A 與方案 B 比較" : "目前住址與搬遷假設比較"}
       >
@@ -2604,8 +2648,13 @@ function CompareTable({
           <span role="cell" className="ct-cell ct-rent">NT${actual.scenario.monthlyRent.toLocaleString()}<small> / 月</small></span>
           <span role="cell" className="ct-cell ct-rent">
             NT${whatIf.scenario.monthlyRent.toLocaleString()}<small> / 月</small>
-            {delta !== 0 && <span className="ct-delta">{delta > 0 ? "+" : "−"}{Math.abs(delta).toLocaleString()}</span>}
+            {delta !== 0 && <span className="ct-delta">月租 {delta > 0 ? "+" : "−"}NT${Math.abs(delta).toLocaleString()}</span>}
           </span>
+        </div>
+        <div className="ct-row ct-row-oop" role="row">
+          <span role="rowheader" className="ct-label ct-label-estimate">預估實質自付</span>
+          <ComparisonEstimateCell result={actual} registeredCity={registeredCity} field="outOfPocket"/>
+          <ComparisonEstimateCell result={whatIf} registeredCity={registeredCity} field="outOfPocket"/>
         </div>
         <div className="ct-row" role="row">
           <span role="rowheader" className="ct-label">中央方案</span>
@@ -2621,11 +2670,6 @@ function CompareTable({
           <span role="rowheader" className="ct-label ct-label-estimate">預估最高補助</span>
           <ComparisonEstimateCell result={actual} registeredCity={registeredCity} field="maxSubsidy"/>
           <ComparisonEstimateCell result={whatIf} registeredCity={registeredCity} field="maxSubsidy"/>
-        </div>
-        <div className="ct-row" role="row">
-          <span role="rowheader" className="ct-label ct-label-estimate">預估實質自付</span>
-          <ComparisonEstimateCell result={actual} registeredCity={registeredCity} field="outOfPocket"/>
-          <ComparisonEstimateCell result={whatIf} registeredCity={registeredCity} field="outOfPocket"/>
         </div>
       </div>
 
