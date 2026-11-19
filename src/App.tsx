@@ -2350,7 +2350,23 @@ function ResultView({
         <section className="doc-section" aria-labelledby="ps-next">
           <h3 id="ps-next"><span className="doc-num" aria-hidden="true">02</span>建議下一步</h3>
           {passport.guidanceNote && <p className="callout callout-warn" role="note">{passport.guidanceNote}</p>}
-          <ol className="steps">{passport.nextSteps.map((item) => <li key={item}>{item}</li>)}</ol>
+          {passport.nextSteps.length > NEXT_STEPS_PREVIEW + 1 ? (
+            // Presentation only: the first steps stay visible, the remaining existing steps are one click away.
+            <div className="steps-group">
+              <ol className="steps">{passport.nextSteps.slice(0, NEXT_STEPS_PREVIEW).map((item) => <li key={item}>{item}</li>)}</ol>
+              <details className="steps-more">
+                <summary>
+                  <span className="when-closed">查看全部 {passport.nextSteps.length} 個步驟</span>
+                  <span className="when-open">收合其餘步驟</span>
+                </summary>
+                <ol className="steps" start={NEXT_STEPS_PREVIEW + 1} style={{counterReset: `step ${NEXT_STEPS_PREVIEW}`}}>
+                  {passport.nextSteps.slice(NEXT_STEPS_PREVIEW).map((item) => <li key={item}>{item}</li>)}
+                </ol>
+              </details>
+            </div>
+          ) : (
+            <ol className="steps">{passport.nextSteps.map((item) => <li key={item}>{item}</li>)}</ol>
+          )}
         </section>
 
         {guides.length > 0 && (
@@ -2368,7 +2384,7 @@ function ResultView({
                   || (verdict?.status === "FAIL" ? verdict.failedConditions[0] ?? "" : "");
                 const ineligible = verdict?.status === "FAIL";
                 return (
-                  <details className="gov-card" key={guide.policyId} open={!ineligible}>
+                  <details className="gov-card" key={guide.policyId}>
                     <summary className="card-head">
                       <h4>{guide.programTitle}</h4>
                       <span className="guide-summary-status">
@@ -2497,6 +2513,9 @@ function ResultView({
     </div>
   );
 }
+
+/** Decision Passport §02: how many next steps stay visible before 查看全部. */
+const NEXT_STEPS_PREVIEW = 3;
 
 type PolicyKind = "central" | "local";
 

@@ -2667,6 +2667,143 @@ a {
   overflow-wrap: anywhere;
 }
 
+/* Application guides: collapsed rows by default; expanded detail reads as label → content rows
+   instead of narrow tiles. */
+.gov-card {
+  gap: 0;
+  padding: 0;
+}
+
+.gov-card > summary.card-head {
+  align-items: center;
+  gap: var(--s4);
+  padding: var(--s4) var(--s5);
+  list-style: none;
+}
+
+.gov-card > summary.card-head::-webkit-details-marker {
+  display: none;
+}
+
+.gov-card > summary.card-head h4 {
+  flex: 1;
+  font-size: var(--fs-body);
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.gov-card > summary.card-head::after {
+  content: "展開 ▾" / "";
+  flex: none;
+  padding: 2px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--brand);
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.gov-card[open] > summary.card-head::after {
+  content: "收合 ▴" / "";
+}
+
+.gov-card > summary.card-head:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+  border-radius: var(--radius-lg);
+}
+
+.gov-card[open] > summary.card-head {
+  border-bottom: 1px solid var(--line);
+}
+
+.gov-card > :not(summary) {
+  margin-left: var(--s5);
+  margin-right: var(--s5);
+}
+
+.gov-card > :not(summary) + :not(summary) {
+  margin-top: var(--s3);
+}
+
+.gov-card > summary + * {
+  margin-top: var(--s4);
+}
+
+.gov-card > :last-child:not(summary) {
+  margin-bottom: var(--s5);
+}
+
+.gov-card .kv {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.gov-card .kv > div {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: var(--s4);
+  padding: 10px var(--s4);
+  border-radius: 0;
+  background: var(--surface);
+}
+
+.gov-card .kv > div + div {
+  border-top: 1px solid var(--line);
+}
+
+.gov-card .kv dt {
+  font-size: var(--fs-caption);
+  font-weight: 600;
+  background: none;
+}
+
+.gov-card .kv dd {
+  min-width: 0;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+/* Decision Passport §02: remaining existing steps behind 查看全部. */
+.steps-group {
+  display: grid;
+  gap: var(--s2);
+}
+
+.steps-more > summary {
+  display: inline-flex;
+  margin-left: 32px;
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--brand);
+  cursor: pointer;
+}
+
+.steps-more > summary:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.steps-more[open] > summary {
+  margin-bottom: var(--s2);
+}
+
+.steps-more .when-open,
+.steps-more[open] .when-closed {
+  display: none;
+}
+
+.steps-more[open] .when-open {
+  display: inline;
+}
+
 .kv-row {
   display: flex;
   justify-content: space-between;
@@ -3394,6 +3531,30 @@ a {
   .panel-stack,
   .gov-card {
     min-width: 0;
+  }
+
+  .gov-card > summary.card-head {
+    align-items: flex-start;
+    gap: var(--s2);
+    padding: var(--s3) var(--s4);
+  }
+
+  .gov-card > summary.card-head .guide-summary-status {
+    justify-items: start;
+  }
+
+  .gov-card > summary.card-head .guide-fail-reason {
+    text-align: left;
+  }
+
+  .gov-card > :not(summary) {
+    margin-left: var(--s4);
+    margin-right: var(--s4);
+  }
+
+  .gov-card .kv > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
   }
 
   .doc-head h2 {
