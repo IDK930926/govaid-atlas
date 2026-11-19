@@ -395,10 +395,10 @@ a {
   color: var(--ink-2);
 }
 
-/* Mid-width desktops (1241–1599 px, e.g. 1280 / 1366 / 1440): the five steps plus the
+/* Desktop (≥1241 px; 1920 is zoomed to a 1600 canvas): the five steps plus the
    Human Gate phase pill need more width than the bar has, so compress spacing — never
    hide steps. `safe center` keeps an overflowing list from spilling under the brand. */
-@media (min-width: 1241px) and (max-width: 1599px) {
+@media (min-width: 1241px) {
   .topbar-inner {
     gap: var(--s3);
   }
@@ -446,7 +446,7 @@ a {
   white-space: nowrap;
 }
 
-@media (min-width: 1241px) and (max-width: 1599px) {
+@media (min-width: 1241px) {
   .phase-pill {
     margin-right: var(--s1);
     padding: 0 10px;
