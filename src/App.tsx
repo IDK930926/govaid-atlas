@@ -1460,6 +1460,7 @@ export function AgentDecisionLine({run, compact = false}: {run: AgentRun; compac
   const view = describeAgentDecision(run);
   if (!view) return null;
   const rejected = view.kind === "MODEL_REJECTED";
+  const accepted = view.kind === "MODEL_ACCEPTED";
   return (
     <section
       className={"agent-decision" + (compact ? " is-compact" : "") + " is-" + view.kind.toLowerCase().replace(/_/g, "-")}
@@ -1471,12 +1472,24 @@ export function AgentDecisionLine({run, compact = false}: {run: AgentRun; compac
       </p>
       <ol className="agent-decision-flow">
         {view.proposal && (
-          <li><span className="ad-label">模型提案 <span lang="en">Proposal</span></span><span className="ad-value">{view.proposal}</span></li>
+          <li className="ad-step ad-proposal"><span className="ad-label">模型提案 <span lang="en">Proposal</span></span><span className="ad-value">{view.proposal}</span></li>
         )}
-        <li className={rejected ? "ad-rejected" : view.kind === "MODEL_ACCEPTED" ? "ad-passed" : undefined}>
-          <span className="ad-label">系統驗證 <span lang="en">Validation</span></span><span className="ad-value">{view.validation}</span>
+        <li className={"ad-step ad-validation" + (rejected ? " ad-rejected" : accepted ? " ad-passed" : "")}>
+          <span className="ad-label">系統驗證 <span lang="en">Validation</span></span>
+          {/* Visual status only (from the decision kind); the validation text below is unchanged. */}
+          {(rejected || accepted) && (
+            <span className="ad-status">
+              <span className="ad-status-glyph" aria-hidden="true">{rejected ? "×" : "✓"}</span>
+              <span lang="en">{rejected ? "REJECTED" : "VALIDATED"}</span> · {rejected ? "駁回" : "通過"}
+            </span>
+          )}
+          <span className="ad-value">{view.validation}</span>
         </li>
-        <li><span className="ad-label">下一步 <span lang="en">Next</span></span><span className="ad-value">{view.next}</span></li>
+        <li className="ad-step ad-next">
+          <span className="ad-label">下一步 <span lang="en">Next</span></span>
+          {!accepted && <span className="ad-caption" lang="en">System-selected safe next state</span>}
+          <span className="ad-value">{view.next}</span>
+        </li>
       </ol>
     </section>
   );
