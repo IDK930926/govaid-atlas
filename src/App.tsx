@@ -2181,6 +2181,25 @@ function ResultView({
           </p>
         )}
 
+        {/* 2 — Actual vs What-if (Housing only), directly under the verdict band */}
+        {actual && whatIf && passport.domain !== "CHILDCARE" && (
+          <section className="compare" aria-labelledby="compare-title">
+            <div className="section-head">
+              <h2 id="compare-title">{dualCityComparison ? "候選租屋比較" : "目前住址 vs 搬遷假設"}</h2>
+              <span className="en-companion" lang="en">
+                {dualCityComparison ? "OPTION A VS OPTION B" : "ACTUAL VS WHAT-IF"}
+              </span>
+            </div>
+            <CompareTable
+              actual={actual}
+              whatIf={whatIf}
+              dualCityComparison={dualCityComparison}
+              registeredCity={passport.applicantSnapshot.registeredCity}
+              newTaipeiStudentHint={newTaipeiStudentHint}
+            />
+          </section>
+        )}
+
         <div className="verdict-split">
           <div className="split-col split-certain">
             <h2>已驗證</h2>
@@ -2268,25 +2287,6 @@ function ResultView({
           </div>
         </div>
       </section>
-
-      {/* 2 — Actual vs What-if (Housing only) */}
-      {actual && whatIf && passport.domain !== "CHILDCARE" && (
-        <section className="compare" aria-labelledby="compare-title">
-          <div className="section-head">
-            <h2 id="compare-title">{dualCityComparison ? "候選租屋比較" : "目前住址 vs 搬遷假設"}</h2>
-            <span className="en-companion" lang="en">
-              {dualCityComparison ? "OPTION A VS OPTION B" : "ACTUAL VS WHAT-IF"}
-            </span>
-          </div>
-          <CompareTable
-            actual={actual}
-            whatIf={whatIf}
-            dualCityComparison={dualCityComparison}
-            registeredCity={passport.applicantSnapshot.registeredCity}
-            newTaipeiStudentHint={newTaipeiStudentHint}
-          />
-        </section>
-      )}
 
       {/* 3 — Decision Passport (the take-away document) */}
       <article className="passport-doc" aria-labelledby="passport-title">
@@ -2583,10 +2583,22 @@ function ComparisonEstimateCell({
   field: "maxSubsidy" | "outOfPocket";
 }) {
   const estimate = estimateRentalSubsidyComparison(result, registeredCity);
+  if (field === "maxSubsidy") {
+    // The long tier explanation stays available verbatim, folded under 估算依據.
+    return (
+      <span role="cell" className="ct-cell ct-estimate-cell">
+        <details className="ct-basis">
+          <summary>估算依據</summary>
+          <strong>{estimate.maxSubsidy}</strong>
+        </details>
+        <small className="ct-estimate-note">級距參考，不代表已符合申請資格。</small>
+      </span>
+    );
+  }
   return (
-    <span role="cell" className="ct-cell ct-estimate-cell">
-      <strong>{estimate[field]}</strong>
-      <small className="ct-estimate-note">{field === "outOfPocket" ? estimate.note : "級距參考，不代表已符合申請資格。"}</small>
+    <span role="cell" className="ct-cell ct-estimate-cell ct-oop-cell">
+      <strong className="ct-oop">{estimate.outOfPocket}</strong>
+      <small className="ct-estimate-note">{estimate.note}</small>
     </span>
   );
 }
@@ -2613,7 +2625,7 @@ function CompareTable({
   return (
     <div className="compare-wrap">
       <div
-        className="compare-table"
+        className={"compare-table" + (dualCityComparison ? " is-dual-city" : "")}
         role="table"
         aria-label={dualCityComparison ? "候選租屋方案 A 與方案 B 比較" : "目前住址與搬遷假設比較"}
       >
@@ -2636,8 +2648,13 @@ function CompareTable({
           <span role="cell" className="ct-cell ct-rent">NT${actual.scenario.monthlyRent.toLocaleString()}<small> / 月</small></span>
           <span role="cell" className="ct-cell ct-rent">
             NT${whatIf.scenario.monthlyRent.toLocaleString()}<small> / 月</small>
-            {delta !== 0 && <span className="ct-delta">{delta > 0 ? "+" : "−"}{Math.abs(delta).toLocaleString()}</span>}
+            {delta !== 0 && <span className="ct-delta">月租 {delta > 0 ? "+" : "−"}NT${Math.abs(delta).toLocaleString()}</span>}
           </span>
+        </div>
+        <div className="ct-row ct-row-oop" role="row">
+          <span role="rowheader" className="ct-label ct-label-estimate">預估實質自付</span>
+          <ComparisonEstimateCell result={actual} registeredCity={registeredCity} field="outOfPocket"/>
+          <ComparisonEstimateCell result={whatIf} registeredCity={registeredCity} field="outOfPocket"/>
         </div>
         <div className="ct-row" role="row">
           <span role="rowheader" className="ct-label">中央方案</span>
@@ -2653,11 +2670,6 @@ function CompareTable({
           <span role="rowheader" className="ct-label ct-label-estimate">預估最高補助</span>
           <ComparisonEstimateCell result={actual} registeredCity={registeredCity} field="maxSubsidy"/>
           <ComparisonEstimateCell result={whatIf} registeredCity={registeredCity} field="maxSubsidy"/>
-        </div>
-        <div className="ct-row" role="row">
-          <span role="rowheader" className="ct-label ct-label-estimate">預估實質自付</span>
-          <ComparisonEstimateCell result={actual} registeredCity={registeredCity} field="outOfPocket"/>
-          <ComparisonEstimateCell result={whatIf} registeredCity={registeredCity} field="outOfPocket"/>
         </div>
       </div>
 

@@ -3636,3 +3636,165 @@ a {
 .scope-notice-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 0.4rem; }
 .scope-notice-list li { display: flex; flex-direction: column; gap: 0.15rem; }
 .scope-notice-list a { overflow-wrap: anywhere; }
+
+/* ---------- Actual vs What-if: location nodes + out-of-pocket emphasis ---------- */
+
+/* Location headers read as two nodes: ACTUAL solid, WHAT-IF dashed. */
+.ct-head .ct-col {
+  margin: var(--s2) 0;
+  padding: var(--s3) var(--s4);
+  border: 1.5px solid var(--brand);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.ct-head .ct-col-whatif {
+  border-style: dashed;
+  border-color: var(--ink-2);
+}
+
+.ct-head > .ct-col {
+  margin-left: var(--s3);
+  margin-right: var(--s3);
+}
+
+.ct-head > * + * {
+  border-left: 0;
+}
+
+.ct-head .ct-col-whatif::before {
+  left: -29px;
+}
+
+.ct-delta {
+  white-space: nowrap;
+}
+
+/* 預估實質自付 sits right under rent and is the headline figure. */
+.ct-row-oop {
+  background: var(--brand-soft);
+}
+
+.ct-row-oop > .ct-label {
+  color: var(--brand-strong);
+}
+
+.ct-oop-cell .ct-oop {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 預估最高補助: verbatim explanation folded under 估算依據. */
+.ct-basis > summary {
+  font-size: var(--fs-small);
+  font-weight: 700;
+  color: var(--brand);
+  cursor: pointer;
+}
+
+.ct-basis > summary:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.ct-basis[open] > summary {
+  margin-bottom: var(--s1);
+}
+
+.ct-basis > strong {
+  display: block;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  line-height: 1.6;
+}
+
+@media (max-width: 1024px) {
+  .ct-oop-cell .ct-oop {
+    font-size: 24px;
+  }
+}
+
+/* Mobile: ACTUAL ↓ WHAT-IF stacked, each value tagged with its scenario. */
+@media (max-width: 760px) {
+  .ct-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ct-row > * + * {
+    border-left: 0;
+  }
+
+  .ct-row > .ct-label {
+    padding: var(--s2) var(--s3);
+    background: var(--surface-2);
+    font-size: var(--fs-caption);
+    white-space: normal;
+  }
+
+  .ct-row-oop > .ct-label {
+    background: transparent;
+  }
+
+  .ct-row > .ct-cell {
+    padding: var(--s2) var(--s3) var(--s3);
+  }
+
+  .ct-row > .ct-cell + .ct-cell {
+    border-top: 1px dashed var(--line);
+  }
+
+  .ct-row:not(.ct-head) > .ct-cell::before {
+    display: block;
+    width: 100%;
+    margin-bottom: 2px;
+    font-size: var(--fs-micro);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+  }
+
+  .ct-row:not(.ct-head) > .ct-cell:nth-child(2)::before { content: "目前住址 · ACTUAL"; }
+  .ct-row:not(.ct-head) > .ct-cell:nth-child(3)::before { content: "搬遷假設 · WHAT-IF"; }
+  .is-dual-city .ct-row:not(.ct-head) > .ct-cell:nth-child(2)::before { content: "方案 A"; }
+  .is-dual-city .ct-row:not(.ct-head) > .ct-cell:nth-child(3)::before { content: "方案 B"; }
+
+  .ct-head > .ct-label {
+    display: none;
+  }
+
+  .ct-head {
+    padding: var(--s1) 0 var(--s2);
+  }
+
+  .ct-head > .ct-col {
+    margin: var(--s2) var(--s3) 0;
+    padding: var(--s3);
+  }
+
+  .ct-head > .ct-col + .ct-col {
+    margin-top: 26px;
+    border-top-width: 1.5px;
+  }
+
+  .ct-head .ct-col-whatif::before {
+    content: "↓";
+    display: grid;
+    left: 50%;
+    top: -22px;
+    width: auto;
+    height: auto;
+    transform: translateX(-50%);
+    border: 0;
+    background: none;
+    font-size: 16px;
+  }
+
+  .ct-oop-cell .ct-oop {
+    font-size: 22px;
+  }
+}
